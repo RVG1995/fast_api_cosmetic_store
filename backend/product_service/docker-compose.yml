@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: your_username      # Имя пользователя PostgreSQL
+      POSTGRES_PASSWORD: your_password  # Пароль для пользователя
+      POSTGRES_DB: your_dbname          # Название базы данных по умолчанию
+    ports:
+      - "5432:5432"                    # Проброс порта (хост:контейнер)
+    volumes:
+      - pgdata:/var/lib/postgresql/data  # Сохранение данных базы на хосте
+
+volumes:
+  pgdata:

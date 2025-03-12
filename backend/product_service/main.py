@@ -197,7 +197,7 @@ async def delete_product(
 
     # Удаляем продукт
     try:
-        session.delete(product)
+        await session.delete(product)
         await session.commit()
     except IntegrityError as e:
         await session.rollback()

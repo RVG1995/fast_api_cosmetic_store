@@ -184,10 +184,10 @@ class TestProductAPI:
             # Настраиваем execute для возврата мок-результата
             mock_execute.return_value = mock_result
             
-            # Патчим метод delete сессии
-            with patch("sqlalchemy.ext.asyncio.AsyncSession.delete") as mock_delete:
-                # Патчим метод commit сессии
-                with patch("sqlalchemy.ext.asyncio.AsyncSession.commit") as mock_commit:
+            # Патчим метод delete сессии (используем AsyncMock для await)
+            with patch("sqlalchemy.ext.asyncio.AsyncSession.delete", AsyncMock()) as mock_delete:
+                # Патчим метод commit сессии (async)
+                with patch("sqlalchemy.ext.asyncio.AsyncSession.commit", AsyncMock()) as mock_commit:
                     # Используем TestClient для выполнения запроса
                     client = TestClient(app)
                     response = client.delete("/products/1")

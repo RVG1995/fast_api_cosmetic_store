@@ -217,42 +217,45 @@ async def update_product(
         logger.error(f"Продукт с ID={product_id} не найден")
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # Конвертация строковых значений в нужные типы
-    price_int = None
-    stock_int = None
-    category_id_int = None
-    subcategory_id_int = None
-    country_id_int = None
-    brand_id_int = None
-    
     try:
-        if price is not None:
-            price_int = int(price)
-        if stock is not None:
-            stock_int = int(stock)
-        if category_id is not None:
-            category_id_int = int(category_id)
-        # Особая обработка для subcategory_id
-        if subcategory_id is not None and subcategory_id != "":
-            subcategory_id_int = int(subcategory_id)
-        else:
-            # Если subcategory_id пусто или None, явно устанавливаем None
-            subcategory_id_int = None
-            logger.info(f"subcategory_id установлен в None для продукта ID={product_id}")
+        # Обновляем все поля напрямую, без создания промежуточного словаря
+        # Поле обновляется только если значение было предоставлено (не None)
+        
+        # Обновляем текстовые поля
+        if name is not None:
+            product.name = name
             
+        if description is not None:
+            product.description = description
+            
+        # Конвертируем и обновляем числовые поля
+        if price is not None:
+            product.price = int(price)
+            
+        if stock is not None:
+            product.stock = int(stock)
+            
+        if category_id is not None:
+            product.category_id = int(category_id)
+            
+        # Особая обработка для subcategory_id
+        if subcategory_id is not None:
+            if subcategory_id == "":
+                # Если передана пустая строка, явно устанавливаем None
+                product.subcategory_id = None
+                logger.info(f"subcategory_id установлен в None для продукта ID={product_id}")
+            else:
+                product.subcategory_id = int(subcategory_id)
+                logger.info(f"subcategory_id установлен в {subcategory_id} для продукта ID={product_id}")
+                
         if country_id is not None:
-            country_id_int = int(country_id)
+            product.country_id = int(country_id)
+            
         if brand_id is not None:
-            brand_id_int = int(brand_id)
-    except ValueError as e:
-        logger.error(f"Ошибка конвертации типов: {str(e)}")
-        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}")
-
-    # Если изображение предоставлено, обрабатываем его
-    image_url = None
-    if image:
-        try:
-            logger.info(f"Обработка изображения: {image.filename}")
+            product.brand_id = int(brand_id)
+            
+        # Обработка изображения
+        if image:
             extension = os.path.splitext(image.filename)[1]
             unique_filename = f"{uuid.uuid4().hex}{extension}"
             file_path = os.path.join(UPLOAD_DIR, unique_filename)
@@ -260,56 +263,26 @@ async def update_product(
             with open(file_path, "wb") as buffer:
                 buffer.write(await image.read())
             
-            image_url = f"/static/images/{unique_filename}"
-            logger.info(f"Изображение сохранено по пути: {image_url}")
-        except Exception as e:
-            logger.error(f"Ошибка при сохранении изображения: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Ошибка при сохранении изображения: {str(e)}")
-    
-    # Создаем словарь только с предоставленными значениями
-    update_fields = {}
-    if name is not None:
-        update_fields["name"] = name
-    if price_int is not None:
-        update_fields["price"] = price_int
-    if description is not None:
-        update_fields["description"] = description
-    if stock_int is not None:
-        update_fields["stock"] = stock_int
-    if category_id_int is not None:
-        update_fields["category_id"] = category_id_int
-    
-    # Специальная обработка для subcategory_id, который может быть None
-    # Включаем его в update_fields даже если он None, но только если он был явно передан
-    if subcategory_id is not None:
-        update_fields["subcategory_id"] = subcategory_id_int
-        logger.info(f"Устанавливаем subcategory_id={subcategory_id_int} для продукта ID={product_id}")
-        
-    if country_id_int is not None:
-        update_fields["country_id"] = country_id_int
-    if brand_id_int is not None:
-        update_fields["brand_id"] = brand_id_int
-    if image_url is not None:
-        update_fields["image"] = image_url
-
-    logger.info(f"Обновляемые поля: {update_fields}")
-
-    # Обновляем поля продукта
-    for field, value in update_fields.items():
-        setattr(product, field, value)
-    
-    try:
+            product.image = f"/static/images/{unique_filename}"
+            logger.info(f"Изображение сохранено по пути: {product.image}")
+            
+        # Сохраняем обновленный продукт
         await session.commit()
-        # Обновляем объект из базы, чтобы вернуть актуальные данные
         await session.refresh(product)
         logger.info(f"Продукт ID={product_id} успешно обновлен")
         return product
+        
+    except ValueError as e:
+        await session.rollback()
+        logger.error(f"Ошибка конвертации типов: {str(e)}")
+        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}")
     except IntegrityError as e:
         await session.rollback()
         error_detail = str(e.orig) if e.orig else str(e)
         logger.error(f"Ошибка целостности данных: {error_detail}")
         raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
     except Exception as e:
+        await session.rollback()
         logger.error(f"Непредвиденная ошибка при обновлении продукта: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка при обновлении продукта: {str(e)}")
 

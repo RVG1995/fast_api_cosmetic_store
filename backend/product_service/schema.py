@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List
 
 
 class CategoryAddSchema(BaseModel):
@@ -84,4 +84,12 @@ class ProductUpdateSchema(BaseModel):
     description: Optional[str] = None
     stock: Optional[int] = None
 
+    model_config = ConfigDict(from_attributes=True)
+
+class PaginatedProductResponse(BaseModel):
+    items: List[ProductSchema]
+    total: int
+    skip: int
+    limit: int
+    
     model_config = ConfigDict(from_attributes=True)

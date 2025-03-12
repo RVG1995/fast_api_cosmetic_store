@@ -170,8 +170,11 @@ export const notificationAPI = {
 // API для работы с продуктами
 export const productAPI = {
   // Продукты
-  getProducts: () => {
-    return productApi.get('/products').then(response => {
+  getProducts: (page = 1, pageSize = 10) => {
+    const skip = (page - 1) * pageSize;
+    return productApi.get('/products', { 
+      params: { skip, limit: pageSize } 
+    }).then(response => {
       console.log('API getProducts response:', response.data);
       return response;
     });

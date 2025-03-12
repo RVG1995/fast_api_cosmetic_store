@@ -31,27 +31,48 @@ const AdminProducts = () => {
   // Состояние для хранения отфильтрованных подкатегорий по выбранной категории
   const [filteredSubcategories, setFilteredSubcategories] = useState([]);
 
+  // Добавляем состояние для пагинации
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    pageSize: 10
+  });
+
   // Загрузка всех необходимых данных при монтировании компонента
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         
-        // Параллельная загрузка всех необходимых данных
-        const [productsRes, categoriesRes, subcategoriesRes, countriesRes, brandsRes] = await Promise.all([
-          productAPI.getProducts(),
+        // Получаем все необходимые данные для формы и первую страницу товаров
+        const [categoriesRes, subcategoriesRes, countriesRes, brandsRes] = await Promise.all([
           productAPI.getCategories(),
-          productAPI.getSubcategories(), // Добавляем запрос подкатегорий
+          productAPI.getSubcategories(),
           productAPI.getCountries(),
           productAPI.getBrands()
         ]);
         
+        // Загружаем первую страницу товаров отдельно
+        const productsRes = await productAPI.getProducts(1, pagination.pageSize);
+        
         // Добавляем логирование для отладки
         console.log('Полученные продукты:', productsRes.data);
         
-        setProducts(productsRes.data);
+        // Обновляем товары и информацию о пагинации
+        const { items, total, limit } = productsRes.data;
+        setProducts(Array.isArray(items) ? items : []);
+        
+        // Обновляем информацию о пагинации
+        setPagination({
+          currentPage: 1,
+          totalPages: Math.ceil(total / limit),
+          totalItems: total,
+          pageSize: limit
+        });
+        
         setCategories(categoriesRes.data);
-        setSubcategories(subcategoriesRes.data); // Сохраняем подкатегории
+        setSubcategories(subcategoriesRes.data);
         setCountries(countriesRes.data);
         setBrands(brandsRes.data);
         
@@ -200,6 +221,103 @@ const AdminProducts = () => {
     setIsModalOpen(true);
   };
 
+  // Функция для загрузки определенной страницы товаров
+  const fetchProducts = async (page) => {
+    try {
+      setLoading(true);
+      const response = await productAPI.getProducts(page, pagination.pageSize);
+      
+      // Обновляем товары и информацию о пагинации
+      const { items, total, limit } = response.data;
+      setProducts(Array.isArray(items) ? items : []);
+      
+      // Обновляем информацию о пагинации
+      setPagination({
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        pageSize: limit
+      });
+      
+      setError(null);
+    } catch (err) {
+      console.error('Ошибка при загрузке товаров:', err);
+      setError('Не удалось загрузить товары. Пожалуйста, попробуйте позже.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Обработчик изменения страницы
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      fetchProducts(newPage);
+    }
+  };
+
+  // Компонент пагинации
+  const Pagination = () => {
+    if (pagination.totalPages <= 1) return null;
+    
+    return (
+      <nav aria-label="Пагинация товаров" className="mt-4">
+        <ul className="pagination justify-content-center">
+          <li className={`page-item ${pagination.currentPage === 1 ? 'disabled' : ''}`}>
+            <button 
+              className="page-link" 
+              onClick={() => handlePageChange(pagination.currentPage - 1)}
+              disabled={pagination.currentPage === 1}
+            >
+              &laquo; Назад
+            </button>
+          </li>
+          
+          {/* Генерируем страницы для отображения */}
+          {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
+            .filter(page => 
+              // Показываем первую, последнюю и страницы рядом с текущей
+              page === 1 || 
+              page === pagination.totalPages || 
+              Math.abs(page - pagination.currentPage) <= 2
+            )
+            .map((page, index, array) => {
+              // Добавляем многоточие перед первой страницей, если она не 1 или 2
+              const prevPage = index > 0 ? array[index - 1] : null;
+              const showEllipsisBefore = prevPage !== null && page - prevPage > 1;
+              
+              return (
+                <React.Fragment key={page}>
+                  {showEllipsisBefore && (
+                    <li className="page-item disabled">
+                      <span className="page-link">...</span>
+                    </li>
+                  )}
+                  <li className={`page-item ${pagination.currentPage === page ? 'active' : ''}`}>
+                    <button 
+                      className="page-link" 
+                      onClick={() => handlePageChange(page)}
+                    >
+                      {page}
+                    </button>
+                  </li>
+                </React.Fragment>
+              );
+            })}
+          
+          <li className={`page-item ${pagination.currentPage === pagination.totalPages ? 'disabled' : ''}`}>
+            <button 
+              className="page-link" 
+              onClick={() => handlePageChange(pagination.currentPage + 1)}
+              disabled={pagination.currentPage === pagination.totalPages}
+            >
+              Вперед &raquo;
+            </button>
+          </li>
+        </ul>
+      </nav>
+    );
+  };
+
   // Сохранение товара (добавление или обновление)
   const handleSaveProduct = async () => {
     try {
@@ -229,10 +347,12 @@ const AdminProducts = () => {
       
       if (modalMode === 'add') {
         const response = await productAPI.createProduct(processedData);
-        setProducts([...products, response.data]);
+        // После добавления нового товара, обновляем список
+        fetchProducts(pagination.currentPage);
       } else {
         const response = await productAPI.updateProduct(selectedProduct.id, processedData);
-        setProducts(products.map(p => p.id === selectedProduct.id ? response.data : p));
+        // После обновления товара, обновляем список
+        fetchProducts(pagination.currentPage);
       }
       setIsModalOpen(false);
     } catch (err) {
@@ -246,7 +366,8 @@ const AdminProducts = () => {
     if (window.confirm('Вы уверены, что хотите удалить этот товар?')) {
       try {
         await productAPI.deleteProduct(productId);
-        setProducts(products.filter(product => product.id !== productId));
+        // После удаления обновляем список товаров
+        fetchProducts(pagination.currentPage);
       } catch (err) {
         console.error('Ошибка при удалении товара:', err);
         alert('Не удалось удалить товар. Проверьте права доступа.');
@@ -294,55 +415,68 @@ const AdminProducts = () => {
           Товары отсутствуют. Добавьте новый товар, нажав на кнопку выше.
         </div>
       ) : (
-        <div className="table-responsive">
-          <table className="table table-striped table-hover">
-            <thead className="table-primary">
-              <tr>
-                <th>ID</th>
-                <th>Изображение</th>
-                <th>Название</th>
-                <th>Цена</th>
-                <th>Кол-во</th>
-                <th>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map(product => (
-                <tr key={product.id}>
-                  <td>{product.id}</td>
-                  <td>
-                    {product.image ? (
-                      <img 
-                        src={`http://localhost:8001${product.image}`} 
-                        alt={product.name} 
-                        className="product-thumbnail" 
-                      />
-                    ) : (
-                      <span className="no-image-small">Нет фото</span>
-                    )}
-                  </td>
-                  <td>{product.name}</td>
-                  <td>{product.price} руб.</td>
-                  <td>{product.stock}</td>
-                  <td>
-                    <button 
-                      className="btn btn-sm btn-outline-primary me-2" 
-                      onClick={() => handleEditProduct(product)}
-                    >
-                      <i className="bi bi-pencil"></i>
-                    </button>
-                    <button 
-                      className="btn btn-sm btn-outline-danger" 
-                      onClick={() => handleDeleteProduct(product.id)}
-                    >
-                      <i className="bi bi-trash"></i>
-                    </button>
-                  </td>
+        <>
+          <div className="table-responsive">
+            <table className="table table-striped table-hover">
+              <thead className="table-primary">
+                <tr>
+                  <th>ID</th>
+                  <th>Изображение</th>
+                  <th>Название</th>
+                  <th>Цена</th>
+                  <th>Кол-во</th>
+                  <th>Действия</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {products.map(product => (
+                  <tr key={product.id}>
+                    <td>{product.id}</td>
+                    <td>
+                      {product.image ? (
+                        <img 
+                          src={`http://localhost:8001${product.image}`} 
+                          alt={product.name} 
+                          className="product-thumbnail" 
+                        />
+                      ) : (
+                        <span className="no-image-small">Нет фото</span>
+                      )}
+                    </td>
+                    <td>{product.name}</td>
+                    <td>{product.price} руб.</td>
+                    <td>{product.stock}</td>
+                    <td>
+                      <button 
+                        className="btn btn-sm btn-outline-primary me-2" 
+                        onClick={() => handleEditProduct(product)}
+                      >
+                        <i className="bi bi-pencil"></i>
+                      </button>
+                      <button 
+                        className="btn btn-sm btn-outline-danger" 
+                        onClick={() => handleDeleteProduct(product.id)}
+                      >
+                        <i className="bi bi-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Добавляем пагинацию после таблицы */}
+          <Pagination />
+          
+          {/* Отображаем информацию о пагинации */}
+          <div className="pagination-info text-center mt-2">
+            <p>
+              Показано {products.length} из {pagination.totalItems} товаров 
+              (Страница {pagination.currentPage} из {pagination.totalPages})
+            </p>
+          </div>
+        </>
       )}
 
       {/* Модальное окно для добавления/редактирования товара */}

@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Que
 from database import setup_database, get_session, engine
 from models import SubCategoryModel,CategoryModel, ProductModel,CountryModel, BrandModel
 from auth import require_admin, get_current_user
-from schema import BrandAddSchema, BrandSchema, BrandUpdateSchema, CategoryAddSchema, CategorySchema, CategoryUpdateSchema, CountryAddSchema, CountrySchema, CountryUpdateSchema, ProductAddSchema,ProductSchema, ProductUpdateSchema, SubCategoryAddSchema, SubCategorySchema, SubCategoryUpdateSchema
+from schema import BrandAddSchema, BrandSchema, BrandUpdateSchema, CategoryAddSchema, CategorySchema, CategoryUpdateSchema, CountryAddSchema, CountrySchema, CountryUpdateSchema, ProductAddSchema,ProductSchema, ProductUpdateSchema, SubCategoryAddSchema, SubCategorySchema, SubCategoryUpdateSchema, PaginatedProductResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -141,8 +141,18 @@ async def add_product(
         raise HTTPException(status_code=500, detail=f"Ошибка при создании продукта: {str(e)}")
 
 
-@app.get('/products',response_model = List[ProductSchema])
-async def get_products(session: SessionDep):
+@app.get('/products', response_model=PaginatedProductResponse)
+async def get_products(
+    session: SessionDep,
+    skip: int = Query(0, description="Сколько записей пропустить (для пагинации)"),
+    limit: int = Query(10, description="Максимальное количество записей для возврата")
+):
+    # Сначала получаем общее количество товаров
+    count_query = select(ProductModel)
+    count_result = await session.execute(count_query)
+    total_count = len(count_result.scalars().all())
+    
+    # Затем выполняем основной запрос с учетом пагинации
     query = select(ProductModel).options(
         load_only(
             ProductModel.name,
@@ -155,10 +165,18 @@ async def get_products(session: SessionDep):
             ProductModel.stock,
             ProductModel.image
         )
-    ).order_by(ProductModel.id.desc())
+    ).order_by(ProductModel.id.desc()).offset(skip).limit(limit)
     
     result = await session.execute(query)
-    return result.scalars().all()
+    products = result.scalars().all()
+    
+    # Возвращаем не только товары, но и информацию о пагинации
+    return {
+        "items": products,
+        "total": total_count,
+        "skip": skip,
+        "limit": limit
+    }
 
 @app.get('/products/{product_id}',response_model = ProductSchema)
 async def get_product_id(product_id: int, session: SessionDep):

@@ -182,6 +182,31 @@ async def update_product(
 
     return product
 
+@app.delete("/products/{product_id}", status_code=204)
+async def delete_product(
+    product_id: int,
+    session: SessionDep
+):
+    # Ищем продукт по id
+    query = select(ProductModel).filter(ProductModel.id == product_id)
+    result = await session.execute(query)
+    product = result.scalars().first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # Удаляем продукт
+    try:
+        session.delete(product)
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        error_detail = str(e.orig) if e.orig else str(e)
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+    
+    # Возвращаем None для статуса 204 No Content
+    return None
+
 @app.get('/categories',response_model = List[CategorySchema])
 async def get_categories(session: SessionDep):
     query = select(CategoryModel)

@@ -334,7 +334,7 @@ export const productAPI = {
 };
 
 // Экспортируем все API и инстансы для возможного прямого использования
-export default {
+const apiExports = {
   authApi,
   userApi,
   contentApi,
@@ -346,4 +346,6 @@ export default {
   contentAPI,
   notificationAPI,
   productAPI
-}; 
+};
+
+export default apiExports; 

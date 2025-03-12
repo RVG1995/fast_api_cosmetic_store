@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { productAPI } from '../../utils/api';
-import { useNavigate } from 'react-router-dom';
 import '../../styles/AdminProducts.css';
 
 const AdminProducts = () => {
@@ -31,8 +30,6 @@ const AdminProducts = () => {
   const [brands, setBrands] = useState([]);
   // Состояние для хранения отфильтрованных подкатегорий по выбранной категории
   const [filteredSubcategories, setFilteredSubcategories] = useState([]);
-
-  const navigate = useNavigate();
 
   // Загрузка всех необходимых данных при монтировании компонента
   useEffect(() => {
@@ -85,25 +82,6 @@ const AdminProducts = () => {
       setFilteredSubcategories([]);
     }
   }, [formData.category_id, subcategories]);
-
-  // Группируем подкатегории по категориям для удобного отображения
-  const subcategoriesByCategory = React.useMemo(() => {
-    const result = {};
-    
-    // Инициализируем объект категорий
-    categories.forEach(category => {
-      result[category.id] = [];
-    });
-    
-    // Добавляем подкатегории в соответствующие категории
-    subcategories.forEach(subcategory => {
-      if (result[subcategory.category_id]) {
-        result[subcategory.category_id].push(subcategory);
-      }
-    });
-    
-    return result;
-  }, [categories, subcategories]);
 
   // Получаем названия категорий для отображения в подкатегориях
   const getCategoryName = React.useCallback((category_id) => {
@@ -489,7 +467,7 @@ const AdminProducts = () => {
                       >
                         <option value="">Выберите категорию</option>
                         {categories.map(category => {
-                          console.log(`Отрисовка опции категории: id=${category.id}, name=${category.name}, selected=${formData.category_id == category.id}`);
+                          console.log(`Отрисовка опции категории: id=${category.id}, name=${category.name}, selected=${formData.category_id === category.id}`);
                           return (
                             <option key={category.id} value={category.id}>
                               {category.name}

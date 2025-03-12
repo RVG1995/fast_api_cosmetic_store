@@ -49,6 +49,9 @@ const AdminProducts = () => {
           productAPI.getBrands()
         ]);
         
+        // Добавляем логирование для отладки
+        console.log('Полученные продукты:', productsRes.data);
+        
         setProducts(productsRes.data);
         setCategories(categoriesRes.data);
         setSubcategories(subcategoriesRes.data); // Сохраняем подкатегории
@@ -69,12 +72,16 @@ const AdminProducts = () => {
 
   // Обновляем фильтрованные подкатегории при изменении категории
   useEffect(() => {
+    console.log('Изменено значение category_id:', formData.category_id);
+    
     if (formData.category_id) {
       const filtered = subcategories.filter(
         subcategory => subcategory.category_id === Number(formData.category_id)
       );
+      console.log('Отфильтрованные подкатегории:', filtered);
       setFilteredSubcategories(filtered);
     } else {
+      console.log('Категория не выбрана, фильтрация подкатегорий не выполняется');
       setFilteredSubcategories([]);
     }
   }, [formData.category_id, subcategories]);
@@ -137,11 +144,19 @@ const AdminProducts = () => {
       
       // Если изменилась категория, сбрасываем значение подкатегории
       if (name === 'category_id') {
-        setFormData(prev => ({
-          ...prev,
-          [name]: value,
-          subcategory_id: ''
-        }));
+        console.log('Изменена категория на:', value);
+        setFormData(prev => {
+          console.log('Обновление formData после изменения категории:', {
+            ...prev,
+            category_id: value,
+            subcategory_id: ''
+          });
+          return {
+            ...prev,
+            [name]: value,
+            subcategory_id: ''
+          };
+        });
       }
     }
   };
@@ -169,27 +184,38 @@ const AdminProducts = () => {
     setModalMode('edit');
     setSelectedProduct(product);
     
-    // Находим категорию по подкатегории, если есть
-    let categoryId = '';
-    if (product.subcategory_id) {
+    // Отладочный вывод
+    console.log('Исходные данные товара для редактирования:', product);
+    
+    // Получаем category_id из самого товара или определяем по подкатегории, если нет
+    let categoryId = product.category_id ? String(product.category_id) : '';
+    
+    // Если категория не указана напрямую, но есть подкатегория, попробуем определить категорию
+    if (!categoryId && product.subcategory_id) {
       const subcategory = subcategories.find(sub => sub.id === product.subcategory_id);
       if (subcategory) {
-        categoryId = subcategory.category_id;
+        categoryId = String(subcategory.category_id);
       }
     }
     
+    console.log('Редактирование товара:', product);
+    console.log('Выбранная категория:', categoryId);
+    
     // Преобразуем числовые значения в строки для полей формы
-    setFormData({
+    const formDataValues = {
       name: product.name,
       price: product.price,
       description: product.description || '',
       stock: product.stock,
       category_id: categoryId,
-      subcategory_id: product.subcategory_id,
-      country_id: product.country_id,
-      brand_id: product.brand_id,
+      subcategory_id: product.subcategory_id ? String(product.subcategory_id) : '',
+      country_id: product.country_id ? String(product.country_id) : '',
+      brand_id: product.brand_id ? String(product.brand_id) : '',
       image: product.image || ''
-    });
+    };
+    
+    console.log('Установка formData для редактирования:', formDataValues);
+    setFormData(formDataValues);
     
     // Если есть существующее изображение, устанавливаем его как предпросмотр
     setImagePreview(product.image ? `http://localhost:8001${product.image}` : '');
@@ -462,11 +488,14 @@ const AdminProducts = () => {
                         required
                       >
                         <option value="">Выберите категорию</option>
-                        {categories.map(category => (
-                          <option key={category.id} value={category.id}>
-                            {category.name}
-                          </option>
-                        ))}
+                        {categories.map(category => {
+                          console.log(`Отрисовка опции категории: id=${category.id}, name=${category.name}, selected=${formData.category_id == category.id}`);
+                          return (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                     <div className="col-md-6 mb-3">

@@ -44,6 +44,62 @@ const AdminDashboard = () => {
           </div>
         </div>
         
+        {/* Управление категориями */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-folder-fill admin-card-icon"></i>
+              <h3>Категории</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Управление категориями товаров. Добавление, редактирование и удаление категорий.</p>
+              <Link to="/admin/categories" className="btn btn-primary">Управление категориями</Link>
+            </div>
+          </div>
+        </div>
+        
+        {/* Управление подкатегориями */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-diagram-3-fill admin-card-icon"></i>
+              <h3>Подкатегории</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Управление подкатегориями товаров. Привязка к категориям, редактирование и удаление.</p>
+              <Link to="/admin/subcategories" className="btn btn-primary">Управление подкатегориями</Link>
+            </div>
+          </div>
+        </div>
+        
+        {/* Управление брендами */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-tag-fill admin-card-icon"></i>
+              <h3>Бренды</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Управление брендами товаров. Добавление новых брендов, редактирование и удаление.</p>
+              <Link to="/admin/brands" className="btn btn-primary">Управление брендами</Link>
+            </div>
+          </div>
+        </div>
+        
+        {/* Управление странами */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-globe admin-card-icon"></i>
+              <h3>Страны</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Управление странами-производителями. Добавление, редактирование и удаление стран.</p>
+              <Link to="/admin/countries" className="btn btn-primary">Управление странами</Link>
+            </div>
+          </div>
+        </div>
+        
         {/* Блок для суперадминов */}
         {isSuperAdmin() && (
           <div className="col-md-4 mb-4">

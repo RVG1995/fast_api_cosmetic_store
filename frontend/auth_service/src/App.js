@@ -13,6 +13,10 @@ import AdminRoute from './components/common/AdminRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminProducts from './pages/admin/AdminProducts';
+import AdminCategories from './pages/admin/AdminCategories';
+import AdminSubcategories from './pages/admin/AdminSubcategories';
+import AdminBrands from './pages/admin/AdminBrands';
+import AdminCountries from './pages/admin/AdminCountries';
 import HomePage from './pages/HomePage';
 
 // Импорт стилей
@@ -86,6 +90,39 @@ function App() {
               element={
                 <AdminRoute>
                   <AdminProducts />
+                </AdminRoute>
+              } 
+            />
+            {/* Новые маршруты для управления категориями, подкатегориями, брендами и странами */}
+            <Route 
+              path="admin/categories" 
+              element={
+                <AdminRoute>
+                  <AdminCategories />
+                </AdminRoute>
+              } 
+            />
+            <Route 
+              path="admin/subcategories" 
+              element={
+                <AdminRoute>
+                  <AdminSubcategories />
+                </AdminRoute>
+              } 
+            />
+            <Route 
+              path="admin/brands" 
+              element={
+                <AdminRoute>
+                  <AdminBrands />
+                </AdminRoute>
+              } 
+            />
+            <Route 
+              path="admin/countries" 
+              element={
+                <AdminRoute>
+                  <AdminCountries />
                 </AdminRoute>
               } 
             />

@@ -70,7 +70,7 @@ async def add_product(
 
     # Конвертация строковых значений в нужные типы
     try:
-        price_float = float(price)
+        price_int = int(price)
         stock_int = int(stock)
         category_id_int = int(category_id)
         subcategory_id_int = int(subcategory_id) if subcategory_id else None
@@ -105,7 +105,7 @@ async def add_product(
     try:
         product_data = ProductAddSchema(
             name=name,
-            price=price_float,
+            price=price_int,
             description=description,
             stock=stock_int,
             category_id=category_id_int,
@@ -155,7 +155,8 @@ async def get_products(session: SessionDep):
             ProductModel.stock,
             ProductModel.image
         )
-    )
+    ).order_by(ProductModel.id.desc())
+    
     result = await session.execute(query)
     return result.scalars().all()
 
@@ -168,40 +169,9 @@ async def get_product_id(product_id: int, session: SessionDep):
         raise HTTPException(status_code=404, detail="Product not found")
     return product
 
-@app.put("/products/{product_id}", response_model=ProductSchema)
-async def update_product(
-    product_id: int,
-    update_data: ProductUpdateSchema,
-    admin = Depends(require_admin),
-    session: AsyncSession = Depends(get_session)
-):
-    # Ищем продукт по id
-    query = select(ProductModel).filter(ProductModel.id == product_id)
-    result = await session.execute(query)
-    product = result.scalars().first()
-    
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    # Обновляем поля продукта, используя только переданные данные
-    update_fields = update_data.model_dump(exclude_unset=True)
-    for field, value in update_fields.items():
-        setattr(product, field, value)
-    
-    try:
-        await session.commit()
-        # Обновляем объект из базы, чтобы вернуть актуальные данные
-        await session.refresh(product)
-    except IntegrityError as e:
-        await session.rollback()
-        error_detail = str(e.orig) if e.orig else str(e)
-        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
-
-    return product
-
-# Новый эндпоинт для обновления с поддержкой загрузки файлов
+# Универсальный эндпоинт для обновления продуктов с поддержкой загрузки файлов
 @app.put("/products/{product_id}/form", response_model=ProductSchema)
-async def update_product_form(
+async def update_product(
     product_id: int,
     name: Optional[str] = Form(None),
     price: Optional[str] = Form(None),
@@ -230,7 +200,7 @@ async def update_product_form(
         raise HTTPException(status_code=404, detail="Product not found")
 
     # Конвертация строковых значений в нужные типы
-    price_float = None
+    price_int = None
     stock_int = None
     category_id_int = None
     subcategory_id_int = None
@@ -239,13 +209,19 @@ async def update_product_form(
     
     try:
         if price is not None:
-            price_float = float(price)
+            price_int = int(price)
         if stock is not None:
             stock_int = int(stock)
         if category_id is not None:
             category_id_int = int(category_id)
-        if subcategory_id is not None:
+        # Особая обработка для subcategory_id
+        if subcategory_id is not None and subcategory_id != "":
             subcategory_id_int = int(subcategory_id)
+        else:
+            # Если subcategory_id пусто или None, явно устанавливаем None
+            subcategory_id_int = None
+            logger.info(f"subcategory_id установлен в None для продукта ID={product_id}")
+            
         if country_id is not None:
             country_id_int = int(country_id)
         if brand_id is not None:
@@ -276,16 +252,21 @@ async def update_product_form(
     update_fields = {}
     if name is not None:
         update_fields["name"] = name
-    if price_float is not None:
-        update_fields["price"] = price_float
+    if price_int is not None:
+        update_fields["price"] = price_int
     if description is not None:
         update_fields["description"] = description
     if stock_int is not None:
         update_fields["stock"] = stock_int
     if category_id_int is not None:
         update_fields["category_id"] = category_id_int
-    if subcategory_id_int is not None:
+    
+    # Специальная обработка для subcategory_id, который может быть None
+    # Включаем его в update_fields даже если он None, но только если он был явно передан
+    if subcategory_id is not None:
         update_fields["subcategory_id"] = subcategory_id_int
+        logger.info(f"Устанавливаем subcategory_id={subcategory_id_int} для продукта ID={product_id}")
+        
     if country_id_int is not None:
         update_fields["country_id"] = country_id_int
     if brand_id_int is not None:
@@ -311,7 +292,7 @@ async def update_product_form(
         logger.error(f"Ошибка целостности данных: {error_detail}")
         raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
     except Exception as e:
-        logger.error(f"Непредвиденная ошибка: {str(e)}")
+        logger.error(f"Непредвиденная ошибка при обновлении продукта: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка при обновлении продукта: {str(e)}")
 
 @app.delete("/products/{product_id}", status_code=204)

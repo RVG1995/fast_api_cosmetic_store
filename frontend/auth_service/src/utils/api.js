@@ -170,7 +170,12 @@ export const notificationAPI = {
 // API для работы с продуктами
 export const productAPI = {
   // Продукты
-  getProducts: () => productApi.get('/products'),
+  getProducts: () => {
+    return productApi.get('/products').then(response => {
+      console.log('API getProducts response:', response.data);
+      return response;
+    });
+  },
   getProductById: (id) => productApi.get(`/products/${id}`),
   
   // Заменяем метод createProduct для поддержки загрузки файлов
@@ -261,51 +266,40 @@ export const productAPI = {
   updateProduct: (id, data) => {
     console.log(`updateProduct вызван для ID=${id} с данными:`, data);
     
-    // Если данные включают файл изображения, используем FormData
-    if (data.image instanceof File) {
-      console.log('Используем FormData для обновления с изображением');
-      const formData = new FormData();
-      
-      // Добавляем все поля данных в FormData с правильной конвертацией типов
-      if (data.name) formData.append('name', data.name);
-      if (data.price !== undefined) formData.append('price', data.price.toString());
-      if (data.description) formData.append('description', data.description);
-      if (data.stock !== undefined) formData.append('stock', data.stock.toString());
-      if (data.country_id) formData.append('country_id', data.country_id.toString());
-      if (data.brand_id) formData.append('brand_id', data.brand_id.toString());
-      if (data.category_id) formData.append('category_id', data.category_id.toString());
-      
-      // Добавляем subcategory_id, если оно существует
-      if (data.subcategory_id) {
-        formData.append('subcategory_id', data.subcategory_id.toString());
-      }
-      
-      // Добавляем файл изображения
-      formData.append('image', data.image);
-      
-      console.log('FormData готова для отправки:', {
-        name: data.name,
-        price: data.price,
-        description: data.description,
-        stock: data.stock,
-        category_id: data.category_id,
-        subcategory_id: data.subcategory_id,
-        country_id: data.country_id,
-        brand_id: data.brand_id,
-        image: data.image.name
-      });
-      
-      // Отправляем на эндпоинт /products/{id}/form для формы с файлами
-      return productApi.put(`/products/${id}/form`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-    } else {
-      // Если изображение не является файлом, используем обычный JSON
-      console.log('Используем JSON для обновления без изображения');
-      return productApi.put(`/products/${id}`, data);
+    // Всегда используем FormData для универсальности
+    const formData = new FormData();
+    
+    // Добавляем все поля данных в FormData с правильной конвертацией типов
+    if (data.name) formData.append('name', data.name);
+    if (data.price !== undefined) formData.append('price', data.price.toString());
+    if (data.description !== undefined) formData.append('description', data.description);
+    if (data.stock !== undefined) formData.append('stock', data.stock.toString());
+    if (data.country_id) formData.append('country_id', data.country_id.toString());
+    if (data.brand_id) formData.append('brand_id', data.brand_id.toString());
+    if (data.category_id) formData.append('category_id', data.category_id.toString());
+    
+    // Явно проверяем subcategory_id, даже если это пустая строка или null
+    if (data.subcategory_id) {
+      formData.append('subcategory_id', data.subcategory_id.toString());
+    } else if (data.subcategory_id === '' || data.subcategory_id === null) {
+      // Явно указываем пустую строку для отсутствующей подкатегории
+      formData.append('subcategory_id', '');
     }
+    
+    // Добавляем файл изображения, только если он есть
+    if (data.image instanceof File) {
+      formData.append('image', data.image);
+      console.log('Добавлено изображение:', data.image.name);
+    }
+    
+    console.log('FormData готова для отправки');
+    
+    // Отправляем всегда на эндпоинт /products/{id}/form
+    return productApi.put(`/products/${id}/form`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
   },
   
   deleteProduct: (id) => productApi.delete(`/products/${id}`),

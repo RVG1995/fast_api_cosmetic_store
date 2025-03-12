@@ -4,10 +4,11 @@
 
 // API URLs для различных микросервисов
 export const API_URLS = {
-  AUTH: 'http://localhost:8001',       // Сервис аутентификации
-  USER: 'http://localhost:8002',       // Сервис пользователей
-  CONTENT: 'http://localhost:8003',    // Сервис контента
-  NOTIFICATION: 'http://localhost:8004' // Сервис уведомлений
+  AUTH: 'http://localhost:8000',       // Сервис аутентификации
+  PRODUCT: 'http://localhost:8001',    // Сервис продуктов
+  USER: 'http://localhost:8002',       // Сервис пользователей (если будет)
+  CONTENT: 'http://localhost:8003',    // Сервис контента (если будет)
+  NOTIFICATION: 'http://localhost:8004' // Сервис уведомлений (если будет)
 };
 
 // Маршруты
@@ -20,7 +21,10 @@ export const ROUTES = {
   ADMIN: '/admin',
   ADMIN_USERS: '/admin/users',
   ADMIN_PERMISSIONS: '/admin/permissions',
-  REGISTRATION_CONFIRMATION: '/registration-confirmation'
+  REGISTRATION_CONFIRMATION: '/registration-confirmation',
+  PRODUCTS: '/products',
+  CATEGORIES: '/categories',
+  BRANDS: '/brands'
 };
 
 // Сообщения об ошибках

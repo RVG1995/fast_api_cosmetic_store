@@ -1,8 +1,9 @@
 import uuid
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File,Form
-from product_service.database import setup_database, get_session, engine
-from product_service.models import SubCategoryModel,CategoryModel, ProductModel,CountryModel, BrandModel
-from product_service.schema import BrandAddSchema, BrandSchema, BrandUpdateSchema, CategoryAddSchema, CategorySchema, CategoryUpdateSchema, CountryAddSchema, CountrySchema, CountryUpdateSchema, ProductAddSchema,ProductSchema, ProductUpdateSchema, SubCategoryAddSchema, SubCategorySchema, SubCategoryUpdateSchema
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Body
+from database import setup_database, get_session, engine
+from models import SubCategoryModel,CategoryModel, ProductModel,CountryModel, BrandModel
+from auth import require_admin, get_current_user
+from schema import BrandAddSchema, BrandSchema, BrandUpdateSchema, CategoryAddSchema, CategorySchema, CategoryUpdateSchema, CountryAddSchema, CountrySchema, CountryUpdateSchema, ProductAddSchema,ProductSchema, ProductUpdateSchema, SubCategoryAddSchema, SubCategorySchema, SubCategoryUpdateSchema
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -10,9 +11,14 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import load_only
 import os
+import logging
 
 from typing import List, Optional,Union,Annotated
 from fastapi.staticfiles import StaticFiles
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("product_service")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,86 +50,96 @@ app.add_middleware(
 
 SessionDep = Annotated[AsyncSession,Depends(get_session)]
 
-@app.post('/products')
+@app.post("/products", response_model=ProductSchema, status_code=201)
 async def add_product(
-    session: SessionDep,
     name: str = Form(...),
-    category_id: int = Form(...),
-    country_id: int = Form(...),
-    brand_id: int = Form(...),
-    subcategory_id: Optional[str] = Form(None),
-    price: int = Form(...),
+    price: str = Form(...),
     description: Optional[str] = Form(None),
-    stock: int = Form(...),
-    uploaded_file: Union[UploadFile, str, None] = File(None) 
+    stock: str = Form(...),
+    category_id: str = Form(...),
+    subcategory_id: Optional[str] = Form(None),
+    country_id: str = Form(...),
+    brand_id: str = Form(...),
+    image: Optional[UploadFile] = File(None),
+    admin = Depends(require_admin),
+    session: AsyncSession = Depends(get_session)
 ):
-    # Если uploaded_file равен пустой строке, принудительно делаем его None
-    if not uploaded_file or isinstance(uploaded_file, str):
-        uploaded_file = None
+    logger.info(f"Получен запрос на создание продукта: {name}, цена: {price}")
+    logger.info(f"Параметры: description={description}, stock={stock}, category_id={category_id}, subcategory_id={subcategory_id}, country_id={country_id}, brand_id={brand_id}")
+    logger.info(f"Изображение: {image and image.filename}")
+
+    # Конвертация строковых значений в нужные типы
+    try:
+        price_float = float(price)
+        stock_int = int(stock)
+        category_id_int = int(category_id)
+        subcategory_id_int = int(subcategory_id) if subcategory_id else None
+        country_id_int = int(country_id)
+        brand_id_int = int(brand_id)
+    except ValueError as e:
+        logger.error(f"Ошибка конвертации типов: {str(e)}")
+        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}")
+
+    # Если image равен None, принудительно делаем его None
+    if not image:
+        image = None
+        logger.info("Изображение не предоставлено")
 
     image_url = None
-    if uploaded_file:        
-        extension = os.path.splitext(uploaded_file.filename)[1]
-        unique_filename = f"{uuid.uuid4().hex}{extension}"
-        file_path = os.path.join(UPLOAD_DIR, unique_filename)
-        
-        with open(file_path, "wb") as buffer:
-            buffer.write(await uploaded_file.read())
-        
-        image_url = f"/static/images/{unique_filename}"
+    if image:
+        try:
+            logger.info(f"Обработка изображения: {image.filename}")
+            extension = os.path.splitext(image.filename)[1]
+            unique_filename = f"{uuid.uuid4().hex}{extension}"
+            file_path = os.path.join(UPLOAD_DIR, unique_filename)
+            
+            with open(file_path, "wb") as buffer:
+                buffer.write(await image.read())
+            
+            image_url = f"/static/images/{unique_filename}"
+            logger.info(f"Изображение сохранено по пути: {image_url}")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении изображения: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Ошибка при сохранении изображения: {str(e)}")
 
-    if subcategory_id == "" or subcategory_id is None:
-        subcategory_id_converted = None
-    else:
-        subcategory_id_converted = int(subcategory_id)
-    
-    product_data = ProductAddSchema(
-        name=name,
-        category_id=category_id,
-        country_id=country_id,
-        brand_id = brand_id,
-        subcategory_id = subcategory_id_converted,
-        price=price,
-        description=description,
-        stock=stock,
-        image=image_url
-    )
-    
-    new_product = ProductModel(
-        name=product_data.name,
-        category_id=product_data.category_id,
-        country_id=product_data.country_id,
-        brand_id=product_data.brand_id,
-        subcategory_id=product_data.subcategory_id,
-        price=product_data.price,
-        description=product_data.description,
-        stock=product_data.stock,
-        image=product_data.image
-    )
-    session.add(new_product)
     try:
+        product_data = ProductAddSchema(
+            name=name,
+            price=price_float,
+            description=description,
+            stock=stock_int,
+            category_id=category_id_int,
+            subcategory_id=subcategory_id_int,
+            country_id=country_id_int,
+            brand_id=brand_id_int,
+            image=image_url
+        )
+        
+        product = ProductModel(
+            name=product_data.name,
+            price=product_data.price,
+            description=product_data.description,
+            stock=product_data.stock,
+            category_id=product_data.category_id,
+            subcategory_id=product_data.subcategory_id,
+            country_id=product_data.country_id,
+            brand_id=product_data.brand_id,
+            image=product_data.image
+        )
+        session.add(product)
         await session.commit()
+        await session.refresh(product)
+        logger.info(f"Продукт успешно создан: ID={product.id}")
+        return product
     except IntegrityError as e:
         await session.rollback()
         error_detail = str(e.orig) if e.orig else str(e)
+        logger.error(f"Ошибка целостности данных: {error_detail}")
         raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
-    
-    return {"ok": "New product was added"}
+    except Exception as e:
+        logger.error(f"Непредвиденная ошибка: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при создании продукта: {str(e)}")
 
-#@app.get('/products',response_model = List[ProductSchema])
-#async def get_categories(session: SessionDep,
-  #  limit: int = Query(3 , ge=1, description="Number of items per page"),
-   # offset: int = Query(0, ge=0, description="Offset (number of items to skip)")):
-   # query = select(ProductModel).limit(limit).offset(offset)
-   # result = await session.execute(query)
-   # products = result.scalars().all()
-
-    # Получаем общее количество записей
-   # count_query = select(func.count(ProductModel.id))
-   # count_result = await session.execute(count_query)
-   # total = count_result.scalar()
-
-   # return {"total": total, "limit": limit, "offset": offset, "data": products}
 
 @app.get('/products',response_model = List[ProductSchema])
 async def get_products(session: SessionDep):
@@ -156,7 +172,8 @@ async def get_product_id(product_id: int, session: SessionDep):
 async def update_product(
     product_id: int,
     update_data: ProductUpdateSchema,
-    session: SessionDep
+    admin = Depends(require_admin),
+    session: AsyncSession = Depends(get_session)
 ):
     # Ищем продукт по id
     query = select(ProductModel).filter(ProductModel.id == product_id)
@@ -182,10 +199,126 @@ async def update_product(
 
     return product
 
+# Новый эндпоинт для обновления с поддержкой загрузки файлов
+@app.put("/products/{product_id}/form", response_model=ProductSchema)
+async def update_product_form(
+    product_id: int,
+    name: Optional[str] = Form(None),
+    price: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    stock: Optional[str] = Form(None),
+    category_id: Optional[str] = Form(None),
+    subcategory_id: Optional[str] = Form(None),
+    country_id: Optional[str] = Form(None),
+    brand_id: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+    admin = Depends(require_admin),
+    session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Получен запрос на обновление продукта ID={product_id}")
+    logger.info(f"Параметры: name={name}, price={price}, description={description}, stock={stock}")
+    logger.info(f"category_id={category_id}, subcategory_id={subcategory_id}, country_id={country_id}, brand_id={brand_id}")
+    logger.info(f"Изображение: {image and image.filename}")
+    
+    # Ищем продукт по id
+    query = select(ProductModel).filter(ProductModel.id == product_id)
+    result = await session.execute(query)
+    product = result.scalars().first()
+    
+    if not product:
+        logger.error(f"Продукт с ID={product_id} не найден")
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # Конвертация строковых значений в нужные типы
+    price_float = None
+    stock_int = None
+    category_id_int = None
+    subcategory_id_int = None
+    country_id_int = None
+    brand_id_int = None
+    
+    try:
+        if price is not None:
+            price_float = float(price)
+        if stock is not None:
+            stock_int = int(stock)
+        if category_id is not None:
+            category_id_int = int(category_id)
+        if subcategory_id is not None:
+            subcategory_id_int = int(subcategory_id)
+        if country_id is not None:
+            country_id_int = int(country_id)
+        if brand_id is not None:
+            brand_id_int = int(brand_id)
+    except ValueError as e:
+        logger.error(f"Ошибка конвертации типов: {str(e)}")
+        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}")
+
+    # Если изображение предоставлено, обрабатываем его
+    image_url = None
+    if image:
+        try:
+            logger.info(f"Обработка изображения: {image.filename}")
+            extension = os.path.splitext(image.filename)[1]
+            unique_filename = f"{uuid.uuid4().hex}{extension}"
+            file_path = os.path.join(UPLOAD_DIR, unique_filename)
+            
+            with open(file_path, "wb") as buffer:
+                buffer.write(await image.read())
+            
+            image_url = f"/static/images/{unique_filename}"
+            logger.info(f"Изображение сохранено по пути: {image_url}")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении изображения: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Ошибка при сохранении изображения: {str(e)}")
+    
+    # Создаем словарь только с предоставленными значениями
+    update_fields = {}
+    if name is not None:
+        update_fields["name"] = name
+    if price_float is not None:
+        update_fields["price"] = price_float
+    if description is not None:
+        update_fields["description"] = description
+    if stock_int is not None:
+        update_fields["stock"] = stock_int
+    if category_id_int is not None:
+        update_fields["category_id"] = category_id_int
+    if subcategory_id_int is not None:
+        update_fields["subcategory_id"] = subcategory_id_int
+    if country_id_int is not None:
+        update_fields["country_id"] = country_id_int
+    if brand_id_int is not None:
+        update_fields["brand_id"] = brand_id_int
+    if image_url is not None:
+        update_fields["image"] = image_url
+
+    logger.info(f"Обновляемые поля: {update_fields}")
+
+    # Обновляем поля продукта
+    for field, value in update_fields.items():
+        setattr(product, field, value)
+    
+    try:
+        await session.commit()
+        # Обновляем объект из базы, чтобы вернуть актуальные данные
+        await session.refresh(product)
+        logger.info(f"Продукт ID={product_id} успешно обновлен")
+        return product
+    except IntegrityError as e:
+        await session.rollback()
+        error_detail = str(e.orig) if e.orig else str(e)
+        logger.error(f"Ошибка целостности данных: {error_detail}")
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+    except Exception as e:
+        logger.error(f"Непредвиденная ошибка: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении продукта: {str(e)}")
+
 @app.delete("/products/{product_id}", status_code=204)
 async def delete_product(
     product_id: int,
-    session: SessionDep
+    admin = Depends(require_admin),
+    session: AsyncSession = Depends(get_session)
 ):
     # Ищем продукт по id
     query = select(ProductModel).filter(ProductModel.id == product_id)
@@ -455,6 +588,23 @@ async def get_subcategory_id(subcategory_id: int, session: SessionDep):
     if not subcategory:
         raise HTTPException(status_code=404, detail="Category not found")
     return subcategory
+
+@app.get('/auth-check')
+async def check_auth(user = Depends(get_current_user)):
+    """Эндпоинт для проверки авторизации и отладки токена JWT"""
+    if user:
+        return {
+            "authenticated": True,
+            "user_id": user.id,
+            "is_admin": user.is_admin,
+            "is_super_admin": user.is_super_admin,
+            "is_active": user.is_active
+        }
+    else:
+        return {
+            "authenticated": False,
+            "message": "Пользователь не авторизован"
+        }
 
 if __name__ == "__main__":
     import uvicorn

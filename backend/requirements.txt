@@ -1,0 +1,20 @@
+# Общие зависимости
+fastapi==0.110.0
+uvicorn==0.27.1
+sqlalchemy==2.0.27
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+python-multipart==0.0.7
+httpx==0.26.0
+pytest==8.0.0
+pytest-asyncio==0.23.5
+
+# Зависимости для auth_service
+PyJWT==2.8.0
+passlib==1.7.4
+bcrypt==4.1.2
+fastapi-mail==1.4.1
+
+# Зависимости для product_service
+pillow==10.2.0 

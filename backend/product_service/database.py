@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker,Async
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, Computed, Boolean, Text, select, ForeignKey, CheckConstraint
 from sqlalchemy.ext.hybrid import hybrid_property
-from .models import Base
+from models import Base
 
 import os
 from typing import List, Optional, AsyncGenerator

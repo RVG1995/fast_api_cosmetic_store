@@ -7,6 +7,16 @@ import './styles/output.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 
+// Глобальный обработчик ошибок для отладки белого экрана
+window.addEventListener('error', function(event) {
+  console.error('Глобальная ошибка JS:', event.error);
+});
+
+// Обработчик непойманных промисов
+window.addEventListener('unhandledrejection', function(event) {
+  console.error('Необработанное отклонение промиса:', event.reason);
+});
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>

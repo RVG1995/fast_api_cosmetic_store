@@ -12,85 +12,98 @@ import PublicOnlyRoute from './components/common/PublicOnlyRoute';
 import AdminRoute from './components/common/AdminRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
+import AdminProducts from './pages/admin/AdminProducts';
+import HomePage from './pages/HomePage';
 
 // Импорт стилей
 import './styles/App.css';
 
 function App() {
   return (
-    <AuthProvider>
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          {/* Публичные маршруты только для неавторизованных пользователей */}
-          <Route 
-            path="register" 
-            element={
-              <PublicOnlyRoute>
-                <RegistrationPage />
-              </PublicOnlyRoute>
-            } 
-          />
-          <Route 
-            path="login" 
-            element={
-              <PublicOnlyRoute>
-                <LoginPage />
-              </PublicOnlyRoute>
-            } 
-          />
-          <Route 
-            path="registration-confirmation" 
-            element={
-              <PublicOnlyRoute>
-                <RegistrationConfirmationPage />
-              </PublicOnlyRoute>
-            } 
-          />
-          <Route path="activate/:token" element={<ActivationPage />} />
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            {/* Главная страница с продуктами */}
+            <Route index element={<HomePage />} />
+            
+            {/* Публичные маршруты только для неавторизованных пользователей */}
+            <Route 
+              path="register" 
+              element={
+                <PublicOnlyRoute>
+                  <RegistrationPage />
+                </PublicOnlyRoute>
+              } 
+            />
+            <Route 
+              path="login" 
+              element={
+                <PublicOnlyRoute>
+                  <LoginPage />
+                </PublicOnlyRoute>
+              } 
+            />
+            <Route 
+              path="registration-confirmation" 
+              element={
+                <PublicOnlyRoute>
+                  <RegistrationConfirmationPage />
+                </PublicOnlyRoute>
+              } 
+            />
+            <Route path="activate/:token" element={<ActivationPage />} />
 
-          {/* Защищенные маршруты */}
-          <Route 
-            path="user" 
-            element={
-              <PrivateRoute>
-                <UserInfoPage />
-              </PrivateRoute>
-            } 
-          />
+            {/* Защищенные маршруты */}
+            <Route 
+              path="user" 
+              element={
+                <PrivateRoute>
+                  <UserInfoPage />
+                </PrivateRoute>
+              } 
+            />
 
-          {/* Административные маршруты */}
-          <Route 
-            path="admin" 
-            element={
-              <AdminRoute>
-                <AdminDashboard />
-              </AdminRoute>
-            } 
-          />
-          <Route 
-            path="admin/users" 
-            element={
-              <AdminRoute>
-                <AdminUsers />
-              </AdminRoute>
-            } 
-          />
-          <Route 
-            path="admin/permissions" 
-            element={
-              <AdminRoute requireSuperAdmin={true}>
-                {/* Здесь будет компонент для управления правами */}
-                <div className="container py-5">
-                  <h2>Управление правами (только для суперадмина)</h2>
-                </div>
-              </AdminRoute>
-            } 
-          />
-        </Route>
-      </Routes>
+            {/* Административные маршруты */}
+            <Route 
+              path="admin" 
+              element={
+                <AdminRoute>
+                  <AdminDashboard />
+                </AdminRoute>
+              } 
+            />
+            <Route 
+              path="admin/users" 
+              element={
+                <AdminRoute>
+                  <AdminUsers />
+                </AdminRoute>
+              } 
+            />
+            <Route 
+              path="admin/products" 
+              element={
+                <AdminRoute>
+                  <AdminProducts />
+                </AdminRoute>
+              } 
+            />
+            <Route 
+              path="admin/permissions" 
+              element={
+                <AdminRoute requireSuperAdmin={true}>
+                  {/* Здесь будет компонент для управления правами */}
+                  <div className="container py-5">
+                    <h2>Управление правами (только для суперадмина)</h2>
+                  </div>
+                </AdminRoute>
+              } 
+            />
+          </Route>
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
-    </AuthProvider>
   );
 }
 

@@ -19,9 +19,9 @@ load_dotenv()
 
 SessionDep = Annotated[AsyncSession,Depends(get_session)]
 
-SECRET_KEY = "your_secret_key_here"
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your_secret_key_here")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 router = APIRouter(prefix='/auth', tags=['Авторизация'])
 
@@ -39,13 +39,19 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 async def get_current_user(
     session: SessionDep, 
-    token: str = Cookie(None, alias="access_token")
+    token: str = Cookie(None, alias="access_token"),
+    authorization: str = Depends(oauth2_scheme)
 ) -> UserModel:
+    # Пробуем получить токен сначала из куки, потом из заголовка
+    if token is None and authorization:
+        token = authorization
+    
     if token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Токен не найден в cookies"
+            detail="Токен не найден в cookies или заголовке Authorization"
         )
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Невозможно проверить учетные данные",
@@ -64,6 +70,7 @@ async def get_current_user(
     user = await UserModel.get_by_id(session, int(user_id))
     if user is None:
         raise credentials_exception
+        
     return user
 
 
@@ -190,6 +197,9 @@ async def login(session: SessionDep, form_data: OAuth2PasswordRequestForm = Depe
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token_data = {
         "sub": str(user.id),
+        "is_admin": user.is_admin,
+        "is_super_admin": user.is_super_admin,
+        "is_active": user.is_active
     }
     access_token = await create_access_token(data=token_data, expires_delta=access_token_expires)
     
@@ -254,7 +264,10 @@ async def activate_user(token: str, session: SessionDep, response: Response):
     # Создаем токен доступа
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token_data = {
-        "sub": user.id,
+        "sub": str(user.id),
+        "is_admin": user.is_admin,
+        "is_super_admin": user.is_super_admin,
+        "is_active": user.is_active
     }
     access_token = await create_access_token(data=token_data, expires_delta=access_token_expires)
     

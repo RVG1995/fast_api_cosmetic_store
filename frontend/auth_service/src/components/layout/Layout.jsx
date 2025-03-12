@@ -53,6 +53,8 @@ const Layout = () => {
             
             <div className="collapse navbar-collapse" id="navbarNav">
               <ul className="navbar-nav ms-auto">
+                {/* Удаляем ссылку на продукты, так как они будут на главной */}
+                
                 {user ? (
                   <>
                     <li className="nav-item">
@@ -66,7 +68,7 @@ const Layout = () => {
                     </li>
                     
                     {/* Добавляем ссылку на админ-панель для администраторов */}
-                    {isAdmin() && (
+                    {isAdmin && isAdmin() && (
                       <li className="nav-item">
                         <Link 
                           to="/admin" 
@@ -102,10 +104,10 @@ const Layout = () => {
                     <li className="nav-item">
                       <Link 
                         to="/login" 
-                        className={`nav-link ${location.pathname === "/login" ? "active fw-bold" : ""} ms-2`}
+                        className={`nav-link ${location.pathname === "/login" ? "active fw-bold" : ""}`}
                       >
                         <i className="bi bi-box-arrow-in-right me-1"></i>
-                        Войти
+                        Вход
                       </Link>
                     </li>
                   </>

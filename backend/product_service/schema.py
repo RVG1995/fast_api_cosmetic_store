@@ -60,7 +60,7 @@ class SubCategoryUpdateSchema(BaseModel):
 
 class ProductAddSchema(BaseModel):
     name: str
-    category_id: int
+    category_id: Optional[int] = None
     country_id: int
     brand_id: int
     subcategory_id: Optional[int] = None

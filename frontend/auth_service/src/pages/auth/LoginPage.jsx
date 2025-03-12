@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { authAPI } from '../../utils/api';
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -11,39 +10,26 @@ function LoginPage() {
   const [password, setPassword] = useState('');
   // Состояние для хранения ошибок по каждому полю
   const [errors, setErrors] = useState({});
-  const { setUser } = useAuth(); 
+  const { login } = useAuth(); 
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrors({});
     try {
-      const response = await authAPI.login({
+      // Используем login из AuthContext вместо прямого вызова API
+      const result = await login({
         username: email,
         password: password
       });
       
-      // Задержка для установки куки перед проверкой
-      setTimeout(async () => {
-        try {
-          const userResponse = await authAPI.getCurrentUser();
-          setUser(userResponse.data);
-          navigate('/user');
-        } catch (error) {
-          console.error('Ошибка получения данных пользователя:', error);
-          setErrors({ general: 'Не удалось получить данные пользователя' });
-        }
-      }, 500);
+      if (result.success) {
+        navigate('/user');
+      } else {
+        setErrors({ general: result.error || 'Ошибка входа' });
+      }
     } catch (error) {
       console.error('Ошибка входа:', error);
-      
-      // Обработка различных ошибок
-      if (error.response?.status === 401) {
-        setErrors({ general: 'Неверный email или пароль' });
-      } else if (error.response?.status === 400) {
-        setErrors({ general: error.response.data.detail || 'Ошибка при входе' });
-      } else {
-        setErrors({ general: 'Ошибка соединения с сервером' });
-      }
+      setErrors({ general: error.message || 'Произошла непредвиденная ошибка' });
     }
   };
 

@@ -259,6 +259,106 @@ async def get_admin_products(
         "items": paginated_products
     }
 
+@app.get('/products/search', response_model=List[ProductDetailSchema])
+async def search_products(session: SessionDep, name: str):
+    """
+    Поиск товаров по имени с использованием оператора LIKE
+    """
+    # Формируем поисковый запрос с использованием LIKE
+    search_term = f"%{name}%"
+    
+    # Создаем запрос к базе данных
+    query = select(ProductModel).filter(
+        ProductModel.name.ilike(search_term)
+    ).order_by(ProductModel.id.desc()).limit(10)
+    
+    # Выполняем запрос
+    result = await session.execute(query)
+    products = result.scalars().all()
+    
+    # Подготавливаем список для ответа
+    response_list = []
+    
+    # Формируем детальную информацию для каждого найденного товара
+    for product in products:
+        # Создаем словарь с данными товара
+        product_dict = {
+            "id": product.id,
+            "name": product.name,
+            "price": product.price,
+            "description": product.description,
+            "stock": product.stock,
+            "category_id": product.category_id,
+            "subcategory_id": product.subcategory_id,
+            "country_id": product.country_id,
+            "brand_id": product.brand_id,
+            "image": product.image,
+            "category": None,
+            "subcategory": None,
+            "brand": None,
+            "country": None
+        }
+        
+        # Загружаем связанные данные
+        try:
+            # Загружаем категорию
+            if product.category_id:
+                category_query = select(CategoryModel).filter(CategoryModel.id == product.category_id)
+                category_result = await session.execute(category_query)
+                category = category_result.scalars().first()
+                if category:
+                    product_dict["category"] = {
+                        "id": category.id,
+                        "name": category.name,
+                        "slug": category.slug
+                    }
+            
+            # Загружаем подкатегорию
+            if product.subcategory_id:
+                subcategory_query = select(SubCategoryModel).filter(SubCategoryModel.id == product.subcategory_id)
+                subcategory_result = await session.execute(subcategory_query)
+                subcategory = subcategory_result.scalars().first()
+                if subcategory:
+                    product_dict["subcategory"] = {
+                        "id": subcategory.id,
+                        "name": subcategory.name,
+                        "slug": subcategory.slug,
+                        "category_id": subcategory.category_id
+                    }
+            
+            # Загружаем бренд
+            if product.brand_id:
+                brand_query = select(BrandModel).filter(BrandModel.id == product.brand_id)
+                brand_result = await session.execute(brand_query)
+                brand = brand_result.scalars().first()
+                if brand:
+                    product_dict["brand"] = {
+                        "id": brand.id,
+                        "name": brand.name,
+                        "slug": brand.slug
+                    }
+            
+            # Загружаем страну
+            if product.country_id:
+                country_query = select(CountryModel).filter(CountryModel.id == product.country_id)
+                country_result = await session.execute(country_query)
+                country = country_result.scalars().first()
+                if country:
+                    product_dict["country"] = {
+                        "id": country.id,
+                        "name": country.name,
+                        "slug": country.slug
+                    }
+        
+        except Exception as e:
+            # Логируем ошибку, но продолжаем работу
+            print(f"Ошибка при загрузке связанных данных для поискового результата: {str(e)}")
+        
+        # Добавляем продукт в список ответа
+        response_list.append(product_dict)
+    
+    return response_list
+
 @app.get('/products/{product_id}',response_model = ProductDetailSchema)
 async def get_product_id(product_id: int, session: SessionDep):
     # Получаем товар

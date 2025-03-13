@@ -4,6 +4,7 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import React, { useEffect, useState } from 'react';
 import { productAPI } from '../../utils/api';
+import ProductSearch from "../ProductSearch";
 import "../../styles/Layout.css"; // Обновленный путь к стилям
 
 const Layout = () => {
@@ -72,7 +73,7 @@ const Layout = () => {
             </button>
             
             <div className="collapse navbar-collapse" id="navbarNav">
-              <ul className="navbar-nav">
+              <ul className="navbar-nav me-auto">
                 {/* Выпадающее меню категорий */}
                 <li className="nav-item dropdown">
                   <button 
@@ -115,8 +116,20 @@ const Layout = () => {
                 </li>
               </ul>
               
+              {/* Компонент поиска для десктоп */}
+              <div className="navbar-search-container d-none d-md-block mx-3">
+                <ProductSearch />
+              </div>
+              
               <ul className="navbar-nav ms-auto">
                 {/* Удаляем ссылку на продукты, так как они будут на главной */}
+                
+                {/* Добавляем мобильную версию поиска */}
+                <li className="nav-item d-md-none mb-2">
+                  <div className="navbar-search-container">
+                    <ProductSearch />
+                  </div>
+                </li>
                 
                 {user ? (
                   <>

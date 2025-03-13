@@ -88,6 +88,19 @@
   border-color: #bd2130;
 }
 
+/* Стили для компонента поиска в навигационной панели */
+.navbar-search-container {
+  width: 300px;
+  max-width: 100%;
+}
+
+@media (max-width: 991.98px) {
+  .navbar-search-container {
+    width: 100%;
+    margin: 0.5rem 0;
+  }
+}
+
 /* Стили для мобильной навигации */
 @media (max-width: 991.98px) {
   .navbar-collapse {

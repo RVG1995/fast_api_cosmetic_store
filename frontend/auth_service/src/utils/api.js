@@ -170,6 +170,20 @@ export const notificationAPI = {
 // API для работы с продуктами
 export const productAPI = {
   // Продукты
+  searchProducts: (searchTerm) => {
+    console.log('searchProducts вызван с параметром:', searchTerm);
+    
+    return productApi.get('/products/search', { 
+      params: { name: searchTerm }
+    }).then(response => {
+      console.log('API searchProducts ответ успешно получен');
+      return response;
+    }).catch(error => {
+      console.error('Ошибка в API searchProducts:', error);
+      throw error;
+    });
+  },
+  
   getProducts: (page = 1, pageSize = 10, filters = {}, sort = null) => {
     console.log('getProducts вызван с параметрами:', { page, pageSize, filters, sort });
     

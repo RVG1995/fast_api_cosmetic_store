@@ -23,6 +23,9 @@ const ProductsPage = () => {
     country_id: queryParams.get('country_id') || '',
   });
   
+  // Добавляем состояние для сортировки
+  const [sortOption, setSortOption] = useState(queryParams.get('sort') || 'newest');
+  
   // Состояние для данных, необходимых для фильтров
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
@@ -82,12 +85,42 @@ const ProductsPage = () => {
         }
       });
       
-      const response = await productAPI.getProducts(page, pagination.pageSize, activeFilters);
+      // Более не добавляем sortOption в activeFilters, т.к. передадим напрямую
+      // Это предотвратит двойное добавление параметра sort
+      
+      console.log('Вызываем API с параметрами:', { page, pageSize: pagination.pageSize, activeFilters, sortOption });
+      // Передаем sortOption непосредственно четвертым параметром
+      const response = await productAPI.getProducts(page, pagination.pageSize, activeFilters, sortOption);
       console.log('API ответ продуктов:', response);
       
       // Обновляем товары и информацию о пагинации
       const { items, total, limit } = response.data;
-      setProducts(Array.isArray(items) ? items : []);
+      console.log(`Получено ${items?.length} товаров из ${total} с лимитом ${limit}`);
+      
+      // Товары уже отсортированы на сервере, отключаем клиентскую сортировку
+      let sortedItems = Array.isArray(items) ? [...items] : [];
+      
+      // Логируем полученные товары по цене для отладки
+      if (sortedItems.length > 0) {
+        console.log('Цены первых 5 товаров:', sortedItems.slice(0, 5).map(item => item.price));
+        
+        // Проверяем порядок сортировки
+        if (sortOption === 'price_asc') {
+          console.log('Должны быть отсортированы по возрастанию цены');
+          const isSortedAsc = sortedItems.every((item, i) => 
+            i === 0 || item.price >= sortedItems[i-1].price
+          );
+          console.log('Сортировка по возрастанию цены корректна:', isSortedAsc);
+        } else if (sortOption === 'price_desc') {
+          console.log('Должны быть отсортированы по убыванию цены');
+          const isSortedDesc = sortedItems.every((item, i) => 
+            i === 0 || item.price <= sortedItems[i-1].price
+          );
+          console.log('Сортировка по убыванию цены корректна:', isSortedDesc);
+        }
+      }
+      
+      setProducts(sortedItems);
       
       // Обновляем информацию о пагинации
       setPagination({
@@ -111,6 +144,7 @@ const ProductsPage = () => {
   useEffect(() => {
     fetchFilterData();
     fetchProducts(pagination.currentPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Слушатель изменений URL
@@ -123,8 +157,12 @@ const ProductsPage = () => {
       country_id: queryParams.get('country_id') || '',
     };
     
-    // Обновляем состояние фильтров
+    // Получаем параметр сортировки из URL
+    const newSortOption = queryParams.get('sort') || 'newest';
+    
+    // Обновляем состояние фильтров и сортировки
     setFilters(newFilters);
+    setSortOption(newSortOption);
     
     // Устанавливаем новую страницу из URL или по умолчанию 1
     const page = parseInt(queryParams.get('page') || '1', 10);
@@ -133,21 +171,23 @@ const ProductsPage = () => {
       currentPage: page
     }));
     
-    // Загружаем товары с новыми фильтрами
+    // Загружаем товары с новыми фильтрами и сортировкой
     fetchProducts(page, newFilters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
-  // Обновляем URL при изменении фильтров или страницы
+  // Обновляем URL при изменении фильтров, сортировки или страницы
   useEffect(() => {
     const params = new URLSearchParams();
     if (filters.category_id) params.set('category_id', filters.category_id);
     if (filters.subcategory_id) params.set('subcategory_id', filters.subcategory_id);
     if (filters.brand_id) params.set('brand_id', filters.brand_id);
     if (filters.country_id) params.set('country_id', filters.country_id);
+    if (sortOption !== 'newest') params.set('sort', sortOption);
     if (pagination.currentPage > 1) params.set('page', pagination.currentPage.toString());
     
     navigate({ search: params.toString() }, { replace: true });
-  }, [filters, pagination.currentPage, navigate]);
+  }, [filters, sortOption, pagination.currentPage, navigate]);
 
   // Обновляем фильтрованные подкатегории при изменении категории
   useEffect(() => {
@@ -172,6 +212,7 @@ const ProductsPage = () => {
         setFilters(prev => ({ ...prev, subcategory_id: '' }));
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.category_id, subcategories]);
 
   // Обработчик изменения фильтров
@@ -196,6 +237,35 @@ const ProductsPage = () => {
     
     fetchProducts(1, newFilters);
   };
+  
+  // Добавляем обработчик изменения сортировки
+  const handleSortChange = (e) => {
+    const newSortOption = e.target.value;
+    console.log(`Изменение сортировки с ${sortOption} на ${newSortOption}`);
+    setSortOption(newSortOption);
+    
+    // При изменении сортировки сбрасываем на первую страницу
+    setPagination(prev => ({ ...prev, currentPage: 1 }));
+    
+    // Создаем объект с только непустыми фильтрами
+    const activeFilters = {};
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) {
+        activeFilters[key] = filters[key];
+      }
+    });
+    
+    // Добавляем параметр сортировки для дебага
+    if (newSortOption !== 'newest') {
+      console.log(`Добавляем сортировку ${newSortOption} в активные фильтры`);
+      activeFilters.sort = newSortOption;
+    }
+    
+    console.log('Активные фильтры перед запросом:', activeFilters);
+    
+    // Загружаем товары с новой сортировкой
+    fetchProducts(1, filters);
+  };
 
   // Обработчик сброса фильтров
   const handleResetFilters = () => {
@@ -206,7 +276,13 @@ const ProductsPage = () => {
       country_id: '',
     };
     setFilters(emptyFilters);
+    setSortOption('newest'); // Сбрасываем сортировку к значению по умолчанию
     setPagination(prev => ({ ...prev, currentPage: 1 }));
+    
+    // Очищаем URL от параметров
+    navigate('', { replace: true });
+    
+    // Загружаем товары без фильтров
     fetchProducts(1, emptyFilters);
   };
 
@@ -374,13 +450,29 @@ const ProductsPage = () => {
             </div>
           </div>
           
-          <div className="d-flex justify-content-end mt-3">
-            <button 
-              className="btn btn-secondary" 
-              onClick={handleResetFilters}
-            >
-              Сбросить фильтры
-            </button>
+          {/* Добавляем сортировку по цене в блок фильтров */}
+          <div className="row mt-3">
+            <div className="col-md-3">
+              <label htmlFor="sort" className="form-label">Сортировка по цене</label>
+              <select 
+                className="form-select" 
+                id="sort"
+                value={sortOption}
+                onChange={handleSortChange}
+              >
+                <option value="newest">По умолчанию</option>
+                <option value="price_asc">Цена (по возрастанию)</option>
+                <option value="price_desc">Цена (по убыванию)</option>
+              </select>
+            </div>
+            <div className="col-md-9 d-flex align-items-end justify-content-end">
+              <button 
+                className="btn btn-secondary" 
+                onClick={handleResetFilters}
+              >
+                Сбросить фильтры
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -415,6 +507,17 @@ const ProductsPage = () => {
         
         {/* Панель фильтров */}
         <FiltersPanel />
+        
+        {/* Показываем только информацию о товарах, убираем отдельную панель сортировки */}
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <div className="products-found">
+            {!loading && (
+              <p className="text-muted mb-0">
+                Найдено товаров: <strong>{pagination.totalItems}</strong>
+              </p>
+            )}
+          </div>
+        </div>
         
         {error && (
           <div className="alert alert-danger" role="alert">

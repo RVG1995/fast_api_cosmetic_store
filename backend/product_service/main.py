@@ -144,14 +144,75 @@ async def add_product(
 @app.get('/products', response_model=PaginatedProductResponse)
 async def get_products(
     session: SessionDep,
-    skip: int = Query(0, description="Сколько записей пропустить (для пагинации)"),
-    limit: int = Query(10, description="Максимальное количество записей для возврата"),
+    page: int = Query(1, description="Текущая страница пагинации"),
+    limit: int = Query(10, description="Количество записей на страницу"),
     category_id: Optional[int] = Query(None, description="ID категории для фильтрации"),
     subcategory_id: Optional[int] = Query(None, description="ID подкатегории для фильтрации"),
     brand_id: Optional[int] = Query(None, description="ID бренда для фильтрации"),
-    country_id: Optional[int] = Query(None, description="ID страны для фильтрации")
+    country_id: Optional[int] = Query(None, description="ID страны для фильтрации"),
+    sort: Optional[str] = Query(None, description="Сортировка (newest, price_asc, price_desc)"),
 ):
+    # Расчет пропуска записей для пагинации
+    skip = (page - 1) * limit
+    
     # Получаем все продукты с помощью нового метода класса
+    all_products = await ProductModel.get_all_products(session)
+    
+    filtered_products = all_products
+    
+    # Применяем фильтры
+    if category_id is not None:
+        filtered_products = [p for p in filtered_products if p.category_id == category_id]
+    
+    if subcategory_id is not None:
+        filtered_products = [p for p in filtered_products if p.subcategory_id == subcategory_id]
+    
+    if brand_id is not None:
+        filtered_products = [p for p in filtered_products if p.brand_id == brand_id]
+    
+    if country_id is not None:
+        filtered_products = [p for p in filtered_products if p.country_id == country_id]
+    
+    # Сортировка результатов
+    if sort:
+        if sort == "price_asc":
+            filtered_products.sort(key=lambda x: x.price)
+        elif sort == "price_desc":
+            filtered_products.sort(key=lambda x: x.price, reverse=True)
+        else:  # По умолчанию или "newest"
+            filtered_products.sort(key=lambda x: x.id, reverse=True)
+    else:
+        # По умолчанию сортируем по ID (новые первыми)
+        filtered_products.sort(key=lambda x: x.id, reverse=True)
+    
+    # Вычисляем общее количество и применяем пагинацию
+    total = len(filtered_products)
+    paginated_products = filtered_products[skip:skip + limit]
+    
+    # Возвращаем ответ с информацией о пагинации
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": skip,
+        "items": paginated_products
+    }
+
+@app.get('/admin/products', response_model=PaginatedProductResponse)
+async def get_admin_products(
+    session: SessionDep,
+    page: int = Query(1, description="Текущая страница пагинации"),
+    limit: int = Query(10, description="Количество записей на страницу"),
+    category_id: Optional[int] = Query(None, description="ID категории для фильтрации"),
+    subcategory_id: Optional[int] = Query(None, description="ID подкатегории для фильтрации"),
+    brand_id: Optional[int] = Query(None, description="ID бренда для фильтрации"),
+    country_id: Optional[int] = Query(None, description="ID страны для фильтрации"),
+    sort: Optional[str] = Query(None, description="Сортировка (newest, price_asc, price_desc)"),
+    admin = Depends(require_admin)  # Только администраторы могут использовать этот эндпоинт
+):
+    # Расчет пропуска записей для пагинации
+    skip = (page - 1) * limit
+    
+    # Получаем все продукты включая с нулевым запасом
     all_products = await ProductModel.get_all_products(session)
     
     # Применяем фильтры
@@ -169,61 +230,28 @@ async def get_products(
     if country_id is not None:
         filtered_products = [p for p in filtered_products if p.country_id == country_id]
     
-    # Вычисляем общее количество товаров после фильтрации
-    total_count = len(filtered_products)
+    # Сортировка результатов
+    if sort:
+        if sort == "price_asc":
+            filtered_products.sort(key=lambda x: x.price)
+        elif sort == "price_desc":
+            filtered_products.sort(key=lambda x: x.price, reverse=True)
+        else:  # По умолчанию или "newest"
+            filtered_products.sort(key=lambda x: x.id, reverse=True)
+    else:
+        # По умолчанию сортируем по ID (новые первыми)
+        filtered_products.sort(key=lambda x: x.id, reverse=True)
     
-    # Применяем пагинацию к отфильтрованному списку товаров
+    # Вычисляем общее количество и применяем пагинацию
+    total = len(filtered_products)
     paginated_products = filtered_products[skip:skip + limit]
     
     # Возвращаем ответ с информацией о пагинации
     return {
-        "items": paginated_products,
-        "total": total_count,
-        "skip": skip,
-        "limit": limit
-    }
-
-@app.get('/admin/products', response_model=PaginatedProductResponse)
-async def get_admin_products(
-    session: SessionDep,
-    skip: int = Query(0, description="Сколько записей пропустить (для пагинации)"),
-    limit: int = Query(10, description="Максимальное количество записей для возврата"),
-    category_id: Optional[int] = Query(None, description="ID категории для фильтрации"),
-    subcategory_id: Optional[int] = Query(None, description="ID подкатегории для фильтрации"),
-    brand_id: Optional[int] = Query(None, description="ID бренда для фильтрации"),
-    country_id: Optional[int] = Query(None, description="ID страны для фильтрации"),
-    admin = Depends(require_admin)  # Только администраторы могут использовать этот эндпоинт
-):
-    # Получаем ВСЕ продукты для админки с помощью специального метода
-    all_products = await ProductModel.get_all_products_admin(session)
-    
-    # Применяем фильтры
-    filtered_products = all_products
-    
-    if category_id is not None:
-        filtered_products = [p for p in filtered_products if p.category_id == category_id]
-    
-    if subcategory_id is not None:
-        filtered_products = [p for p in filtered_products if p.subcategory_id == subcategory_id]
-    
-    if brand_id is not None:
-        filtered_products = [p for p in filtered_products if p.brand_id == brand_id]
-    
-    if country_id is not None:
-        filtered_products = [p for p in filtered_products if p.country_id == country_id]
-    
-    # Вычисляем общее количество товаров после фильтрации
-    total_count = len(filtered_products)
-    
-    # Применяем пагинацию к отфильтрованному списку товаров
-    paginated_products = filtered_products[skip:skip + limit]
-    
-    # Возвращаем ответ с информацией о пагинации
-    return {
-        "items": paginated_products,
-        "total": total_count,
-        "skip": skip,
-        "limit": limit
+        "total": total,
+        "limit": limit,
+        "offset": skip,
+        "items": paginated_products
     }
 
 @app.get('/products/{product_id}',response_model = ProductSchema)

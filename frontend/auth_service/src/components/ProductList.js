@@ -7,13 +7,14 @@ const ProductList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { user, isAdmin } = useAuth();
+  const [sortOption, setSortOption] = useState('newest');
 
   useEffect(() => {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const response = await productAPI.getProducts();
-        setProducts(response.data);
+        const response = await productAPI.getProducts(1, 50, {}, sortOption !== 'newest' ? sortOption : null);
+        setProducts(response.data.items || []);
         setError(null);
       } catch (err) {
         console.error('Ошибка при загрузке продуктов:', err);
@@ -24,7 +25,11 @@ const ProductList = () => {
     };
 
     fetchProducts();
-  }, []);
+  }, [sortOption]);
+
+  const handleSortChange = (e) => {
+    setSortOption(e.target.value);
+  };
 
   const handleDelete = async (id) => {
     if (window.confirm('Вы уверены, что хотите удалить этот продукт?')) {
@@ -48,10 +53,26 @@ const ProductList = () => {
 
   return (
     <div className="product-list">
-      <h2>Список продуктов</h2>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2>Список продуктов</h2>
+        
+        <div className="d-flex align-items-center">
+          <label htmlFor="sortSelect" className="me-2">Сортировка:</label>
+          <select 
+            id="sortSelect" 
+            className="form-select" 
+            value={sortOption} 
+            onChange={handleSortChange}
+          >
+            <option value="newest">Новые сначала</option>
+            <option value="price_asc">Цена (по возрастанию)</option>
+            <option value="price_desc">Цена (по убыванию)</option>
+          </select>
+        </div>
+      </div>
       
-      {isAdmin() && (
-        <div className="admin-controls">
+      {isAdmin && isAdmin() && (
+        <div className="admin-controls mb-4">
           <button className="btn btn-primary">Добавить новый продукт</button>
         </div>
       )}
@@ -64,7 +85,7 @@ const ProductList = () => {
             <div key={product.id} className="product-card">
               <div className="product-image">
                 {product.image ? (
-                  <img src={product.image} alt={product.name} />
+                  <img src={`http://localhost:8001${product.image}`} alt={product.name} />
                 ) : (
                   <div className="no-image">Нет изображения</div>
                 )}
@@ -78,7 +99,7 @@ const ProductList = () => {
                 </p>
               </div>
               
-              {isAdmin() && (
+              {isAdmin && isAdmin() && (
                 <div className="admin-actions">
                   <button className="btn btn-edit">Редактировать</button>
                   <button 

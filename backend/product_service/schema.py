@@ -89,7 +89,7 @@ class ProductUpdateSchema(BaseModel):
 class PaginatedProductResponse(BaseModel):
     items: List[ProductSchema]
     total: int
-    skip: int
+    offset: int
     limit: int
     
     model_config = ConfigDict(from_attributes=True)

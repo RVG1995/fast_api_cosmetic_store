@@ -23,6 +23,8 @@ const AdminProducts = () => {
   
   // Добавляем состояние для предварительного просмотра изображения
   const [imagePreview, setImagePreview] = useState('');
+  // Добавляем состояние для хранения выбранного файла
+  const [selectedFile, setSelectedFile] = useState(null);
   
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]); // Добавляем состояние для подкатегорий
@@ -39,6 +41,9 @@ const AdminProducts = () => {
     pageSize: 10
   });
 
+  // Добавляем состояние для сортировки
+  const [sortOption, setSortOption] = useState('newest');
+
   // Загрузка всех необходимых данных при монтировании компонента
   useEffect(() => {
     const fetchData = async () => {
@@ -53,30 +58,13 @@ const AdminProducts = () => {
           productAPI.getBrands()
         ]);
         
-        // Загружаем первую страницу товаров отдельно
-        const productsRes = await productAPI.getAdminProducts(1, pagination.pageSize);
-        
-        // Добавляем логирование для отладки
-        console.log('Полученные продукты:', productsRes.data);
-        
-        // Обновляем товары и информацию о пагинации
-        const { items, total, limit } = productsRes.data;
-        setProducts(Array.isArray(items) ? items : []);
-        
-        // Обновляем информацию о пагинации
-        setPagination({
-          currentPage: 1,
-          totalPages: Math.ceil(total / limit),
-          totalItems: total,
-          pageSize: limit
-        });
-        
         setCategories(categoriesRes.data);
         setSubcategories(subcategoriesRes.data);
         setCountries(countriesRes.data);
         setBrands(brandsRes.data);
         
-        setError(null);
+        // Загружаем первую страницу товаров
+        fetchProducts(1);
       } catch (err) {
         console.error('Ошибка при загрузке данных:', err);
         setError('Не удалось загрузить данные. Пожалуйста, попробуйте позже.');
@@ -86,7 +74,16 @@ const AdminProducts = () => {
     };
 
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Добавляем эффект для обновления товаров при изменении сортировки
+  useEffect(() => {
+    console.log('Сортировка изменилась на:', sortOption);
+    // Загружаем товары с новой сортировкой, но сохраняем текущую страницу
+    fetchProducts(pagination.currentPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortOption]);
 
   // Обновляем фильтрованные подкатегории при изменении категории
   useEffect(() => {
@@ -117,11 +114,8 @@ const AdminProducts = () => {
     // Если это поле загрузки файла
     if (type === 'file') {
       if (files && files.length > 0) {
-        // Сохраняем файл в formData
-        setFormData({
-          ...formData,
-          [name]: files[0]
-        });
+        // Сохраняем файл в selectedFile
+        setSelectedFile(files[0]);
         
         // Создаем URL для предварительного просмотра
         const fileUrl = URL.createObjectURL(files[0]);
@@ -175,6 +169,7 @@ const AdminProducts = () => {
       image: ''
     });
     setImagePreview('');
+    setSelectedFile(null); // Сбрасываем выбранный файл
     setIsModalOpen(true);
   };
 
@@ -182,6 +177,7 @@ const AdminProducts = () => {
   const handleEditProduct = (product) => {
     setModalMode('edit');
     setSelectedProduct(product);
+    setSelectedFile(null); // Сбрасываем выбранный файл
     
     // Отладочный вывод
     console.log('Исходные данные товара для редактирования:', product);
@@ -225,10 +221,23 @@ const AdminProducts = () => {
   const fetchProducts = async (page) => {
     try {
       setLoading(true);
-      const response = await productAPI.getAdminProducts(page, pagination.pageSize);
+      console.log(`Загружаем страницу ${page} с сортировкой ${sortOption}`);
+      // Принудительно передаем параметр сортировки, даже если это 'newest'
+      const response = await productAPI.getAdminProducts(page, pagination.pageSize, null, null, null, null, sortOption);
       
       // Обновляем товары и информацию о пагинации
       const { items, total, limit } = response.data;
+      console.log(`Получено ${items?.length} товаров из ${total} с лимитом ${limit}`);
+      
+      // Проверяем первые товары для отладки
+      if (items && items.length > 0) {
+        console.log('Первые два товара:', items.slice(0, 2).map(item => ({
+          id: item.id,
+          name: item.name,
+          price: item.price
+        })));
+      }
+      
       setProducts(Array.isArray(items) ? items : []);
       
       // Обновляем информацию о пагинации
@@ -319,23 +328,21 @@ const AdminProducts = () => {
   };
 
   // Сохранение товара (добавление или обновление)
-  const handleSaveProduct = async () => {
+  const handleSaveProduct = async (e) => {
+    e.preventDefault();
+    
     try {
-      // Проверяем, что все необходимые поля заполнены
-      const requiredFields = ['name', 'price', 'stock', 'country_id', 'brand_id', 'category_id']; // Добавляем category_id в обязательные поля
-      const missingFields = requiredFields.filter(field => 
-        formData[field] === '' || formData[field] === undefined
-      );
+      console.log('Сохраняем данные товара:', formData);
       
-      if (missingFields.length > 0) {
-        alert(`Пожалуйста, заполните следующие обязательные поля: ${missingFields.join(', ')}`);
-        return;
-      }
-      
-      // Создаем копию formData для преобразования значений
+      // Копируем данные для обработки
       const processedData = { ...formData };
       
-      // Обрабатываем числовые поля
+      // Если изображение выбрано, добавляем его в данные формы
+      if (selectedFile) {
+        processedData.image = selectedFile;
+      }
+      
+      // Конвертация строк в числа для числовых полей
       if (processedData.price !== '') processedData.price = Number(processedData.price);
       if (processedData.stock !== '') processedData.stock = Number(processedData.stock);
       if (processedData.category_id !== '') processedData.category_id = Number(processedData.category_id);
@@ -346,11 +353,11 @@ const AdminProducts = () => {
       console.log('Отправляем данные:', processedData);
       
       if (modalMode === 'add') {
-        const response = await productAPI.createProduct(processedData);
+        await productAPI.createProduct(processedData);
         // После добавления нового товара, обновляем список
         fetchProducts(pagination.currentPage);
       } else {
-        const response = await productAPI.updateProduct(selectedProduct.id, processedData);
+        await productAPI.updateProduct(selectedProduct.id, processedData);
         // После обновления товара, обновляем список
         fetchProducts(pagination.currentPage);
       }
@@ -373,6 +380,14 @@ const AdminProducts = () => {
         alert('Не удалось удалить товар. Проверьте права доступа.');
       }
     }
+  };
+
+  // Обработчик изменения сортировки
+  const handleSortChange = (e) => {
+    const newSortOption = e.target.value;
+    console.log(`Изменение сортировки с ${sortOption} на ${newSortOption}`);
+    setSortOption(newSortOption);
+    // fetchProducts(1) не нужен здесь, так как вызовется через useEffect
   };
 
   if (loading) {
@@ -416,6 +431,21 @@ const AdminProducts = () => {
         </div>
       ) : (
         <>
+          <div className="d-flex justify-content-between mb-4">
+            <div className="d-flex align-items-center">
+              <label htmlFor="sortSelect" className="me-2">Сортировка по цене:</label>
+              <select 
+                id="sortSelect" 
+                className="form-select" 
+                value={sortOption} 
+                onChange={handleSortChange}
+              >
+                <option value="newest">По умолчанию</option>
+                <option value="price_asc">Цена (по возрастанию)</option>
+                <option value="price_desc">Цена (по убыванию)</option>
+              </select>
+            </div>
+          </div>
           <div className="table-responsive">
             <table className="table table-striped table-hover">
               <thead className="table-primary">

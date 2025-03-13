@@ -10,6 +10,9 @@ const HomePage = () => {
   const [error, setError] = useState(null);
   const { isAdmin } = useAuth();
   
+  // Добавляем состояние для сортировки
+  const [sortOption, setSortOption] = useState('newest');
+  
   // Изменяем размер страницы с 10 на 8
   const [pagination, setPagination] = useState({
     currentPage: 1,
@@ -18,11 +21,11 @@ const HomePage = () => {
     pageSize: 8
   });
 
-  // Функция для загрузки товаров с учетом пагинации
+  // Функция для загрузки товаров с учетом пагинации и сортировки
   const fetchProducts = async (page = 1) => {
     try {
       setLoading(true);
-      const response = await productAPI.getProducts(page, pagination.pageSize);
+      const response = await productAPI.getProducts(page, pagination.pageSize, {}, sortOption !== 'newest' ? sortOption : null);
       console.log('API ответ продуктов:', response);
       
       // Обновляем товары и информацию о пагинации
@@ -50,13 +53,20 @@ const HomePage = () => {
   // Загрузка товаров при первой загрузке
   useEffect(() => {
     fetchProducts(1);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortOption]);
 
   // Обработчик изменения страницы
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= pagination.totalPages) {
       fetchProducts(newPage);
     }
+  };
+
+  // Обработчик изменения сортировки
+  const handleSortChange = (e) => {
+    setSortOption(e.target.value);
+    // fetchProducts будет вызван через useEffect
   };
 
   // Компонент пагинации
@@ -160,12 +170,26 @@ const HomePage = () => {
       <div className="container" style={{ maxWidth: '1200px' }}>
         <div className="product-header">
           <h2>Наши продукты</h2>
-          {hasAdminRights() && (
-            <Link to="/admin/products" className="btn btn-primary">
-              <i className="bi bi-gear-fill me-1"></i>
-              Управление товарами
-            </Link>
-          )}
+          <div className="d-flex">
+            <div className="me-3">
+              <select 
+                className="form-select" 
+                value={sortOption} 
+                onChange={handleSortChange}
+                aria-label="Сортировка товаров"
+              >
+                <option value="newest">Новые сначала</option>
+                <option value="price_asc">Цена (по возрастанию)</option>
+                <option value="price_desc">Цена (по убыванию)</option>
+              </select>
+            </div>
+            {hasAdminRights() && (
+              <Link to="/admin/products" className="btn btn-primary">
+                <i className="bi bi-gear-fill me-1"></i>
+                Управление товарами
+              </Link>
+            )}
+          </div>
         </div>
         
         {products.length === 0 ? (

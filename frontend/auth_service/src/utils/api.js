@@ -170,37 +170,72 @@ export const notificationAPI = {
 // API для работы с продуктами
 export const productAPI = {
   // Продукты
-  getProducts: (page = 1, pageSize = 10, filters = {}) => {
-    const skip = (page - 1) * pageSize;
-    // Добавляем параметры фильтрации к запросу
-    const params = { 
-      skip, 
+  getProducts: (page = 1, pageSize = 10, filters = {}, sort = null) => {
+    console.log('getProducts вызван с параметрами:', { page, pageSize, filters, sort });
+    
+    // Формируем параметры запроса
+    const params = {
+      page,
       limit: pageSize,
       ...filters
     };
     
-    console.log('Запрос продуктов с параметрами:', params);
+    // Добавляем параметр сортировки, если он указан, или используем 'newest' по умолчанию
+    params.sort = sort || 'newest';
+    console.log(`Добавляем параметр сортировки: sort=${params.sort}`);
+    
+    console.log('Итоговые параметры запроса:', params);
     
     return productApi.get('/products', { params }).then(response => {
-      console.log('API getProducts response:', response.data);
+      console.log('API getProducts ответ успешно получен');
+      console.log('Параметры запроса были:', { page, pageSize, filters, sort });
+      console.log('Данные ответа (первые 2 товара):', response.data?.items?.slice(0, 2).map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price
+      })));
       return response;
+    }).catch(error => {
+      console.error('Ошибка в API getProducts:', error);
+      console.error('Параметры запроса были:', { page, pageSize, filters, sort });
+      throw error;
     });
   },
   // Метод для получения всех продуктов для админки (включая товары с stock=0)
-  getAdminProducts: (page = 1, pageSize = 10, filters = {}) => {
-    const skip = (page - 1) * pageSize;
-    // Добавляем параметры фильтрации к запросу
-    const params = { 
-      skip, 
-      limit: pageSize,
-      ...filters
+  getAdminProducts: (page = 1, pageSize = 10, category_id = null, subcategory_id = null, brand_id = null, country_id = null, sort = null) => {
+    console.log('getAdminProducts вызван с параметрами:', { page, pageSize, category_id, subcategory_id, brand_id, country_id, sort });
+    
+    // Формируем параметры запроса
+    const params = {
+      page,
+      limit: pageSize
     };
     
-    console.log('Запрос админ-продуктов с параметрами:', params);
+    // Добавляем параметры фильтрации, если они указаны
+    if (category_id) params.category_id = category_id;
+    if (subcategory_id) params.subcategory_id = subcategory_id;
+    if (brand_id) params.brand_id = brand_id;
+    if (country_id) params.country_id = country_id;
+    
+    // Добавляем параметр сортировки, если он указан, или используем 'newest' по умолчанию
+    params.sort = sort || 'newest';
+    console.log(`Добавляем параметр сортировки: sort=${params.sort}`);
+    
+    console.log('Итоговые параметры запроса:', params);
     
     return productApi.get('/admin/products', { params }).then(response => {
-      console.log('API getAdminProducts response:', response.data);
+      console.log('API getAdminProducts ответ успешно получен');
+      console.log('Параметры запроса были:', { page, pageSize, category_id, subcategory_id, brand_id, country_id, sort });
+      console.log('Данные ответа (первые 2 товара):', response.data?.items?.slice(0, 2).map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price
+      })));
       return response;
+    }).catch(error => {
+      console.error('Ошибка в API getAdminProducts:', error);
+      console.error('Параметры запроса были:', { page, pageSize, category_id, subcategory_id, brand_id, country_id, sort });
+      throw error;
     });
   },
   getProductById: (id) => productApi.get(`/products/${id}`),

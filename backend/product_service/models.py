@@ -90,7 +90,7 @@ class ProductModel(Base):
         """
         try:
             # Создаем запрос с фильтрацией по stock > 0 и сортировкой по id по убыванию
-            query = select(cls).filter(cls.stock > 0).order_by(cls.id.desc())
+            query = select(cls).filter(cls.in_stock == True).order_by(cls.id.desc())
             
             # Выполняем запрос
             result = await session.execute(query)

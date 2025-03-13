@@ -75,17 +75,15 @@ const Layout = () => {
               <ul className="navbar-nav">
                 {/* Выпадающее меню категорий */}
                 <li className="nav-item dropdown">
-                  <a 
+                  <button 
                     className="nav-link dropdown-toggle" 
-                    href="#" 
                     id="categoriesDropdown" 
-                    role="button" 
                     data-bs-toggle="dropdown" 
                     aria-expanded="false"
                   >
                     <i className="bi bi-grid me-1"></i>
                     Категории
-                  </a>
+                  </button>
                   <ul className="dropdown-menu" aria-labelledby="categoriesDropdown">
                     <li>
                       <Link className="dropdown-item" to="/products">

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import load_only
 import os
 import logging
+from sqlalchemy import func
 
 from typing import List, Optional,Union,Annotated
 from fastapi.staticfiles import StaticFiles
@@ -155,39 +156,41 @@ async def get_products(
     # Расчет пропуска записей для пагинации
     skip = (page - 1) * limit
     
-    # Получаем все продукты с помощью нового метода класса
-    all_products = await ProductModel.get_all_products(session)
+    # Получаем базовый запрос для доступных продуктов
+    query = await ProductModel.get_products_query()
     
-    filtered_products = all_products
-    
-    # Применяем фильтры
+    # Добавляем фильтры, если они указаны
     if category_id is not None:
-        filtered_products = [p for p in filtered_products if p.category_id == category_id]
+        query = query.filter(ProductModel.category_id == category_id)
     
     if subcategory_id is not None:
-        filtered_products = [p for p in filtered_products if p.subcategory_id == subcategory_id]
+        query = query.filter(ProductModel.subcategory_id == subcategory_id)
     
     if brand_id is not None:
-        filtered_products = [p for p in filtered_products if p.brand_id == brand_id]
+        query = query.filter(ProductModel.brand_id == brand_id)
     
     if country_id is not None:
-        filtered_products = [p for p in filtered_products if p.country_id == country_id]
+        query = query.filter(ProductModel.country_id == country_id)
     
-    # Сортировка результатов
-    if sort:
-        if sort == "price_asc":
-            filtered_products.sort(key=lambda x: x.price)
-        elif sort == "price_desc":
-            filtered_products.sort(key=lambda x: x.price, reverse=True)
-        else:  # По умолчанию или "newest"
-            filtered_products.sort(key=lambda x: x.id, reverse=True)
-    else:
-        # По умолчанию сортируем по ID (новые первыми)
-        filtered_products.sort(key=lambda x: x.id, reverse=True)
+    # Изменяем сортировку если указана
+    if sort == "price_asc":
+        # Заменяем сортировку по id на сортировку по цене
+        query = query.order_by(None).order_by(ProductModel.price.asc())
+    elif sort == "price_desc":
+        query = query.order_by(None).order_by(ProductModel.price.desc())
+    # В случае sort="newest" или None оставляем сортировку по умолчанию (по id desc)
     
-    # Вычисляем общее количество и применяем пагинацию
-    total = len(filtered_products)
-    paginated_products = filtered_products[skip:skip + limit]
+    # Получаем общее количество записей, соответствующих фильтрам
+    count_query = select(func.count()).select_from(query.alias())
+    total_result = await session.execute(count_query)
+    total = total_result.scalar() or 0
+    
+    # Применяем пагинацию
+    query = query.offset(skip).limit(limit)
+    
+    # Выполняем запрос
+    result = await session.execute(query)
+    paginated_products = result.scalars().all()
     
     # Возвращаем ответ с информацией о пагинации
     return {
@@ -212,39 +215,41 @@ async def get_admin_products(
     # Расчет пропуска записей для пагинации
     skip = (page - 1) * limit
     
-    # Получаем все продукты включая с нулевым запасом
-    all_products = await ProductModel.get_all_products(session)
+    # Получаем базовый запрос для всех продуктов (админский доступ)
+    query = await ProductModel.get_admin_products_query()
     
-    # Применяем фильтры
-    filtered_products = all_products
-    
+    # Добавляем фильтры, если они указаны
     if category_id is not None:
-        filtered_products = [p for p in filtered_products if p.category_id == category_id]
+        query = query.filter(ProductModel.category_id == category_id)
     
     if subcategory_id is not None:
-        filtered_products = [p for p in filtered_products if p.subcategory_id == subcategory_id]
+        query = query.filter(ProductModel.subcategory_id == subcategory_id)
     
     if brand_id is not None:
-        filtered_products = [p for p in filtered_products if p.brand_id == brand_id]
+        query = query.filter(ProductModel.brand_id == brand_id)
     
     if country_id is not None:
-        filtered_products = [p for p in filtered_products if p.country_id == country_id]
+        query = query.filter(ProductModel.country_id == country_id)
     
-    # Сортировка результатов
-    if sort:
-        if sort == "price_asc":
-            filtered_products.sort(key=lambda x: x.price)
-        elif sort == "price_desc":
-            filtered_products.sort(key=lambda x: x.price, reverse=True)
-        else:  # По умолчанию или "newest"
-            filtered_products.sort(key=lambda x: x.id, reverse=True)
-    else:
-        # По умолчанию сортируем по ID (новые первыми)
-        filtered_products.sort(key=lambda x: x.id, reverse=True)
+    # Изменяем сортировку если указана
+    if sort == "price_asc":
+        # Заменяем сортировку по id на сортировку по цене
+        query = query.order_by(None).order_by(ProductModel.price.asc())
+    elif sort == "price_desc":
+        query = query.order_by(None).order_by(ProductModel.price.desc())
+    # В случае sort="newest" или None оставляем сортировку по умолчанию (по id desc)
     
-    # Вычисляем общее количество и применяем пагинацию
-    total = len(filtered_products)
-    paginated_products = filtered_products[skip:skip + limit]
+    # Получаем общее количество записей, соответствующих фильтрам
+    count_query = select(func.count()).select_from(query.alias())
+    total_result = await session.execute(count_query)
+    total = total_result.scalar() or 0
+    
+    # Применяем пагинацию
+    query = query.offset(skip).limit(limit)
+    
+    # Выполняем запрос
+    result = await session.execute(query)
+    paginated_products = result.scalars().all()
     
     # Возвращаем ответ с информацией о пагинации
     return {

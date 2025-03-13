@@ -81,16 +81,46 @@ class ProductModel(Base):
     subcategory = relationship("SubCategoryModel", back_populates="products")
 
     @classmethod
+    async def get_products_query(cls):
+        """
+        Возвращает базовый запрос для доступных продуктов, отсортированных от новых к старым.
+        
+        Запрос возвращает только продукты с stock > 0 (доступные),
+        отсортированные по ID в порядке убывания (от новых к старым).
+        
+        Returns:
+            SQLAlchemy query object
+        """
+        return select(cls).filter(cls.in_stock == True).order_by(cls.id.desc())
+        
+    @classmethod
+    async def get_admin_products_query(cls):
+        """
+        Возвращает базовый запрос для всех продуктов, отсортированных от новых к старым.
+        
+        Запрос возвращает все продукты, включая те, у которых stock = 0,
+        отсортированные по ID в порядке убывания (от новых к старым).
+        Этот метод предназначен для использования в админ-панели, где администраторы
+        должны видеть и иметь возможность редактировать все товары.
+        
+        Returns:
+            SQLAlchemy query object
+        """
+        return select(cls).order_by(cls.id.desc())
+        
+    @classmethod
     async def get_all_products(cls, session: AsyncSession) -> List["ProductModel"]:
         """
         Получить все доступные продукты, отсортированные от новых к старым.
         
         Метод возвращает только продукты с stock > 0 (доступные),
         отсортированные по ID в порядке убывания (от новых к старым).
+        
+        Для более гибкого использования в запросах используйте get_products_query.
         """
         try:
-            # Создаем запрос с фильтрацией по stock > 0 и сортировкой по id по убыванию
-            query = select(cls).filter(cls.in_stock == True).order_by(cls.id.desc())
+            # Используем новый метод для получения запроса
+            query = await cls.get_products_query()
             
             # Выполняем запрос
             result = await session.execute(query)
@@ -113,10 +143,12 @@ class ProductModel(Base):
         отсортированные по ID в порядке убывания (от новых к старым).
         Этот метод предназначен для использования в админ-панели, где администраторы
         должны видеть и иметь возможность редактировать все товары.
+        
+        Для более гибкого использования в запросах используйте get_admin_products_query.
         """
         try:
-            # Создаем запрос только с сортировкой по id по убыванию, без фильтрации по stock
-            query = select(cls).order_by(cls.id.desc())
+            # Используем новый метод для получения запроса
+            query = await cls.get_admin_products_query()
             
             # Выполняем запрос
             result = await session.execute(query)

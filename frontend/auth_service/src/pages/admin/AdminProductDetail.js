@@ -123,12 +123,6 @@ const AdminProductDetail = () => {
     }
   }, [formData.category_id, subcategories]);
 
-  // Получаем названия категорий для отображения в подкатегориях
-  const getCategoryName = React.useCallback((category_id) => {
-    const category = categories.find(cat => cat.id === category_id);
-    return category ? category.name : '';
-  }, [categories]);
-
   // Обработчик редактирования товара
   const handleEdit = () => {
     if (product) {

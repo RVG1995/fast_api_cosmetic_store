@@ -18,6 +18,7 @@ import AdminSubcategories from './pages/admin/AdminSubcategories';
 import AdminBrands from './pages/admin/AdminBrands';
 import AdminCountries from './pages/admin/AdminCountries';
 import HomePage from './pages/HomePage';
+import ProductsPage from './pages/ProductsPage';
 
 // Импорт стилей
 import './styles/App.css';
@@ -30,6 +31,9 @@ function App() {
           <Route path="/" element={<Layout />}>
             {/* Главная страница с продуктами */}
             <Route index element={<HomePage />} />
+            
+            {/* Страница с фильтрацией товаров */}
+            <Route path="products" element={<ProductsPage />} />
             
             {/* Публичные маршруты только для неавторизованных пользователей */}
             <Route 

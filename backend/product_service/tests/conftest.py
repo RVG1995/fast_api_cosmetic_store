@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from product_service.main import app
 from product_service.database import get_session
+from product_service.auth import require_admin
 
 # Переопределяем функцию get_session для всех тестов
 @pytest.fixture(scope="session")
@@ -34,6 +35,31 @@ def mock_session():
     session.add = MagicMock(side_effect=add_mock)
     
     return session
+
+# Мок для аутентификации администратора
+@pytest_asyncio.fixture
+async def mock_admin():
+    """Мок для require_admin, который всегда возвращает админа"""
+    admin_user = {"user_id": 1, "is_admin": True}
+    
+    async def mock_admin_func():
+        return admin_user
+    
+    # Сохраняем оригинальную функцию
+    original = app.dependency_overrides.get(require_admin)
+    
+    # Устанавливаем мок
+    app.dependency_overrides[require_admin] = mock_admin_func
+    
+    # Патчим функцию в Auth модуле
+    with patch("product_service.auth.require_admin", return_value=admin_user):
+        yield
+    
+    # Восстанавливаем оригинальную зависимость или удаляем переопределение
+    if original:
+        app.dependency_overrides[require_admin] = original
+    else:
+        del app.dependency_overrides[require_admin]
 
 # Патчим get_session для всех тестов
 @pytest_asyncio.fixture(autouse=True)

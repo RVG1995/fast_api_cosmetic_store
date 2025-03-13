@@ -170,12 +170,36 @@ export const notificationAPI = {
 // API для работы с продуктами
 export const productAPI = {
   // Продукты
-  getProducts: (page = 1, pageSize = 10) => {
+  getProducts: (page = 1, pageSize = 10, filters = {}) => {
     const skip = (page - 1) * pageSize;
-    return productApi.get('/products', { 
-      params: { skip, limit: pageSize } 
-    }).then(response => {
+    // Добавляем параметры фильтрации к запросу
+    const params = { 
+      skip, 
+      limit: pageSize,
+      ...filters
+    };
+    
+    console.log('Запрос продуктов с параметрами:', params);
+    
+    return productApi.get('/products', { params }).then(response => {
       console.log('API getProducts response:', response.data);
+      return response;
+    });
+  },
+  // Метод для получения всех продуктов для админки (включая товары с stock=0)
+  getAdminProducts: (page = 1, pageSize = 10, filters = {}) => {
+    const skip = (page - 1) * pageSize;
+    // Добавляем параметры фильтрации к запросу
+    const params = { 
+      skip, 
+      limit: pageSize,
+      ...filters
+    };
+    
+    console.log('Запрос админ-продуктов с параметрами:', params);
+    
+    return productApi.get('/admin/products', { params }).then(response => {
+      console.log('API getAdminProducts response:', response.data);
       return response;
     });
   },

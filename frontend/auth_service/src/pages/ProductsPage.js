@@ -7,6 +7,7 @@ import '../styles/HomePage.css';
 const ProductsPage = () => {
   const { search } = useLocation();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryParams = new URLSearchParams(search);
   
   const [products, setProducts] = useState([]);
@@ -112,6 +113,30 @@ const ProductsPage = () => {
     fetchProducts(pagination.currentPage);
   }, []);
 
+  // Слушатель изменений URL
+  useEffect(() => {
+    const queryParams = new URLSearchParams(location.search);
+    const newFilters = {
+      category_id: queryParams.get('category_id') || '',
+      subcategory_id: queryParams.get('subcategory_id') || '',
+      brand_id: queryParams.get('brand_id') || '',
+      country_id: queryParams.get('country_id') || '',
+    };
+    
+    // Обновляем состояние фильтров
+    setFilters(newFilters);
+    
+    // Устанавливаем новую страницу из URL или по умолчанию 1
+    const page = parseInt(queryParams.get('page') || '1', 10);
+    setPagination(prev => ({
+      ...prev,
+      currentPage: page
+    }));
+    
+    // Загружаем товары с новыми фильтрами
+    fetchProducts(page, newFilters);
+  }, [location.search]);
+
   // Обновляем URL при изменении фильтров или страницы
   useEffect(() => {
     const params = new URLSearchParams();
@@ -152,7 +177,6 @@ const ProductsPage = () => {
   // Обработчик изменения фильтров
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    setFilters(prev => ({ ...prev, [name]: value }));
     
     // Если изменилась категория, сбрасываем подкатегорию
     if (name === 'category_id' && value !== filters.category_id) {

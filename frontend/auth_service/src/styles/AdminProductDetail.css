@@ -1,0 +1,131 @@
+.admin-product-detail .card {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border: none;
+  overflow: hidden;
+}
+
+.admin-product-detail .product-image-container {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f8f9fa;
+  padding: 20px;
+}
+
+.admin-product-detail .product-detail-image {
+  max-height: 400px;
+  object-fit: contain;
+  width: 100%;
+}
+
+.admin-product-detail .no-image-large {
+  width: 100%;
+  height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #f8f9fa;
+  color: #6c757d;
+}
+
+.admin-product-detail .no-image-large i {
+  font-size: 3rem;
+  margin-bottom: 10px;
+}
+
+.admin-product-detail .card-title {
+  font-size: 1.8rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.admin-product-detail .product-meta {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.admin-product-detail .product-id {
+  color: #6c757d;
+  font-size: 0.9rem;
+}
+
+.admin-product-detail .product-price {
+  font-size: 1.2rem;
+  margin: 10px 0;
+}
+
+.admin-product-detail .product-stock {
+  font-size: 1rem;
+}
+
+.admin-product-detail .product-attributes {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.admin-product-detail .product-description {
+  margin-bottom: 20px;
+}
+
+.admin-product-detail .product-description h5 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.admin-product-detail .product-timestamps {
+  color: #6c757d;
+  font-size: 0.8rem;
+}
+
+/* Стили для модального окна */
+.admin-product-detail .modal-content {
+  border-radius: 8px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.admin-product-detail .modal-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.admin-product-detail .modal-title {
+  color: #333;
+  font-weight: 600;
+}
+
+.admin-product-detail .modal-footer {
+  background-color: #f8f9fa;
+  border-top: 1px solid #dee2e6;
+}
+
+.admin-product-detail .modal.show {
+  display: block;
+}
+
+/* Общие стили */
+.admin-product-detail .form-control:focus, 
+.admin-product-detail .form-select:focus {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+@media (max-width: 768px) {
+  .admin-product-detail .product-image-container {
+    max-height: 300px;
+  }
+  
+  .admin-product-detail .card-body {
+    padding: 15px;
+  }
+  
+  .admin-product-detail .card-title {
+    font-size: 1.5rem;
+  }
+} 

@@ -13,12 +13,14 @@ import AdminRoute from './components/common/AdminRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminProducts from './pages/admin/AdminProducts';
+import AdminProductDetail from './pages/admin/AdminProductDetail';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminSubcategories from './pages/admin/AdminSubcategories';
 import AdminBrands from './pages/admin/AdminBrands';
 import AdminCountries from './pages/admin/AdminCountries';
 import HomePage from './pages/HomePage';
 import ProductsPage from './pages/ProductsPage';
+import ProductDetailPage from './pages/ProductDetailPage';
 
 // Импорт стилей
 import './styles/App.css';
@@ -34,6 +36,9 @@ function App() {
             
             {/* Страница с фильтрацией товаров */}
             <Route path="products" element={<ProductsPage />} />
+            
+            {/* Страница детальной информации о товаре */}
+            <Route path="products/:productId" element={<ProductDetailPage />} />
             
             {/* Публичные маршруты только для неавторизованных пользователей */}
             <Route 
@@ -94,6 +99,14 @@ function App() {
               element={
                 <AdminRoute>
                   <AdminProducts />
+                </AdminRoute>
+              } 
+            />
+            <Route 
+              path="admin/products/:productId" 
+              element={
+                <AdminRoute>
+                  <AdminProductDetail />
                 </AdminRoute>
               } 
             />

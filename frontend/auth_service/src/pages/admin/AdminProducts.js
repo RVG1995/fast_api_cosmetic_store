@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { productAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 const AdminProducts = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -64,7 +67,28 @@ const AdminProducts = () => {
         setBrands(brandsRes.data);
         
         // Загружаем первую страницу товаров
-        fetchProducts(1);
+        await fetchProducts(1);
+        
+        // Проверяем параметр edit в URL
+        const queryParams = new URLSearchParams(location.search);
+        const editProductId = queryParams.get('edit');
+        
+        if (editProductId) {
+          console.log(`Обнаружен параметр edit=${editProductId} в URL`);
+          try {
+            // Загружаем данные о товаре для редактирования
+            const productResponse = await productAPI.getProductById(editProductId);
+            if (productResponse.data) {
+              // Открываем модальное окно редактирования
+              handleEditProduct(productResponse.data);
+              // Удаляем параметр из URL без перезагрузки страницы
+              navigate('/admin/products', { replace: true });
+            }
+          } catch (err) {
+            console.error('Ошибка при загрузке товара для редактирования:', err);
+            setError('Не удалось загрузить товар для редактирования');
+          }
+        }
       } catch (err) {
         console.error('Ошибка при загрузке данных:', err);
         setError('Не удалось загрузить данные. Пожалуйста, попробуйте позже.');
@@ -464,30 +488,45 @@ const AdminProducts = () => {
                     <td>{product.id}</td>
                     <td>
                       {product.image ? (
-                        <img 
-                          src={`http://localhost:8001${product.image}`} 
-                          alt={product.name} 
-                          className="product-thumbnail" 
-                        />
+                        <Link to={`/admin/products/${product.id}`}>
+                          <img 
+                            src={`http://localhost:8001${product.image}`} 
+                            alt={product.name} 
+                            className="product-thumbnail" 
+                          />
+                        </Link>
                       ) : (
                         <span className="no-image-small">Нет фото</span>
                       )}
                     </td>
-                    <td>{product.name}</td>
+                    <td>
+                      <Link to={`/admin/products/${product.id}`} className="product-name-link">
+                        {product.name}
+                      </Link>
+                    </td>
                     <td>{product.price} руб.</td>
                     <td>{product.stock}</td>
                     <td>
-                      <button 
-                        className="btn btn-sm btn-outline-primary me-2" 
-                        onClick={() => handleEditProduct(product)}
+                      <Link 
+                        to={`/admin/products/${product.id}`}
+                        className="btn btn-sm btn-outline-info me-1"
+                        title="Просмотр"
                       >
-                        <i className="bi bi-pencil"></i>
+                        <i className="bi bi-eye"></i> Просмотр
+                      </Link>
+                      <button 
+                        className="btn btn-sm btn-outline-primary me-1" 
+                        onClick={() => handleEditProduct(product)}
+                        title="Редактировать"
+                      >
+                        <i className="bi bi-pencil"></i> Редактировать
                       </button>
                       <button 
                         className="btn btn-sm btn-outline-danger" 
                         onClick={() => handleDeleteProduct(product.id)}
+                        title="Удалить"
                       >
-                        <i className="bi bi-trash"></i>
+                        <i className="bi bi-trash"></i> Удалить
                       </button>
                     </td>
                   </tr>

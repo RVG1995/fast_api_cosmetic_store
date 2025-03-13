@@ -152,4 +152,20 @@
 .pagination-info {
   color: #6c757d;
   font-size: 0.9rem;
+}
+
+.product-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.product-title-link {
+  text-decoration: none;
+  color: #333;
+}
+
+.product-title-link:hover {
+  color: #007bff;
+  text-decoration: underline;
 } 

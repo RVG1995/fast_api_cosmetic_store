@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { productAPI } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
-import { Link } from 'react-router-dom';
 import '../styles/HomePage.css';
 
 const HomePage = () => {
@@ -202,15 +202,19 @@ const HomePage = () => {
               {products.map(product => (
                 <div key={product.id} className="col-md-3">
                   <div className="product-card">
-                    <div className="product-image">
-                      {product.image ? (
-                        <img src={`http://localhost:8001${product.image}`} alt={product.name} />
-                      ) : (
-                        <div className="no-image">Нет изображения</div>
-                      )}
-                    </div>
+                    <Link to={`/products/${product.id}`} className="product-image-link">
+                      <div className="product-image">
+                        {product.image ? (
+                          <img src={`http://localhost:8001${product.image}`} alt={product.name} />
+                        ) : (
+                          <div className="no-image">Нет изображения</div>
+                        )}
+                      </div>
+                    </Link>
                     <div className="product-details">
-                      <h3>{product.name}</h3>
+                      <Link to={`/products/${product.id}`} className="product-title-link">
+                        <h3>{product.name}</h3>
+                      </Link>
                       <p className="price">{product.price} руб.</p>
                       <p className="description">{product.description}</p>
                       <p className="stock">

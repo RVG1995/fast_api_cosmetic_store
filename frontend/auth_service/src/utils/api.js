@@ -240,6 +240,18 @@ export const productAPI = {
   },
   getProductById: (id) => productApi.get(`/products/${id}`),
   
+  // Получение категории по ID
+  getCategoryById: (id) => productApi.get(`/categories/${id}`),
+  
+  // Получение подкатегории по ID
+  getSubcategoryById: (id) => productApi.get(`/subcategories/${id}`),
+  
+  // Получение страны по ID
+  getCountryById: (id) => productApi.get(`/countries/${id}`),
+  
+  // Получение бренда по ID
+  getBrandById: (id) => productApi.get(`/brands/${id}`),
+  
   // Заменяем метод createProduct для поддержки загрузки файлов
   createProduct: (data) => {
     console.log('createProduct вызван с данными:', data);
@@ -368,28 +380,24 @@ export const productAPI = {
   
   // Категории
   getCategories: () => productApi.get('/categories'),
-  getCategoryById: (id) => productApi.get(`/categories/${id}`),
   createCategory: (data) => productApi.post('/categories', data),
   updateCategory: (id, data) => productApi.put(`/categories/${id}`, data),
   deleteCategory: (id) => productApi.delete(`/categories/${id}`),
   
   // Бренды
   getBrands: () => productApi.get('/brands'),
-  getBrandById: (id) => productApi.get(`/brands/${id}`),
   createBrand: (data) => productApi.post('/brands', data),
   updateBrand: (id, data) => productApi.put(`/brands/${id}`, data),
   deleteBrand: (id) => productApi.delete(`/brands/${id}`),
   
   // Страны
   getCountries: () => productApi.get('/countries'),
-  getCountryById: (id) => productApi.get(`/countries/${id}`),
   createCountry: (data) => productApi.post('/countries', data),
   updateCountry: (id, data) => productApi.put(`/countries/${id}`, data),
   deleteCountry: (id) => productApi.delete(`/countries/${id}`),
   
   // Подкатегории
   getSubcategories: () => productApi.get('/subcategories'),
-  getSubcategoryById: (id) => productApi.get(`/subcategories/${id}`),
   createSubcategory: (data) => productApi.post('/subcategories', data),
   updateSubcategory: (id, data) => productApi.put(`/subcategories/${id}`, data),
   deleteSubcategory: (id) => productApi.delete(`/subcategories/${id}`),

@@ -54,7 +54,7 @@ const AdminProducts = () => {
         ]);
         
         // Загружаем первую страницу товаров отдельно
-        const productsRes = await productAPI.getProducts(1, pagination.pageSize);
+        const productsRes = await productAPI.getAdminProducts(1, pagination.pageSize);
         
         // Добавляем логирование для отладки
         console.log('Полученные продукты:', productsRes.data);
@@ -225,7 +225,7 @@ const AdminProducts = () => {
   const fetchProducts = async (page) => {
     try {
       setLoading(true);
-      const response = await productAPI.getProducts(page, pagination.pageSize);
+      const response = await productAPI.getAdminProducts(page, pagination.pageSize);
       
       // Обновляем товары и информацию о пагинации
       const { items, total, limit } = response.data;

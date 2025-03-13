@@ -2,13 +2,16 @@
 
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { productAPI } from '../../utils/api';
 import "../../styles/Layout.css"; // Обновленный путь к стилям
 
 const Layout = () => {
   const { user, loading, logout, isAdmin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [categories, setCategories] = useState([]);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
 
   useEffect(() => {
     if (!loading) {
@@ -23,6 +26,23 @@ const Layout = () => {
       }
     }
   }, [loading, user, location.pathname, navigate]);
+
+  // Загружаем категории при монтировании компонента
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        setIsLoadingCategories(true);
+        const response = await productAPI.getCategories();
+        setCategories(response.data);
+      } catch (err) {
+        console.error('Ошибка при загрузке категорий:', err);
+      } finally {
+        setIsLoadingCategories(false);
+      }
+    };
+    
+    fetchCategories();
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -52,6 +72,51 @@ const Layout = () => {
             </button>
             
             <div className="collapse navbar-collapse" id="navbarNav">
+              <ul className="navbar-nav">
+                {/* Выпадающее меню категорий */}
+                <li className="nav-item dropdown">
+                  <a 
+                    className="nav-link dropdown-toggle" 
+                    href="#" 
+                    id="categoriesDropdown" 
+                    role="button" 
+                    data-bs-toggle="dropdown" 
+                    aria-expanded="false"
+                  >
+                    <i className="bi bi-grid me-1"></i>
+                    Категории
+                  </a>
+                  <ul className="dropdown-menu" aria-labelledby="categoriesDropdown">
+                    <li>
+                      <Link className="dropdown-item" to="/products">
+                        Все товары
+                      </Link>
+                    </li>
+                    <li><hr className="dropdown-divider" /></li>
+                    {isLoadingCategories ? (
+                      <li>
+                        <span className="dropdown-item">Загрузка...</span>
+                      </li>
+                    ) : categories.length > 0 ? (
+                      categories.map(category => (
+                        <li key={category.id}>
+                          <Link 
+                            className="dropdown-item" 
+                            to={`/products?category_id=${category.id}`}
+                          >
+                            {category.name}
+                          </Link>
+                        </li>
+                      ))
+                    ) : (
+                      <li>
+                        <span className="dropdown-item">Нет доступных категорий</span>
+                      </li>
+                    )}
+                  </ul>
+                </li>
+              </ul>
+              
               <ul className="navbar-nav ms-auto">
                 {/* Удаляем ссылку на продукты, так как они будут на главной */}
                 

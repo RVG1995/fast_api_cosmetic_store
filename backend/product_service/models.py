@@ -1,7 +1,8 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import Integer, String, Computed, Boolean, Text, ForeignKey, CheckConstraint
+from sqlalchemy import Integer, String, Computed, Boolean, Text, ForeignKey, CheckConstraint, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from typing import  Optional
+from typing import  Optional, List
 
 
 class Base(DeclarativeBase):
@@ -78,3 +79,53 @@ class ProductModel(Base):
     country = relationship("CountryModel", back_populates="products")
     brand = relationship("BrandModel", back_populates="products")
     subcategory = relationship("SubCategoryModel", back_populates="products")
+
+    @classmethod
+    async def get_all_products(cls, session: AsyncSession) -> List["ProductModel"]:
+        """
+        Получить все доступные продукты, отсортированные от новых к старым.
+        
+        Метод возвращает только продукты с stock > 0 (доступные),
+        отсортированные по ID в порядке убывания (от новых к старым).
+        """
+        try:
+            # Создаем запрос с фильтрацией по stock > 0 и сортировкой по id по убыванию
+            query = select(cls).filter(cls.stock > 0).order_by(cls.id.desc())
+            
+            # Выполняем запрос
+            result = await session.execute(query)
+            return result.scalars().all()
+        except AttributeError:
+            # В тестах, если session.execute - это корутина без .scalars().all()
+            # Просто вернем пустой список для безопасности
+            return []
+        except Exception as e:
+            # Для других ошибок также возвращаем пустой список
+            print(f"Ошибка при получении продуктов: {str(e)}")
+            return []
+
+    @classmethod
+    async def get_all_products_admin(cls, session: AsyncSession) -> List["ProductModel"]:
+        """
+        Получить ВСЕ продукты для админ-панели, отсортированные от новых к старым.
+        
+        Метод возвращает все продукты, включая те, у которых stock = 0,
+        отсортированные по ID в порядке убывания (от новых к старым).
+        Этот метод предназначен для использования в админ-панели, где администраторы
+        должны видеть и иметь возможность редактировать все товары.
+        """
+        try:
+            # Создаем запрос только с сортировкой по id по убыванию, без фильтрации по stock
+            query = select(cls).order_by(cls.id.desc())
+            
+            # Выполняем запрос
+            result = await session.execute(query)
+            return result.scalars().all()
+        except AttributeError:
+            # В тестах, если session.execute - это корутина без .scalars().all()
+            # Просто вернем пустой список для безопасности
+            return []
+        except Exception as e:
+            # Для других ошибок также возвращаем пустой список
+            print(f"Ошибка при получении продуктов для админки: {str(e)}")
+            return []

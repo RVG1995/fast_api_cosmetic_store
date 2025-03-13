@@ -72,41 +72,21 @@ const AdminProductDetail = () => {
         setCountries(countriesRes.data);
         setBrands(brandsRes.data);
         
-        // Загружаем дополнительные данные, если они есть
-        if (productData.category_id) {
-          try {
-            const categoryResponse = await productAPI.getCategoryById(productData.category_id);
-            setCategory(categoryResponse.data);
-          } catch (err) {
-            console.error('Ошибка при загрузке категории:', err);
-          }
+        // Используем уже имеющуюся информацию о связанных данных из ответа API
+        if (productData.category) {
+          setCategory(productData.category);
         }
         
-        if (productData.subcategory_id) {
-          try {
-            const subcategoryResponse = await productAPI.getSubcategoryById(productData.subcategory_id);
-            setSubcategory(subcategoryResponse.data);
-          } catch (err) {
-            console.error('Ошибка при загрузке подкатегории:', err);
-          }
+        if (productData.subcategory) {
+          setSubcategory(productData.subcategory);
         }
         
-        if (productData.country_id) {
-          try {
-            const countryResponse = await productAPI.getCountryById(productData.country_id);
-            setCountry(countryResponse.data);
-          } catch (err) {
-            console.error('Ошибка при загрузке страны:', err);
-          }
+        if (productData.country) {
+          setCountry(productData.country);
         }
         
-        if (productData.brand_id) {
-          try {
-            const brandResponse = await productAPI.getBrandById(productData.brand_id);
-            setBrand(brandResponse.data);
-          } catch (err) {
-            console.error('Ошибка при загрузке бренда:', err);
-          }
+        if (productData.brand) {
+          setBrand(productData.brand);
         }
       } catch (err) {
         console.error('Ошибка при загрузке данных о товаре:', err);

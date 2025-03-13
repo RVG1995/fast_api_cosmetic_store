@@ -74,6 +74,15 @@ class ProductSchema(ProductAddSchema):
 
     model_config = ConfigDict(from_attributes=True)
 
+class ProductDetailSchema(ProductSchema):
+    """Расширенная схема продукта с вложенными объектами связанных сущностей"""
+    category: Optional[CategorySchema] = None
+    subcategory: Optional[SubCategorySchema] = None
+    brand: Optional[BrandSchema] = None
+    country: Optional[CountrySchema] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
 class ProductUpdateSchema(BaseModel):
     name: Optional[str] = None
     category_id: Optional[int] = None

@@ -14,7 +14,7 @@ const ProductDetailPage = () => {
     const fetchProductDetails = async () => {
       try {
         setLoading(true);
-        // Получаем информацию о товаре
+        // Получаем информацию о товаре (теперь с полной информацией о связанных сущностях)
         const response = await productAPI.getProductById(productId);
         
         // Проверяем, есть ли данные в ответе
@@ -24,47 +24,13 @@ const ProductDetailPage = () => {
           return;
         }
         
-        const productData = response.data;
-        
-        // Загружаем дополнительные данные
-        let enhancedProduct = { ...productData };
-        
-        try {
-          // Загружаем категорию
-          if (productData.category_id) {
-            const categoryResponse = await productAPI.getCategoryById(productData.category_id);
-            enhancedProduct.category = categoryResponse.data;
-          }
-          
-          // Загружаем подкатегорию
-          if (productData.subcategory_id) {
-            const subcategoryResponse = await productAPI.getSubcategoryById(productData.subcategory_id);
-            enhancedProduct.subcategory = subcategoryResponse.data;
-          }
-          
-          // Загружаем бренд
-          if (productData.brand_id) {
-            const brandResponse = await productAPI.getBrandById(productData.brand_id);
-            enhancedProduct.brand = brandResponse.data;
-          }
-          
-          // Загружаем страну
-          if (productData.country_id) {
-            const countryResponse = await productAPI.getCountryById(productData.country_id);
-            enhancedProduct.country = countryResponse.data;
-          }
-        } catch (err) {
-          console.error('Ошибка при загрузке дополнительных данных о товаре:', err);
-          // Не прерываем выполнение даже если не удалось загрузить дополнительные данные
-        }
-        
-        // Сохраняем обогащенные данные о товаре
-        setProduct(enhancedProduct);
+        // Товар уже содержит все связанные данные
+        setProduct(response.data);
         
         // После получения информации о товаре, загружаем похожие товары
-        if (productData.category_id) {
+        if (response.data.category_id) {
           const relatedResponse = await productAPI.getProducts(1, 4, {
-            category_id: productData.category_id,
+            category_id: response.data.category_id,
           });
           // Фильтруем, чтобы исключить текущий товар из списка похожих
           const filtered = relatedResponse.data.items.filter(item => item.id !== parseInt(productId));

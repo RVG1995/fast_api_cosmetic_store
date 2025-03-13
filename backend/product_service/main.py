@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Que
 from database import setup_database, get_session, engine
 from models import SubCategoryModel,CategoryModel, ProductModel,CountryModel, BrandModel
 from auth import require_admin, get_current_user
-from schema import BrandAddSchema, BrandSchema, BrandUpdateSchema, CategoryAddSchema, CategorySchema, CategoryUpdateSchema, CountryAddSchema, CountrySchema, CountryUpdateSchema, ProductAddSchema,ProductSchema, ProductUpdateSchema, SubCategoryAddSchema, SubCategorySchema, SubCategoryUpdateSchema, PaginatedProductResponse
+from schema import BrandAddSchema, BrandSchema, BrandUpdateSchema, CategoryAddSchema, CategorySchema, CategoryUpdateSchema, CountryAddSchema, CountrySchema, CountryUpdateSchema, ProductAddSchema,ProductSchema, ProductUpdateSchema, SubCategoryAddSchema, SubCategorySchema, SubCategoryUpdateSchema, PaginatedProductResponse, ProductDetailSchema
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -259,14 +259,91 @@ async def get_admin_products(
         "items": paginated_products
     }
 
-@app.get('/products/{product_id}',response_model = ProductSchema)
+@app.get('/products/{product_id}',response_model = ProductDetailSchema)
 async def get_product_id(product_id: int, session: SessionDep):
+    # Получаем товар
     query = select(ProductModel).filter(ProductModel.id == product_id)
     result = await session.execute(query)
     product = result.scalars().first()
+    
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    return product
+    
+    # Создаем словарь с данными товара
+    response_dict = {
+        "id": product.id,
+        "name": product.name,
+        "price": product.price,
+        "description": product.description,
+        "stock": product.stock,
+        "category_id": product.category_id,
+        "subcategory_id": product.subcategory_id,
+        "country_id": product.country_id,
+        "brand_id": product.brand_id,
+        "image": product.image,
+        "category": None,
+        "subcategory": None,
+        "brand": None,
+        "country": None
+    }
+    
+    # Загружаем связанные данные
+    try:
+        # Загружаем категорию
+        if product.category_id:
+            category_query = select(CategoryModel).filter(CategoryModel.id == product.category_id)
+            category_result = await session.execute(category_query)
+            category = category_result.scalars().first()
+            if category:
+                response_dict["category"] = {
+                    "id": category.id,
+                    "name": category.name,
+                    "slug": category.slug
+                }
+        
+        # Загружаем подкатегорию
+        if product.subcategory_id:
+            subcategory_query = select(SubCategoryModel).filter(SubCategoryModel.id == product.subcategory_id)
+            subcategory_result = await session.execute(subcategory_query)
+            subcategory = subcategory_result.scalars().first()
+            if subcategory:
+                response_dict["subcategory"] = {
+                    "id": subcategory.id,
+                    "name": subcategory.name,
+                    "slug": subcategory.slug,
+                    "category_id": subcategory.category_id
+                }
+        
+        # Загружаем бренд
+        if product.brand_id:
+            brand_query = select(BrandModel).filter(BrandModel.id == product.brand_id)
+            brand_result = await session.execute(brand_query)
+            brand = brand_result.scalars().first()
+            if brand:
+                response_dict["brand"] = {
+                    "id": brand.id,
+                    "name": brand.name,
+                    "slug": brand.slug
+                }
+        
+        # Загружаем страну
+        if product.country_id:
+            country_query = select(CountryModel).filter(CountryModel.id == product.country_id)
+            country_result = await session.execute(country_query)
+            country = country_result.scalars().first()
+            if country:
+                response_dict["country"] = {
+                    "id": country.id,
+                    "name": country.name,
+                    "slug": country.slug
+                }
+    
+    except Exception as e:
+        # Логируем ошибку, но продолжаем работу и возвращаем хотя бы базовую информацию о продукте
+        print(f"Ошибка при загрузке связанных данных: {str(e)}")
+    
+    # Создаем и возвращаем объект схемы из словаря
+    return response_dict
 
 # Универсальный эндпоинт для обновления продуктов с поддержкой загрузки файлов
 @app.put("/products/{product_id}/form", response_model=ProductSchema)

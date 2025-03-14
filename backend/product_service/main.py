@@ -13,89 +13,15 @@ from sqlalchemy.orm import load_only
 import os
 import logging
 from sqlalchemy import func
-import redis.asyncio as redis
 import json
-import pickle
 from typing import List, Optional, Union, Annotated, Any
 from fastapi.staticfiles import StaticFiles
+# Импортируем функции для работы с кэшем
+from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, CACHE_TTL, close_redis_connection
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("product_service")
-
-# Инициализация Redis клиента
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-CACHE_TTL = int(os.getenv("CACHE_TTL", "600"))  # TTL кэша в секундах (по умолчанию 10 минут)
-redis_client = redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=False)
-
-# Ключи для кэширования различных типов данных
-CACHE_KEYS = {
-    "products": "products:",
-    "categories": "categories:",
-    "subcategories": "subcategories:",
-    "brands": "brands:",
-    "countries": "countries:",
-}
-
-async def cache_get(key: str) -> Any:
-    """
-    Получить данные из кэша по ключу
-    """
-    try:
-        data = await redis_client.get(key)
-        if data:
-            return pickle.loads(data)
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка при получении данных из кэша: {str(e)}")
-        return None
-
-async def cache_set(key: str, value: Any, ttl: int = CACHE_TTL) -> bool:
-    """
-    Сохранить данные в кэш
-    """
-    try:
-        await redis_client.set(key, pickle.dumps(value), ex=ttl)
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка при сохранении данных в кэш: {str(e)}")
-        return False
-
-async def cache_delete_pattern(pattern: str) -> bool:
-    """
-    Удалить все ключи, соответствующие шаблону
-    """
-    try:
-        cursor = 0
-        while True:
-            cursor, keys = await redis_client.scan(cursor, match=pattern, count=100)
-            if keys:
-                await redis_client.delete(*keys)
-            if cursor == 0:
-                break
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка при удалении ключей из кэша: {str(e)}")
-        return False
-
-async def invalidate_cache(entity_type: str = None):
-    """
-    Инвалидировать кэш для определенного типа сущностей или всего кэша
-    """
-    try:
-        if entity_type:
-            pattern = f"{CACHE_KEYS.get(entity_type, entity_type)}*"
-            logger.info(f"Инвалидация кэша для {entity_type} по шаблону: {pattern}")
-            return await cache_delete_pattern(pattern)
-        else:
-            # Инвалидировать весь кэш, связанный с продуктами
-            for key_prefix in CACHE_KEYS.values():
-                await cache_delete_pattern(f"{key_prefix}*")
-            logger.info("Инвалидация всего кэша")
-            return True
-    except Exception as e:
-        logger.error(f"Ошибка при инвалидации кэша: {str(e)}")
-        return False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -105,7 +31,7 @@ async def lifespan(app: FastAPI):
     yield  # здесь приложение будет работать
     # Код для завершения работы приложения (shutdown) можно добавить после yield, если нужно
     logger.info("Завершение работы сервиса продуктов")
-    await redis_client.close()
+    await close_redis_connection()
     await engine.dispose()  # корректное закрытие соединений с базой данных
     logger.info("Соединения с БД и Redis закрыты")
 

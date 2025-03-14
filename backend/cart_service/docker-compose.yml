@@ -9,12 +9,17 @@ services:
       - "8002:8002"
     volumes:
       - .:/app
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres-cart:5434/cart_db
       - PRODUCT_SERVICE_URL=http://product-service:8001
       - JWT_SECRET_KEY=zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke
+      - REDIS_URL=redis://redis:6379/0
+      - TZ=Europe/Moscow
     depends_on:
       - postgres-cart
+      - redis
 
   postgres-cart:
     image: postgres:15
@@ -22,12 +27,65 @@ services:
     restart: always
     ports:
       - "5434:5432"
+    volumes:
+      - postgres-cart-data:/var/lib/postgresql/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=cart_db
+      - TZ=Europe/Moscow
+
+  redis:
+    image: redis:alpine
+    container_name: cart-redis
+    restart: always
+    ports:
+      - "6379:6379"
     volumes:
-      - postgres-cart-data:/var/lib/postgresql/data
+      - redis-data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Europe/Moscow
+
+  celery-worker:
+    build: .
+    container_name: cart-celery-worker
+    restart: always
+    command: celery -A tasks worker --loglevel=info --without-mingle --without-gossip --without-heartbeat
+    volumes:
+      - .:/app
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres-cart:5434/cart_db
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke
+      - TZ=Europe/Moscow
+    depends_on:
+      - redis
+      - postgres-cart
+
+  celery-beat:
+    build: .
+    container_name: cart-celery-beat
+    restart: always
+    command: celery -A tasks beat --loglevel=info
+    volumes:
+      - .:/app
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres-cart:5434/cart_db
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke
+      - TZ=Europe/Moscow
+    depends_on:
+      - redis
+      - postgres-cart
 
 volumes:
-  postgres-cart-data: 
+  postgres-cart-data:
+  redis-data: 

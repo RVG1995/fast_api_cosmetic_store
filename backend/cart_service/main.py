@@ -9,7 +9,9 @@ from database import setup_database, get_session, engine
 from auth import get_current_user, get_session_id, User
 from schema import (
     CartItemAddSchema, CartItemUpdateSchema, CartSchema, 
-    CartResponseSchema, ProductInfoSchema, CartSummarySchema
+    CartResponseSchema, ProductInfoSchema, CartSummarySchema,
+    CleanupResponseSchema, ShareCartRequestSchema, ShareCartResponseSchema,
+    LoadSharedCartSchema
 )
 from product_api import ProductAPI
 from typing import Optional, List, Dict, Any, Annotated
@@ -17,6 +19,8 @@ import logging
 import uuid
 import os
 from datetime import datetime
+import asyncio
+from tasks import cleanup_old_anonymous_carts
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +33,9 @@ product_api = ProductAPI()
 async def lifespan(app: FastAPI):
     # Код, который должен выполниться при запуске приложения
     await setup_database()  # создание таблиц в базе данных
+    
     yield  # здесь приложение будет работать
+    
     # Код для завершения работы приложения
     await engine.dispose()  # корректное закрытие соединений с базой данных
 
@@ -799,6 +805,54 @@ async def merge_carts(
         "message": "Корзины успешно объединены",
         "cart": enriched_cart
     }
+
+@app.post("/cart/cleanup", response_model=CleanupResponseSchema, tags=["Администрирование"])
+async def cleanup_anonymous_carts(days: int = 1, current_user: User = Depends(get_current_user)):
+    """
+    Запускает ручную очистку устаревших анонимных корзин.
+    
+    Args:
+        days: Количество дней с момента последнего обновления, после которого корзина считается устаревшей
+        current_user: Текущий пользователь (должен иметь права администратора)
+    """
+    # Проверка, что пользователь авторизован и имеет права администратора
+    if not current_user:
+        logger.warning("Попытка доступа к функции очистки без авторизации")
+        raise HTTPException(
+            status_code=401,
+            detail="Для выполнения этой операции требуется авторизация",
+        )
+    
+    if not getattr(current_user, 'is_admin', False) and not getattr(current_user, 'is_super_admin', False):
+        logger.warning(f"Пользователь {current_user.id} не имеет прав администратора")
+        raise HTTPException(
+            status_code=403,
+            detail="Для выполнения этой операции требуются права администратора",
+        )
+    
+    logger.info(f"Запуск ручной очистки анонимных корзин старше {days} дней пользователем {current_user.id}")
+    
+    # Запускаем задачу Celery асинхронно
+    task = cleanup_old_anonymous_carts.delay(days)
+    
+    # Получаем результат (для синхронной обработки)
+    # Примечание: в продакшене возможно стоит вернуть только task.id и статус, а не ждать завершения
+    try:
+        result = task.get(timeout=30)  # Ждем результат не более 30 секунд
+        logger.info(f"Задача очистки выполнена, удалено корзин: {result}")
+        
+        return {
+            "success": True,
+            "deleted_count": result,
+            "message": f"Успешно удалено {result} устаревших анонимных корзин"
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при выполнении задачи очистки: {str(e)}")
+        return {
+            "success": False,
+            "deleted_count": 0,
+            "message": f"Ошибка при выполнении очистки: {str(e)}"
+        }
 
 if __name__ == "__main__":
     import uvicorn

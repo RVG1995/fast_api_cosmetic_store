@@ -63,4 +63,29 @@ class CartResponseSchema(BaseModel):
     cart: Optional[CartSchema] = None
     error: Optional[str] = None
     
-    model_config = ConfigDict(from_attributes=True) 
+    model_config = ConfigDict(from_attributes=True)
+
+class CleanupResponseSchema(BaseModel):
+    """Схема для ответа об очистке устаревших корзин"""
+    success: bool
+    deleted_count: int
+    message: str
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class ShareCartRequestSchema(BaseModel):
+    """Схема запроса для публикации корзины"""
+    expires_in_hours: Optional[int] = 24  # По умолчанию 24 часа
+
+class ShareCartResponseSchema(BaseModel):
+    """Схема ответа для публикации корзины"""
+    success: bool
+    message: str
+    share_code: Optional[str] = None
+    share_url: Optional[str] = None
+    error: Optional[str] = None
+
+class LoadSharedCartSchema(BaseModel):
+    """Схема запроса для загрузки опубликованной корзины"""
+    share_code: str
+    merge_strategy: Optional[str] = "replace"  # replace, merge_add, merge_max 

@@ -60,4 +60,32 @@ yarn-error.log*
 # Исключения, если нужно добавить определенные медиа-файлы в репозиторий
 !frontend/public/*.ico
 !frontend/src/assets/*.svg
-!frontend/public/logo*.png 
+!frontend/public/logo*.png
+
+# Добавляем исключения для временных файлов Celery
+backend/cart_service/celerybeat-schedule
+backend/cart_service/celerybeat-schedule.db
+backend/cart_service/celerybeat.pid
+backend/cart_service/__pycache__/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.coverage
+**/.DS_Store
+**/node_modules/
+**/.env
+
+# Директории с настройками IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+.python-version 

@@ -170,7 +170,7 @@ const AdminCartDetail = () => {
                   <strong>Общее количество единиц:</strong> {cart.items?.reduce((sum, item) => sum + item.quantity, 0) || 0}
                 </ListGroup.Item>
                 <ListGroup.Item>
-                  <strong>Общая стоимость:</strong> {cart.total_price || 0} ₽
+                  <strong>Общая стоимость:</strong> {cart.items?.reduce((sum, item) => sum + (item.product_price * item.quantity), 0) || 0} ₽
                 </ListGroup.Item>
                 {cart.share_code && (
                   <ListGroup.Item>
@@ -203,7 +203,7 @@ const AdminCartDetail = () => {
                   <tbody>
                     {cart.items.map(item => (
                       <tr key={item.id}>
-                        <td>{item.id}</td>
+                        <td>{item.product_id}</td>
                         <td>
                           <div className="d-flex align-items-center">
                             {item.product_image && (
@@ -223,9 +223,9 @@ const AdminCartDetail = () => {
                             </div>
                           </div>
                         </td>
-                        <td>{item.price} ₽</td>
+                        <td>{item.product_price} ₽</td>
                         <td>{item.quantity}</td>
-                        <td>{item.price * item.quantity} ₽</td>
+                        <td>{item.product_price * item.quantity} ₽</td>
                         <td>
                           <Link to={`/admin/products/${item.product_id}`}>
                             <Button variant="outline-primary" size="sm">
@@ -239,7 +239,7 @@ const AdminCartDetail = () => {
                   <tfoot>
                     <tr>
                       <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
-                      <td colSpan="2"><strong>{cart.total_price} ₽</strong></td>
+                      <td colSpan="2"><strong>{cart.items.reduce((sum, item) => sum + (item.product_price * item.quantity), 0)} ₽</strong></td>
                     </tr>
                   </tfoot>
                 </Table>

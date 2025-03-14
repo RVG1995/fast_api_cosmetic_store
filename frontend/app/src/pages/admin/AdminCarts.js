@@ -188,7 +188,7 @@ const AdminCarts = () => {
                   </td>
                   <td>
                     {cart.is_shared && <Badge bg="info" className="me-1">Общая</Badge>}
-                    {cart.items_count > 0 ? (
+                    {cart.total_items > 0 ? (
                       <Badge bg="success">Активная</Badge>
                     ) : (
                       <Badge bg="warning" text="dark">Пустая</Badge>
@@ -196,7 +196,7 @@ const AdminCarts = () => {
                   </td>
                   <td>{formatDateTime(cart.created_at)}</td>
                   <td>{formatDateTime(cart.updated_at)}</td>
-                  <td>{cart.items_count || 0}</td>
+                  <td>{cart.total_items || 0}</td>
                   <td>{cart.total_price ? `${cart.total_price} ₽` : '0 ₽'}</td>
                   <td>
                     <Link to={`/admin/carts/${cart.id}`}>

@@ -4,7 +4,7 @@ import { productAPI } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import '../styles/HomePage.css';
 import { API_URLS } from '../utils/constants';
-import AddToCartButton from '../components/cart/AddToCartButton';
+import SimpleAddToCartButton from '../components/cart/SimpleAddToCartButton';
 import CartUpdater from '../components/cart/CartUpdater';
 
 const HomePage = () => {
@@ -243,7 +243,7 @@ const HomePage = () => {
                       <p className="stock">
                         {product.stock > 0 ? `В наличии: ${product.stock}` : 'Нет в наличии'}
                       </p>
-                      <AddToCartButton 
+                      <SimpleAddToCartButton 
                         productId={product.id}
                         stock={product.stock}
                         className="w-100"

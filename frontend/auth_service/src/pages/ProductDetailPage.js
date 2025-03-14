@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { productAPI } from '../utils/api';
+import { API_URLS } from '../utils/constants';
+import AddToCartButton from '../components/cart/AddToCartButton';
+import CartUpdater from '../components/cart/CartUpdater';
 import '../styles/ProductDetailPage.css';
 
 const ProductDetailPage = () => {
@@ -10,7 +13,26 @@ const ProductDetailPage = () => {
   const [error, setError] = useState(null);
   const [relatedProducts, setRelatedProducts] = useState([]);
 
+  // Функция для форматирования URL изображения
+  const formatImageUrl = (imageUrl) => {
+    if (!imageUrl) return null;
+    
+    // Если URL начинается с http, значит он уже полный
+    if (imageUrl.startsWith('http')) {
+      return imageUrl;
+    }
+    
+    // Если URL начинается с /, то добавляем базовый URL продуктового сервиса
+    if (imageUrl.startsWith('/')) {
+      return `${API_URLS.PRODUCT}${imageUrl}`;
+    }
+    
+    // В противном случае просто возвращаем URL как есть
+    return imageUrl;
+  };
+
   useEffect(() => {
+    window.scrollTo(0, 0); // Прокручиваем страницу вверх при загрузке
     const fetchProductDetails = async () => {
       try {
         setLoading(true);
@@ -96,6 +118,8 @@ const ProductDetailPage = () => {
 
   return (
     <div className="product-detail-container">
+      <CartUpdater />
+      
       <div className="product-detail-breadcrumb">
         <Link to="/">Главная</Link> &gt; 
         <Link to="/products">Товары</Link> &gt; 
@@ -113,7 +137,7 @@ const ProductDetailPage = () => {
         <div className="product-detail-image">
           {product.image ? (
             <img 
-              src={`http://localhost:8001${product.image}`} 
+              src={formatImageUrl(product.image)} 
               alt={product.name} 
             />
           ) : (
@@ -170,12 +194,11 @@ const ProductDetailPage = () => {
           </div>
           
           <div className="product-detail-actions">
-            <button 
-              className="btn btn-primary btn-lg"
-              disabled={product.stock <= 0}
-            >
-              Добавить в корзину
-            </button>
+            <AddToCartButton 
+              productId={product.id}
+              stock={product.stock}
+              className="w-100"
+            />
           </div>
           
           <div className="product-detail-description">
@@ -194,7 +217,7 @@ const ProductDetailPage = () => {
                 <Link to={`/products/${relatedProduct.id}`}>
                   {relatedProduct.image ? (
                     <img 
-                      src={`http://localhost:8001${relatedProduct.image}`} 
+                      src={formatImageUrl(relatedProduct.image)} 
                       alt={relatedProduct.name} 
                     />
                   ) : (

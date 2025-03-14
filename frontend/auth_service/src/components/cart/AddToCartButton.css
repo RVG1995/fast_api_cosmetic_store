@@ -1,0 +1,44 @@
+.add-to-cart-container {
+  margin-bottom: 1rem;
+}
+
+.add-to-cart-container .input-group .form-control {
+  border-left: none;
+  border-right: none;
+  text-align: center;
+}
+
+.add-to-cart-container .input-group input::-webkit-outer-spin-button,
+.add-to-cart-container .input-group input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.add-to-cart-container .input-group input[type=number] {
+  -moz-appearance: textfield;
+}
+
+.add-to-cart-container .btn-primary {
+  transition: all 0.2s ease-in-out;
+}
+
+.add-to-cart-container .btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.add-to-cart-container .alert {
+  animation: fadeIn 0.3s ease-in-out;
+  margin-top: 0.5rem;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+} 

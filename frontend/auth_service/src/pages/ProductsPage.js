@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { productAPI } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import CartUpdater from '../components/cart/CartUpdater';
+import { API_URLS } from '../utils/constants';
 import '../styles/HomePage.css';
 
 const ProductsPage = () => {
@@ -479,6 +481,24 @@ const ProductsPage = () => {
     );
   };
 
+  // Функция для форматирования URL изображения
+  const formatImageUrl = (imageUrl) => {
+    if (!imageUrl) return null;
+    
+    // Если URL начинается с http, значит он уже полный
+    if (imageUrl.startsWith('http')) {
+      return imageUrl;
+    }
+    
+    // Если URL начинается с /, то добавляем базовый URL продуктового сервиса
+    if (imageUrl.startsWith('/')) {
+      return `${API_URLS.PRODUCT}${imageUrl}`;
+    }
+    
+    // В противном случае просто возвращаем URL как есть
+    return imageUrl;
+  };
+
   if (loading && products.length === 0) {
     return (
       <div className="container">
@@ -493,10 +513,13 @@ const ProductsPage = () => {
   }
 
   return (
-    <div className="home-page">
-      <div className="container" style={{ maxWidth: '1200px' }}>
-        <div className="product-header">
-          <h2>Товары</h2>
+    <div className="container py-4">
+      {/* Компонент для обновления данных корзины при загрузке страницы */}
+      <CartUpdater />
+      
+      <div className="products-page-wrapper">
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <h1 className="products-heading mb-0">Каталог товаров</h1>
           {hasAdminRights() && (
             <Link to="/admin/products" className="btn btn-primary">
               <i className="bi bi-gear-fill me-1"></i>
@@ -546,7 +569,7 @@ const ProductsPage = () => {
                     <Link to={`/products/${product.id}`} className="product-image-link">
                       <div className="product-image">
                         {product.image ? (
-                          <img src={`http://localhost:8001${product.image}`} alt={product.name} />
+                          <img src={formatImageUrl(product.image)} alt={product.name} />
                         ) : (
                           <div className="no-image">Нет изображения</div>
                         )}

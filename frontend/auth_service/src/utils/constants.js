@@ -6,9 +6,10 @@
 export const API_URLS = {
   AUTH: 'http://localhost:8000',       // Сервис аутентификации
   PRODUCT: 'http://localhost:8001',    // Сервис продуктов
-  USER: 'http://localhost:8002',       // Сервис пользователей (если будет)
-  CONTENT: 'http://localhost:8003',    // Сервис контента (если будет)
-  NOTIFICATION: 'http://localhost:8004' // Сервис уведомлений (если будет)
+  CART: 'http://localhost:8002',       // Сервис корзины
+  USER: 'http://localhost:8003',       // Сервис пользователей (если будет)
+  CONTENT: 'http://localhost:8004',    // Сервис контента (если будет)
+  NOTIFICATION: 'http://localhost:8005' // Сервис уведомлений (если будет)
 };
 
 // Маршруты
@@ -24,7 +25,8 @@ export const ROUTES = {
   REGISTRATION_CONFIRMATION: '/registration-confirmation',
   PRODUCTS: '/products',
   CATEGORIES: '/categories',
-  BRANDS: '/brands'
+  BRANDS: '/brands',
+  CART: '/cart'
 };
 
 // Сообщения об ошибках

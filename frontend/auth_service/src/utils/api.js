@@ -22,6 +22,7 @@ const userApi = createApiInstance(API_URLS.USER);
 const contentApi = createApiInstance(API_URLS.CONTENT);
 const notificationApi = createApiInstance(API_URLS.NOTIFICATION);
 const productApi = createApiInstance(API_URLS.PRODUCT);
+const cartApi = createApiInstance(API_URLS.CART);
 
 // Интерцептор для обработки ошибок и отладки
 const setupInterceptors = (api, serviceName) => {
@@ -94,6 +95,7 @@ setupInterceptors(userApi, 'User');
 setupInterceptors(contentApi, 'Content');
 setupInterceptors(notificationApi, 'Notification');
 setupInterceptors(productApi, 'Product');
+setupInterceptors(cartApi, 'Cart');
 
 // API для работы с аутентификацией
 export const authAPI = {
@@ -417,6 +419,83 @@ export const productAPI = {
   deleteSubcategory: (id) => productApi.delete(`/subcategories/${id}`),
 };
 
+// Экспортируем объект с методами для работы с корзиной
+export const cartAPI = {
+  /**
+   * Получает текущую корзину пользователя
+   * @returns {Promise<Object>} - Данные корзины
+   */
+  getCart: () => {
+    return cartApi.get('/cart');
+  },
+
+  /**
+   * Получает краткую информацию о корзине (количество товаров и общая стоимость)
+   * @returns {Promise<Object>} - Краткая информация о корзине
+   */
+  getCartSummary: () => {
+    return cartApi.get('/cart/summary');
+  },
+
+  /**
+   * Добавляет товар в корзину
+   * @param {number} productId - ID товара
+   * @param {number} quantity - Количество товара
+   * @returns {Promise<Object>} - Обновленная корзина
+   */
+  addToCart: (productId, quantity) => {
+    return cartApi.post('/cart/items', {
+      product_id: productId,
+      quantity: quantity
+    });
+  },
+
+  /**
+   * Обновляет количество товара в корзине
+   * @param {number} itemId - ID элемента корзины
+   * @param {number} quantity - Новое количество товара
+   * @returns {Promise<Object>} - Обновленная корзина
+   */
+  updateCartItem: (itemId, quantity) => {
+    return cartApi.put(`/cart/items/${itemId}`, {
+      quantity: quantity
+    });
+  },
+
+  /**
+   * Удаляет товар из корзины
+   * @param {number} itemId - ID элемента корзины
+   * @returns {Promise<Object>} - Обновленная корзина
+   */
+  removeFromCart: (itemId) => {
+    return cartApi.delete(`/cart/items/${itemId}`);
+  },
+
+  /**
+   * Очищает корзину (удаляет все товары)
+   * @returns {Promise<Object>} - Пустая корзина
+   */
+  clearCart: () => {
+    return cartApi.delete('/cart');
+  },
+
+  /**
+   * Объединяет корзины при авторизации пользователя
+   * @param {string} [sessionId] - Идентификатор сессии для корзины (необязательный)
+   * @returns {Promise<Object>} - Объединенная корзина
+   */
+  mergeCarts: (sessionId) => {
+    let url = '/cart/merge';
+    
+    // Если передан sessionId, добавляем его как query параметр
+    if (sessionId) {
+      url += `?url_session_id=${sessionId}`;
+    }
+    
+    return cartApi.post(url);
+  }
+};
+
 // Экспортируем все API и инстансы для возможного прямого использования
 const apiExports = {
   authApi,
@@ -429,7 +508,8 @@ const apiExports = {
   adminAPI,
   contentAPI,
   notificationAPI,
-  productAPI
+  productAPI,
+  cartAPI
 };
 
 export default apiExports; 

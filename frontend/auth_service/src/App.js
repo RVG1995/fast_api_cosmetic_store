@@ -21,6 +21,7 @@ import AdminCountries from './pages/admin/AdminCountries';
 import HomePage from './pages/HomePage';
 import ProductsPage from './pages/ProductsPage';
 import ProductDetailPage from './pages/ProductDetailPage';
+import CartPage from './pages/CartPage'; // Импортируем страницу корзины
 
 // Импорт стилей
 import './styles/App.css';
@@ -39,6 +40,9 @@ function App() {
             
             {/* Страница детальной информации о товаре */}
             <Route path="products/:productId" element={<ProductDetailPage />} />
+            
+            {/* Страница корзины */}
+            <Route path="cart" element={<CartPage />} />
             
             {/* Публичные маршруты только для неавторизованных пользователей */}
             <Route 

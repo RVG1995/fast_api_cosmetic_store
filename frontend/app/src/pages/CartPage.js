@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { formatPrice } from '../utils/helpers';
@@ -13,6 +13,8 @@ const CartPage = () => {
   const [updateMessage, setUpdateMessage] = useState({ type: '', text: '' });
   // Таймеры для дебаунсинга обновления количества
   const updateTimers = useRef({});
+  // Сохраняем исходный порядок элементов корзины
+  const [itemsOrder, setItemsOrder] = useState([]);
   
   // Инициализируем локальное состояние количества товаров при загрузке/обновлении корзины
   useEffect(() => {
@@ -22,8 +24,40 @@ const CartPage = () => {
         newQuantities[item.id] = item.quantity;
       });
       setQuantities(newQuantities);
+      
+      // Сохраняем порядок элементов корзины, если он еще не установлен или добавлены новые элементы
+      if (itemsOrder.length === 0) {
+        setItemsOrder(cart.items.map(item => item.id));
+      } else if (cart.items.some(item => !itemsOrder.includes(item.id))) {
+        // Если появились новые элементы, сохраняем существующий порядок и добавляем новые в конец
+        const newIds = cart.items
+          .filter(item => !itemsOrder.includes(item.id))
+          .map(item => item.id);
+        setItemsOrder([...itemsOrder, ...newIds]);
+      }
     }
-  }, [cart]);
+  }, [cart, itemsOrder]);
+
+  // Сортируем элементы корзины согласно сохраненному порядку
+  const sortedCartItems = useMemo(() => {
+    if (!cart || !cart.items) return [];
+    
+    // Создаем копию элементов корзины
+    const itemsCopy = [...cart.items];
+    
+    // Сортируем элементы в соответствии с сохраненным порядком
+    return itemsCopy.sort((a, b) => {
+      const indexA = itemsOrder.indexOf(a.id);
+      const indexB = itemsOrder.indexOf(b.id);
+      
+      // Если элемент не найден в порядке, помещаем его в конец
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      
+      // Сортируем по сохраненному порядку
+      return indexA - indexB;
+    });
+  }, [cart, itemsOrder]);
 
   // Обработчик изменения количества товара
   const handleQuantityChange = (itemId, value) => {
@@ -266,7 +300,7 @@ const CartPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {cart.items.map((item) => (
+                    {sortedCartItems.map((item) => (
                       <tr key={item.id}>
                         <td>
                           <div className="d-flex align-items-center">
@@ -316,7 +350,7 @@ const CartPage = () => {
                         </td>
                         <td className="text-center align-middle">
                           <div className="d-flex align-items-center justify-content-center">
-                            <div className="input-group" style={{ width: '120px' }}>
+                            <div className="input-group" style={{ width: '150px' }}>
                               <button 
                                 className="btn btn-outline-secondary" 
                                 type="button"
@@ -329,13 +363,23 @@ const CartPage = () => {
                                 <i className="bi bi-dash"></i>
                               </button>
                               <input 
-                                type="number" 
-                                className="form-control text-center"
+                                type="text"
+                                pattern="[0-9]*"
+                                inputMode="numeric"
+                                className="form-control text-center fs-5"
                                 value={quantities[item.id] !== undefined ? quantities[item.id] : item.quantity}
-                                onChange={(e) => handleQuantityChange(item.id, e.target.value)}
-                                min="1"
-                                max={item.product ? item.product.stock : 1}
+                                onChange={(e) => {
+                                  // Разрешаем только цифры
+                                  const value = e.target.value.replace(/[^0-9]/g, '');
+                                  handleQuantityChange(item.id, value);
+                                }}
+                                style={{ 
+                                  minWidth: '50px',
+                                  textAlign: 'center',
+                                  padding: '0.375rem 0.5rem'
+                                }}
                                 disabled={isUpdating[item.id]}
+                                aria-label="Количество товара"
                               />
                               <button 
                                 className="btn btn-outline-secondary" 
@@ -350,6 +394,11 @@ const CartPage = () => {
                                 <i className="bi bi-plus"></i>
                               </button>
                             </div>
+                            {isUpdating[item.id] && (
+                              <div className="ms-2">
+                                <span className="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                              </div>
+                            )}
                           </div>
                         </td>
                         <td className="text-center align-middle fw-bold">

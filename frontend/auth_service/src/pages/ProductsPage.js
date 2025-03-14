@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import CartUpdater from '../components/cart/CartUpdater';
 import { API_URLS } from '../utils/constants';
+import AddToCartButton from '../components/cart/AddToCartButton';
 import '../styles/HomePage.css';
 
 const ProductsPage = () => {
@@ -584,10 +585,11 @@ const ProductsPage = () => {
                       <p className="stock">
                         {product.stock > 0 ? `В наличии: ${product.stock}` : 'Нет в наличии'}
                       </p>
-                      <button className="btn btn-primary">
-                        <i className="bi bi-cart-plus me-1"></i>
-                        В корзину
-                      </button>
+                      <AddToCartButton 
+                        productId={product.id}
+                        stock={product.stock}
+                        className="w-100"
+                      />
                     </div>
                   </div>
                 </div>

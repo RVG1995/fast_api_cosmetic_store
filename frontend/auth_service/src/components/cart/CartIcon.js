@@ -107,9 +107,9 @@ const CartIcon = () => {
         title="Корзина"
       >
         <i className="bi bi-cart3"></i>
-        {cartSummary.total_items > 0 && (
+        {cart && cart.items && cart.items.length > 0 && (
           <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-            {cartSummary.total_items}
+            {cart.items.length}
           </span>
         )}
       </button>

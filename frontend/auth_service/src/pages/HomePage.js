@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import { productAPI } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import '../styles/HomePage.css';
+import { API_URLS } from '../utils/constants';
+import AddToCartButton from '../components/cart/AddToCartButton';
+import CartUpdater from '../components/cart/CartUpdater';
 
 const HomePage = () => {
   const [products, setProducts] = useState([]);
@@ -20,6 +23,24 @@ const HomePage = () => {
     totalItems: 0,
     pageSize: 8
   });
+
+  // Функция для форматирования URL изображения
+  const formatImageUrl = (imageUrl) => {
+    if (!imageUrl) return null;
+    
+    // Если URL начинается с http, значит он уже полный
+    if (imageUrl.startsWith('http')) {
+      return imageUrl;
+    }
+    
+    // Если URL начинается с /, то добавляем базовый URL продуктового сервиса
+    if (imageUrl.startsWith('/')) {
+      return `${API_URLS.PRODUCT}${imageUrl}`;
+    }
+    
+    // В противном случае просто возвращаем URL как есть
+    return imageUrl;
+  };
 
   // Функция для загрузки товаров с учетом пагинации и сортировки
   const fetchProducts = async (page = 1) => {
@@ -192,6 +213,8 @@ const HomePage = () => {
           </div>
         </div>
         
+        <CartUpdater />
+        
         {products.length === 0 ? (
           <div className="no-products">
             <p>Продукты не найдены</p>
@@ -205,7 +228,7 @@ const HomePage = () => {
                     <Link to={`/products/${product.id}`} className="product-image-link">
                       <div className="product-image">
                         {product.image ? (
-                          <img src={`http://localhost:8001${product.image}`} alt={product.name} />
+                          <img src={formatImageUrl(product.image)} alt={product.name} />
                         ) : (
                           <div className="no-image">Нет изображения</div>
                         )}
@@ -220,10 +243,11 @@ const HomePage = () => {
                       <p className="stock">
                         {product.stock > 0 ? `В наличии: ${product.stock}` : 'Нет в наличии'}
                       </p>
-                      <button className="btn btn-primary">
-                        <i className="bi bi-cart-plus me-1"></i>
-                        В корзину
-                      </button>
+                      <AddToCartButton 
+                        productId={product.id}
+                        stock={product.stock}
+                        className="w-100"
+                      />
                     </div>
                   </div>
                 </div>

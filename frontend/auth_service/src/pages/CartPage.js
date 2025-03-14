@@ -5,9 +5,11 @@ import { formatPrice } from '../utils/helpers';
 import '../pages/CartPage.css';
 
 const CartPage = () => {
-  const { cart, loading, error, updateCartItem, removeFromCart, clearCart } = useCart();
+  const { cart, loading, error, updateCartItem, removeFromCart, clearCart, fetchCart } = useCart();
   const [quantities, setQuantities] = useState({});
   const [isUpdating, setIsUpdating] = useState({});
+  const [isRemoving, setIsRemoving] = useState({});
+  const [isClearingCart, setIsClearingCart] = useState(false);
   const [updateMessage, setUpdateMessage] = useState({ type: '', text: '' });
 
   // Обработчик изменения количества товара
@@ -29,41 +31,48 @@ const CartPage = () => {
       
       if (result.success) {
         setUpdateMessage({ type: 'success', text: 'Количество товара обновлено' });
+        // Обновляем корзину после успешного обновления
+        await fetchCart();
       } else {
         setUpdateMessage({ type: 'danger', text: result.message });
       }
     } catch (err) {
+      console.error('Ошибка при обновлении количества товара:', err);
       setUpdateMessage({ type: 'danger', text: 'Ошибка при обновлении количества товара' });
     } finally {
       setIsUpdating(prev => ({ ...prev, [itemId]: false }));
       
-      // Сбрасываем сообщение через 3 секунды
+      // Автоматически скрываем сообщение через 3 секунды
       setTimeout(() => {
         setUpdateMessage({ type: '', text: '' });
       }, 3000);
     }
   };
 
-  // Обработчик удаления товара из корзины
+  // Обработчик удаления товара
   const handleRemoveItem = async (itemId) => {
-    setIsUpdating(prev => ({ ...prev, [itemId]: true }));
-    
+    setIsRemoving(prev => ({ ...prev, [itemId]: true }));
+    setUpdateMessage({ type: '', text: '' });
+
     try {
       const result = await removeFromCart(itemId);
       
       if (result.success) {
         setUpdateMessage({ type: 'success', text: 'Товар удален из корзины' });
+        // Обновляем корзину после успешного удаления
+        await fetchCart();
       } else {
         setUpdateMessage({ type: 'danger', text: result.message });
       }
     } catch (err) {
-      setUpdateMessage({ type: 'danger', text: 'Ошибка при удалении товара из корзины' });
+      console.error('Ошибка при удалении товара:', err);
+      setUpdateMessage({ type: 'danger', text: 'Ошибка при удалении товара' });
     } finally {
-      setIsUpdating(prev => ({ ...prev, [itemId]: false }));
+      setIsRemoving(prev => ({ ...prev, [itemId]: false }));
       
-      // Сбрасываем сообщение через 3 секунды
+      // Автоматически скрываем сообщение через 3 секунды
       setTimeout(() => {
-        setUpdateMessage({ type: 'success', text: '' });
+        setUpdateMessage({ type: '', text: '' });
       }, 3000);
     }
   };
@@ -71,16 +80,29 @@ const CartPage = () => {
   // Обработчик очистки корзины
   const handleClearCart = async () => {
     if (window.confirm('Вы уверены, что хотите очистить корзину?')) {
+      setIsClearingCart(true);
+      setUpdateMessage({ type: '', text: '' });
+
       try {
         const result = await clearCart();
         
         if (result.success) {
           setUpdateMessage({ type: 'success', text: 'Корзина очищена' });
+          // Обновляем корзину после успешной очистки
+          await fetchCart();
         } else {
           setUpdateMessage({ type: 'danger', text: result.message });
         }
       } catch (err) {
+        console.error('Ошибка при очистке корзины:', err);
         setUpdateMessage({ type: 'danger', text: 'Ошибка при очистке корзины' });
+      } finally {
+        setIsClearingCart(false);
+        
+        // Автоматически скрываем сообщение через 3 секунды
+        setTimeout(() => {
+          setUpdateMessage({ type: '', text: '' });
+        }, 3000);
       }
     }
   };
@@ -277,10 +299,10 @@ const CartPage = () => {
                           <button 
                             className="btn btn-sm btn-outline-danger"
                             onClick={() => handleRemoveItem(item.id)}
-                            disabled={isUpdating[item.id]}
+                            disabled={isRemoving[item.id]}
                             title="Удалить из корзины"
                           >
-                            {isUpdating[item.id] ? (
+                            {isRemoving[item.id] ? (
                               <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                             ) : (
                               <i className="bi bi-trash"></i>

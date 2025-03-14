@@ -34,10 +34,20 @@ async def lifespan(app: FastAPI):
     # Код, который должен выполниться при запуске приложения
     await setup_database()  # создание таблиц в базе данных
     
+    logger.info("Сервис корзин запущен")
+    
     yield  # здесь приложение будет работать
     
     # Код для завершения работы приложения
-    await engine.dispose()  # корректное закрытие соединений с базой данных
+    logger.info("Завершение работы сервиса корзин")
+    
+    # Закрытие соединения с Redis
+    await product_api.close()
+    
+    # Закрытие соединений с базой данных
+    await engine.dispose()
+    
+    logger.info("Все соединения закрыты")
 
 app = FastAPI(lifespan=lifespan)
 

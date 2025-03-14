@@ -2,7 +2,7 @@ import uuid
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Body
 from database import setup_database, get_session, engine
 from models import SubCategoryModel,CategoryModel, ProductModel,CountryModel, BrandModel
-from auth import require_admin, get_current_user
+from auth import require_admin, get_current_user, User
 from schema import BrandAddSchema, BrandSchema, BrandUpdateSchema, CategoryAddSchema, CategorySchema, CategoryUpdateSchema, CountryAddSchema, CountrySchema, CountryUpdateSchema, ProductAddSchema,ProductSchema, ProductUpdateSchema, SubCategoryAddSchema, SubCategorySchema, SubCategoryUpdateSchema, PaginatedProductResponse, ProductDetailSchema
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -14,7 +14,7 @@ import os
 import logging
 from sqlalchemy import func
 
-from typing import List, Optional,Union,Annotated
+from typing import List, Optional, Union, Annotated
 from fastapi.staticfiles import StaticFiles
 
 # Настройка логирования
@@ -1060,6 +1060,50 @@ async def update_product(
         raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
 
     return product
+
+@app.post('/products/batch', tags=["Products"])
+async def get_products_batch(
+    product_ids: List[int] = Body(..., embed=True, description="Список ID продуктов"),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Получить информацию о нескольких продуктах по их ID.
+    Возвращает список объектов продуктов для всех найденных ID.
+    Требуются права администратора.
+    """
+    logger.info(f"Пакетный запрос информации о продуктах: {product_ids}")
+    
+    # Проверка прав администратора
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    
+    if not getattr(current_user, 'is_admin', False) and not getattr(current_user, 'is_super_admin', False):
+        logger.warning(f"Пользователь {current_user.id} пытался получить пакетный доступ к продуктам без прав администратора")
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    
+    if not product_ids:
+        return []
+    
+    # Убираем дубликаты и ограничиваем размер запроса
+    unique_ids = list(set(product_ids))
+    if len(unique_ids) > 100:  # Ограничиваем количество запрашиваемых продуктов
+        logger.warning(f"Слишком много ID продуктов в запросе ({len(unique_ids)}), ограничиваем до 100")
+        unique_ids = unique_ids[:100]
+    
+    try:
+        # Создаем запрос для получения всех продуктов по их ID
+        query = select(ProductModel).filter(ProductModel.id.in_(unique_ids))
+        result = await session.execute(query)
+        products = result.scalars().all()
+        
+        logger.info(f"Найдено {len(products)} продуктов из {len(unique_ids)} запрошенных")
+        
+        # Преобразуем продукты в JSON-совместимый формат
+        return products
+    except Exception as e:
+        logger.error(f"Ошибка при выполнении пакетного запроса продуктов: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

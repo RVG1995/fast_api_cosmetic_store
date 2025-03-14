@@ -1,0 +1,426 @@
+from typing import List, Optional, Tuple, Dict, Any
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, desc, asc
+from sqlalchemy.orm import selectinload
+import logging
+from datetime import datetime
+
+from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel, ShippingAddressModel, BillingAddressModel
+from schemas import OrderCreate, OrderUpdate, OrderStatusHistoryCreate, OrderFilterParams, OrderStatistics
+
+# Настройка логирования
+logger = logging.getLogger("order_service")
+
+# Сервисные функции для работы с заказами
+async def create_order(
+    session: AsyncSession,
+    user_id: int,
+    order_data: OrderCreate,
+    product_service_url: str
+) -> OrderModel:
+    """
+    Создание нового заказа
+    
+    Args:
+        session: Сессия базы данных
+        user_id: ID пользователя, создающего заказ
+        order_data: Данные для создания заказа
+        product_service_url: URL сервиса продуктов для проверки наличия товаров
+        
+    Returns:
+        Созданный заказ
+    """
+    # Получаем статус по умолчанию для нового заказа
+    default_status = await OrderStatusModel.get_default(session)
+    if not default_status:
+        logger.error("Не найден статус заказа по умолчанию")
+        raise ValueError("Не найден статус заказа по умолчанию")
+    
+    # TODO: Проверка наличия товаров через product_service_url
+    # TODO: Получение информации о товарах (название, цена) через product_service_url
+    
+    # Создаем заказ
+    total_price = 0  # Будет рассчитано на основе товаров
+    
+    # Обработка адреса доставки
+    shipping_address_str = None
+    if order_data.shipping_address:
+        # Создаем новый адрес доставки
+        shipping_address = ShippingAddressModel(
+            user_id=user_id,
+            full_name=order_data.shipping_address.full_name,
+            address_line1=order_data.shipping_address.address_line1,
+            address_line2=order_data.shipping_address.address_line2,
+            city=order_data.shipping_address.city,
+            state=order_data.shipping_address.state,
+            postal_code=order_data.shipping_address.postal_code,
+            country=order_data.shipping_address.country,
+            phone_number=order_data.shipping_address.phone_number,
+            is_default=order_data.shipping_address.is_default
+        )
+        session.add(shipping_address)
+        await session.flush()
+        
+        # Формируем строку с адресом
+        shipping_address_str = f"{shipping_address.full_name}, {shipping_address.address_line1}, "
+        if shipping_address.address_line2:
+            shipping_address_str += f"{shipping_address.address_line2}, "
+        shipping_address_str += f"{shipping_address.city}, {shipping_address.postal_code}, {shipping_address.country}"
+    elif order_data.shipping_address_id:
+        # Получаем существующий адрес доставки
+        shipping_address = await session.get(ShippingAddressModel, order_data.shipping_address_id)
+        if not shipping_address or shipping_address.user_id != user_id:
+            logger.error(f"Адрес доставки с ID {order_data.shipping_address_id} не найден или не принадлежит пользователю {user_id}")
+            raise ValueError(f"Адрес доставки с ID {order_data.shipping_address_id} не найден или не принадлежит пользователю")
+        
+        # Формируем строку с адресом
+        shipping_address_str = f"{shipping_address.full_name}, {shipping_address.address_line1}, "
+        if shipping_address.address_line2:
+            shipping_address_str += f"{shipping_address.address_line2}, "
+        shipping_address_str += f"{shipping_address.city}, {shipping_address.postal_code}, {shipping_address.country}"
+    
+    # Создаем заказ
+    order = OrderModel(
+        user_id=user_id,
+        status_id=default_status.id,
+        total_price=total_price,  # Временное значение, будет обновлено
+        shipping_address=shipping_address_str,
+        contact_phone=order_data.contact_phone,
+        contact_email=order_data.contact_email,
+        notes=order_data.notes,
+        is_paid=False,
+        payment_method=order_data.payment_method.value
+    )
+    session.add(order)
+    await session.flush()
+    
+    # Создаем элементы заказа
+    for item_data in order_data.items:
+        # TODO: Получение информации о товаре из сервиса продуктов
+        # Временные данные для примера
+        product_name = f"Товар {item_data.product_id}"
+        product_price = 1000  # Цена товара в копейках
+        
+        item = OrderItemModel(
+            order_id=order.id,
+            product_id=item_data.product_id,
+            product_name=product_name,
+            product_price=product_price,
+            quantity=item_data.quantity,
+            total_price=product_price * item_data.quantity
+        )
+        session.add(item)
+        total_price += item.total_price
+    
+    # Обновляем общую стоимость заказа
+    order.total_price = total_price
+    
+    # Добавляем запись в историю статусов
+    await OrderStatusHistoryModel.add_status_change(
+        session=session,
+        order_id=order.id,
+        status_id=default_status.id,
+        changed_by_user_id=user_id,
+        notes="Заказ создан"
+    )
+    
+    await session.flush()
+    return order
+
+async def get_order_by_id(session: AsyncSession, order_id: int, user_id: Optional[int] = None) -> Optional[OrderModel]:
+    """
+    Получение заказа по ID
+    
+    Args:
+        session: Сессия базы данных
+        order_id: ID заказа
+        user_id: ID пользователя (для проверки доступа)
+        
+    Returns:
+        Заказ или None, если заказ не найден или пользователь не имеет доступа
+    """
+    query = select(OrderModel).options(
+        selectinload(OrderModel.items),
+        selectinload(OrderModel.status),
+        selectinload(OrderModel.status_history).selectinload(OrderStatusHistoryModel.status)
+    ).filter(OrderModel.id == order_id)
+    
+    if user_id is not None:
+        query = query.filter(OrderModel.user_id == user_id)
+    
+    result = await session.execute(query)
+    return result.scalars().first()
+
+async def get_orders(
+    session: AsyncSession,
+    filters: OrderFilterParams,
+    user_id: Optional[int] = None
+) -> Tuple[List[OrderModel], int]:
+    """
+    Получение списка заказов с фильтрацией и пагинацией
+    
+    Args:
+        session: Сессия базы данных
+        filters: Параметры фильтрации и пагинации
+        user_id: ID пользователя (для фильтрации по пользователю)
+        
+    Returns:
+        Кортеж из списка заказов и общего количества заказов
+    """
+    if user_id is not None:
+        return await OrderModel.get_by_user(
+            session=session,
+            user_id=user_id,
+            page=filters.page,
+            limit=filters.size,
+            status_id=filters.status_id
+        )
+    else:
+        return await OrderModel.get_all(
+            session=session,
+            page=filters.page,
+            limit=filters.size,
+            status_id=filters.status_id,
+            user_id=filters.user_id,
+            order_by=filters.order_by,
+            order_dir=filters.order_dir
+        )
+
+async def update_order(
+    session: AsyncSession,
+    order_id: int,
+    order_data: OrderUpdate,
+    user_id: Optional[int] = None
+) -> Optional[OrderModel]:
+    """
+    Обновление данных заказа
+    
+    Args:
+        session: Сессия базы данных
+        order_id: ID заказа
+        order_data: Данные для обновления
+        user_id: ID пользователя (для проверки доступа)
+        
+    Returns:
+        Обновленный заказ или None, если заказ не найден или пользователь не имеет доступа
+    """
+    # Получаем заказ
+    order = await get_order_by_id(session, order_id, user_id)
+    if not order:
+        return None
+    
+    # Обновляем данные заказа
+    if order_data.shipping_address_id is not None:
+        # Проверяем существование адреса и принадлежность пользователю
+        shipping_address = await session.get(ShippingAddressModel, order_data.shipping_address_id)
+        if not shipping_address or (user_id is not None and shipping_address.user_id != user_id):
+            logger.error(f"Адрес доставки с ID {order_data.shipping_address_id} не найден или не принадлежит пользователю {user_id}")
+            raise ValueError(f"Адрес доставки с ID {order_data.shipping_address_id} не найден или не принадлежит пользователю")
+        
+        # Формируем строку с адресом
+        shipping_address_str = f"{shipping_address.full_name}, {shipping_address.address_line1}, "
+        if shipping_address.address_line2:
+            shipping_address_str += f"{shipping_address.address_line2}, "
+        shipping_address_str += f"{shipping_address.city}, {shipping_address.postal_code}, {shipping_address.country}"
+        
+        order.shipping_address = shipping_address_str
+    
+    if order_data.payment_method is not None:
+        order.payment_method = order_data.payment_method.value
+    
+    if order_data.contact_phone is not None:
+        order.contact_phone = order_data.contact_phone
+    
+    if order_data.contact_email is not None:
+        order.contact_email = order_data.contact_email
+    
+    if order_data.notes is not None:
+        order.notes = order_data.notes
+    
+    if order_data.is_paid is not None:
+        order.is_paid = order_data.is_paid
+    
+    order.updated_at = datetime.utcnow()
+    await session.flush()
+    
+    return order
+
+async def change_order_status(
+    session: AsyncSession,
+    order_id: int,
+    status_data: OrderStatusHistoryCreate,
+    user_id: int,
+    is_admin: bool = False
+) -> Optional[OrderModel]:
+    """
+    Изменение статуса заказа
+    
+    Args:
+        session: Сессия базы данных
+        order_id: ID заказа
+        status_data: Данные о новом статусе
+        user_id: ID пользователя, изменяющего статус
+        is_admin: Является ли пользователь администратором
+        
+    Returns:
+        Обновленный заказ или None, если заказ не найден или пользователь не имеет доступа
+    """
+    # Получаем заказ
+    order = await get_order_by_id(session, order_id)
+    if not order:
+        return None
+    
+    # Проверяем доступ пользователя
+    if not is_admin and order.user_id != user_id:
+        logger.error(f"Пользователь {user_id} не имеет доступа к заказу {order_id}")
+        return None
+    
+    # Получаем новый статус
+    new_status = await session.get(OrderStatusModel, status_data.status_id)
+    if not new_status:
+        logger.error(f"Статус с ID {status_data.status_id} не найден")
+        raise ValueError(f"Статус с ID {status_data.status_id} не найден")
+    
+    # Проверяем возможность отмены заказа
+    if order.status_id != new_status.id:
+        current_status = await session.get(OrderStatusModel, order.status_id)
+        if current_status and current_status.is_final:
+            logger.error(f"Невозможно изменить статус заказа {order_id}, так как текущий статус является финальным")
+            raise ValueError("Невозможно изменить статус заказа, так как текущий статус является финальным")
+    
+    # Обновляем статус заказа
+    order.status_id = new_status.id
+    order.updated_at = datetime.utcnow()
+    
+    # Добавляем запись в историю статусов
+    await OrderStatusHistoryModel.add_status_change(
+        session=session,
+        order_id=order.id,
+        status_id=new_status.id,
+        changed_by_user_id=user_id,
+        notes=status_data.notes
+    )
+    
+    await session.flush()
+    return order
+
+async def cancel_order(
+    session: AsyncSession,
+    order_id: int,
+    user_id: int,
+    is_admin: bool = False,
+    cancel_reason: Optional[str] = None
+) -> Optional[OrderModel]:
+    """
+    Отмена заказа
+    
+    Args:
+        session: Сессия базы данных
+        order_id: ID заказа
+        user_id: ID пользователя, отменяющего заказ
+        is_admin: Является ли пользователь администратором
+        cancel_reason: Причина отмены
+        
+    Returns:
+        Обновленный заказ или None, если заказ не найден или пользователь не имеет доступа
+    """
+    # Получаем заказ
+    order = await get_order_by_id(session, order_id)
+    if not order:
+        return None
+    
+    # Проверяем доступ пользователя
+    if not is_admin and order.user_id != user_id:
+        logger.error(f"Пользователь {user_id} не имеет доступа к заказу {order_id}")
+        return None
+    
+    # Получаем текущий статус заказа
+    current_status = await session.get(OrderStatusModel, order.status_id)
+    if not current_status:
+        logger.error(f"Статус заказа {order_id} не найден")
+        return None
+    
+    # Проверяем возможность отмены заказа
+    if not current_status.allow_cancel and not is_admin:
+        logger.error(f"Невозможно отменить заказ {order_id}, так как текущий статус не позволяет отмену")
+        raise ValueError("Невозможно отменить заказ, так как текущий статус не позволяет отмену")
+    
+    # Получаем статус "Отменен"
+    cancel_status_query = select(OrderStatusModel).filter(OrderStatusModel.name == "Отменен")
+    result = await session.execute(cancel_status_query)
+    cancel_status = result.scalars().first()
+    
+    if not cancel_status:
+        logger.error("Статус 'Отменен' не найден")
+        raise ValueError("Статус 'Отменен' не найден")
+    
+    # Обновляем статус заказа
+    order.status_id = cancel_status.id
+    order.updated_at = datetime.utcnow()
+    
+    # Добавляем запись в историю статусов
+    notes = cancel_reason if cancel_reason else "Заказ отменен"
+    await OrderStatusHistoryModel.add_status_change(
+        session=session,
+        order_id=order.id,
+        status_id=cancel_status.id,
+        changed_by_user_id=user_id,
+        notes=notes
+    )
+    
+    await session.flush()
+    return order
+
+async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
+    """
+    Получение статистики по заказам
+    
+    Args:
+        session: Сессия базы данных
+        
+    Returns:
+        Статистика по заказам
+    """
+    # Общее количество заказов
+    total_orders_query = select(func.count(OrderModel.id))
+    total_orders_result = await session.execute(total_orders_query)
+    total_orders = total_orders_result.scalar() or 0
+    
+    # Общая выручка
+    total_revenue_query = select(func.sum(OrderModel.total_price))
+    total_revenue_result = await session.execute(total_revenue_query)
+    total_revenue = total_revenue_result.scalar() or 0
+    
+    # Средняя стоимость заказа
+    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
+    
+    # Количество заказов по статусам
+    orders_by_status_query = select(
+        OrderStatusModel.name,
+        func.count(OrderModel.id)
+    ).join(
+        OrderModel,
+        OrderStatusModel.id == OrderModel.status_id
+    ).group_by(
+        OrderStatusModel.name
+    )
+    orders_by_status_result = await session.execute(orders_by_status_query)
+    orders_by_status = {row[0]: row[1] for row in orders_by_status_result}
+    
+    # Количество заказов по способам оплаты
+    orders_by_payment_method_query = select(
+        OrderModel.payment_method,
+        func.count(OrderModel.id)
+    ).group_by(
+        OrderModel.payment_method
+    )
+    orders_by_payment_method_result = await session.execute(orders_by_payment_method_query)
+    orders_by_payment_method = {row[0]: row[1] for row in orders_by_payment_method_result}
+    
+    return OrderStatistics(
+        total_orders=total_orders,
+        total_revenue=total_revenue,
+        average_order_value=average_order_value,
+        orders_by_status=orders_by_status,
+        orders_by_payment_method=orders_by_payment_method
+    ) 

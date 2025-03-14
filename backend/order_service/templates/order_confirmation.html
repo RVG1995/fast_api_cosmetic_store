@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Подтверждение заказа</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #4a4a4a;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+        }
+        .content {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 0 0 5px 5px;
+            border: 1px solid #ddd;
+        }
+        .order-info {
+            margin-bottom: 20px;
+        }
+        .order-details {
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .total {
+            font-weight: bold;
+            text-align: right;
+            padding: 10px;
+            background-color: #f2f2f2;
+        }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 14px;
+            color: #777;
+        }
+        .contact-info {
+            margin-top: 20px;
+            background-color: #f2f2f2;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .button {
+            display: inline-block;
+            background-color: #4a4a4a;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Ваш заказ успешно оформлен!</h1>
+    </div>
+    
+    <div class="content">
+        <div class="order-info">
+            <p>Здравствуйте!</p>
+            <p>Благодарим вас за заказ в нашем магазине косметики. Ваш заказ был успешно оформлен и принят в обработку.</p>
+            
+            <h2>Информация о заказе:</h2>
+            <p><strong>Номер заказа:</strong> {{ order_number }}</p>
+            <p><strong>Дата оформления:</strong> {{ order_date }}</p>
+            <p><strong>Статус заказа:</strong> {{ status }}</p>
+        </div>
+        
+        <div class="order-details">
+            <h2>Состав заказа:</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Наименование</th>
+                        <th>Цена</th>
+                        <th>Кол-во</th>
+                        <th>Сумма</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr>
+                        <td>{{ item.product_name }}</td>
+                        <td>{{ "{:,.2f}".format(item.product_price / 100) }} ₽</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{{ "{:,.2f}".format(item.total_price / 100) }} ₽</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <div class="total">
+                <p>Итого: {{ "{:,.2f}".format(total_price / 100) }} ₽</p>
+            </div>
+        </div>
+        
+        <div class="contact-info">
+            <h2>Данные для доставки:</h2>
+            <p><strong>Адрес доставки:</strong> {{ shipping_address }}</p>
+            <p><strong>Контактный телефон:</strong> {{ contact_phone }}</p>
+            <p><strong>Email:</strong> {{ contact_email }}</p>
+        </div>
+        
+        <p>Наш менеджер свяжется с вами в ближайшее время для подтверждения заказа и уточнения деталей.</p>
+        <p>С уважением, команда магазина косметики.</p>
+    </div>
+    
+    <div class="footer">
+        <p>&copy; {{ current_year }} Магазин косметики. Все права защищены.</p>
+        <p>Если у вас возникли вопросы, обратитесь в нашу службу поддержки: <a href="mailto:support@cosmetic-store.com">support@cosmetic-store.com</a></p>
+    </div>
+</body>
+</html> 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, List
 import re
 
@@ -18,7 +18,7 @@ class CategoryAddSchema(BaseModel):
     slug: str
 
     # Валидация slug
-    @validator('slug')
+    @field_validator('slug')
     def slug_must_be_valid(cls, v):
         return validate_slug(v)
 
@@ -37,7 +37,7 @@ class CountryAddSchema(BaseModel):
     slug: str
     
     # Валидация slug
-    @validator('slug')
+    @field_validator('slug')
     def slug_must_be_valid(cls, v):
         return validate_slug(v)
 
@@ -55,7 +55,7 @@ class BrandAddSchema(BaseModel):
     slug: str
     
     # Валидация slug
-    @validator('slug')
+    @field_validator('slug')
     def slug_must_be_valid(cls, v):
         return validate_slug(v)
 
@@ -74,7 +74,7 @@ class SubCategoryAddSchema(BaseModel):
     category_id: int
     
     # Валидация slug
-    @validator('slug')
+    @field_validator('slug')
     def slug_must_be_valid(cls, v):
         return validate_slug(v)
 

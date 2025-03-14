@@ -7,7 +7,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from alembic import context
-from product_service.models import Base, CategoryModel, CountryModel, BrandModel, ProductModel
+from models import Base, CategoryModel, CountryModel, BrandModel, ProductModel, SubCategoryModel
 
 config = context.config
 

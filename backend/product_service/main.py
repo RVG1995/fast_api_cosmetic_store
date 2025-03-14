@@ -141,7 +141,6 @@ async def add_product(
         logger.error(f"Непредвиденная ошибка: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка при создании продукта: {str(e)}")
 
-
 @app.get('/products', response_model=PaginatedProductResponse)
 async def get_products(
     session: SessionDep,
@@ -483,8 +482,8 @@ async def update_product(
 @app.delete("/products/{product_id}", status_code=204)
 async def delete_product(
     product_id: int,
-    admin = Depends(require_admin),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
 ):
     # Ищем продукт по id
     query = select(ProductModel).filter(ProductModel.id == product_id)
@@ -513,7 +512,19 @@ async def get_categories(session: SessionDep):
     return result.scalars().all()
 
 @app.post('/categories',response_model = CategorySchema)
-async def add_categories(data: CategoryAddSchema, session: SessionDep):
+async def add_categories(
+    data: CategoryAddSchema,
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
+):
+    # Проверка уникальности slug
+    slug_query = select(CategoryModel).filter(CategoryModel.slug == data.slug)
+    result = await session.execute(slug_query)
+    existing_category = result.scalars().first()
+    
+    if existing_category:
+        raise HTTPException(status_code=400, detail=f"Категория с slug '{data.slug}' уже существует")
+    
     new_category = CategoryModel(
         name = data.name,
         slug= data.slug,
@@ -533,17 +544,30 @@ async def add_categories(data: CategoryAddSchema, session: SessionDep):
 async def update_category(
     category_id: int,
     update_data: CategoryUpdateSchema,
-    session: SessionDep
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
 ):
-    # Ищем продукт по id
+    # Ищем категорию по id
     query = select(CategoryModel).filter(CategoryModel.id == category_id)
     result = await session.execute(query)
     category = result.scalars().first()
     
     if not category:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="Category not found")
 
-    # Обновляем поля продукта, используя только переданные данные
+    # Проверка уникальности slug при обновлении, если он был изменен
+    if update_data.slug is not None and update_data.slug != category.slug:
+        slug_query = select(CategoryModel).filter(
+            CategoryModel.slug == update_data.slug,
+            CategoryModel.id != category_id  # Исключаем текущую категорию из проверки
+        )
+        result = await session.execute(slug_query)
+        existing_category = result.scalars().first()
+        
+        if existing_category:
+            raise HTTPException(status_code=400, detail=f"Категория с slug '{update_data.slug}' уже существует")
+
+    # Обновляем поля категории, используя только переданные данные
     update_fields = update_data.model_dump(exclude_unset=True)
     for field, value in update_fields.items():
         setattr(category, field, value)
@@ -571,8 +595,8 @@ async def get_category_id(category_id: int, session: SessionDep):
 @app.delete("/categories/{category_id}", status_code=204)
 async def delete_category(
     category_id: int,
-    admin = Depends(require_admin),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
 ):
     # Ищем категорию по id
     query = select(CategoryModel).filter(CategoryModel.id == category_id)
@@ -604,7 +628,19 @@ async def get_countries(session: SessionDep):
     return result.scalars().all()
 
 @app.post('/countries',response_model = CountrySchema)
-async def add_countries(data: CountryAddSchema, session: SessionDep):
+async def add_countries(
+    data: CountryAddSchema,
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
+):
+    # Проверка уникальности slug
+    slug_query = select(CountryModel).filter(CountryModel.slug == data.slug)
+    result = await session.execute(slug_query)
+    existing_country = result.scalars().first()
+    
+    if existing_country:
+        raise HTTPException(status_code=400, detail=f"Страна с slug '{data.slug}' уже существует")
+    
     new_country = CountryModel(
         name = data.name,
         slug= data.slug,
@@ -613,9 +649,7 @@ async def add_countries(data: CountryAddSchema, session: SessionDep):
     try:
         await session.commit()
     except IntegrityError as e:
-        # Откатываем транзакцию, если произошла ошибка
         await session.rollback()
-        # Можно извлечь оригинальное сообщение об ошибке для более подробного описания:
         error_detail = str(e.orig) if e.orig else str(e)
         raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
     return new_country
@@ -624,24 +658,36 @@ async def add_countries(data: CountryAddSchema, session: SessionDep):
 async def update_country(
     country_id: int,
     update_data: CountryUpdateSchema,
-    session: SessionDep
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
 ):
-    # Ищем продукт по id
+    # Ищем страну по id
     query = select(CountryModel).filter(CountryModel.id == country_id)
     result = await session.execute(query)
     country = result.scalars().first()
     
     if not country:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="Country not found")
 
-    # Обновляем поля продукта, используя только переданные данные
+    # Проверка уникальности slug при обновлении, если он был изменен
+    if update_data.slug is not None and update_data.slug != country.slug:
+        slug_query = select(CountryModel).filter(
+            CountryModel.slug == update_data.slug,
+            CountryModel.id != country_id  # Исключаем текущую страну из проверки
+        )
+        result = await session.execute(slug_query)
+        existing_country = result.scalars().first()
+        
+        if existing_country:
+            raise HTTPException(status_code=400, detail=f"Страна с slug '{update_data.slug}' уже существует")
+
+    # Обновляем поля страны, используя только переданные данные
     update_fields = update_data.model_dump(exclude_unset=True)
     for field, value in update_fields.items():
         setattr(country, field, value)
     
     try:
         await session.commit()
-        # Обновляем объект из базы, чтобы вернуть актуальные данные
         await session.refresh(country)
     except IntegrityError as e:
         await session.rollback()
@@ -662,8 +708,8 @@ async def get_country_id(country_id: int, session: SessionDep):
 @app.delete("/countries/{country_id}", status_code=204)
 async def delete_country(
     country_id: int,
-    admin = Depends(require_admin),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
 ):
     # Ищем страну по id
     query = select(CountryModel).filter(CountryModel.id == country_id)
@@ -695,7 +741,19 @@ async def get_brands(session: SessionDep):
     return result.scalars().all()
 
 @app.post('/brands',response_model = BrandSchema)
-async def add_brands(data: BrandAddSchema, session: SessionDep):
+async def add_brands(
+    data: BrandAddSchema,
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
+):
+    # Проверка уникальности slug
+    slug_query = select(BrandModel).filter(BrandModel.slug == data.slug)
+    result = await session.execute(slug_query)
+    existing_brand = result.scalars().first()
+    
+    if existing_brand:
+        raise HTTPException(status_code=400, detail=f"Бренд с slug '{data.slug}' уже существует")
+    
     new_brand = BrandModel(
         name = data.name,
         slug= data.slug,
@@ -715,17 +773,30 @@ async def add_brands(data: BrandAddSchema, session: SessionDep):
 async def update_brand(
     brand_id: int,
     update_data: BrandUpdateSchema,
-    session: SessionDep
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
 ):
-    # Ищем продукт по id
+    # Ищем бренд по id
     query = select(BrandModel).filter(BrandModel.id == brand_id)
     result = await session.execute(query)
     brand = result.scalars().first()
     
     if not brand:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="Brand not found")
 
-    # Обновляем поля продукта, используя только переданные данные
+    # Проверка уникальности slug при обновлении, если он был изменен
+    if update_data.slug is not None and update_data.slug != brand.slug:
+        slug_query = select(BrandModel).filter(
+            BrandModel.slug == update_data.slug,
+            BrandModel.id != brand_id  # Исключаем текущий бренд из проверки
+        )
+        result = await session.execute(slug_query)
+        existing_brand = result.scalars().first()
+        
+        if existing_brand:
+            raise HTTPException(status_code=400, detail=f"Бренд с slug '{update_data.slug}' уже существует")
+
+    # Обновляем поля бренда, используя только переданные данные
     update_fields = update_data.model_dump(exclude_unset=True)
     for field, value in update_fields.items():
         setattr(brand, field, value)
@@ -753,8 +824,8 @@ async def get_brand_id(brand_id: int, session: SessionDep):
 @app.delete("/brands/{brand_id}", status_code=204)
 async def delete_brand(
     brand_id: int,
-    admin = Depends(require_admin),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
 ):
     # Ищем бренд по id
     query = select(BrandModel).filter(BrandModel.id == brand_id)
@@ -786,7 +857,19 @@ async def get_subcategories(session: SessionDep):
     return result.scalars().all()
 
 @app.post('/subcategories',response_model = SubCategorySchema)
-async def add_subcategories(data: SubCategoryAddSchema, session: SessionDep):
+async def add_subcategories(
+    data: SubCategoryAddSchema,
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
+):
+    # Проверка уникальности slug
+    slug_query = select(SubCategoryModel).filter(SubCategoryModel.slug == data.slug)
+    result = await session.execute(slug_query)
+    existing_subcategory = result.scalars().first()
+    
+    if existing_subcategory:
+        raise HTTPException(status_code=400, detail=f"Подкатегория с slug '{data.slug}' уже существует")
+    
     new_sub_category = SubCategoryModel(
         name = data.name,
         slug = data.slug,
@@ -807,17 +890,30 @@ async def add_subcategories(data: SubCategoryAddSchema, session: SessionDep):
 async def update_subcategory(
     subcategory_id: int,
     update_data: SubCategoryUpdateSchema,
-    session: SessionDep
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
 ):
-    # Ищем продукт по id
+    # Ищем подкатегорию по id
     query = select(SubCategoryModel).filter(SubCategoryModel.id == subcategory_id)
     result = await session.execute(query)
     subcategory = result.scalars().first()
     
     if not subcategory:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="Subcategory not found")
 
-    # Обновляем поля продукта, используя только переданные данные
+    # Проверка уникальности slug при обновлении, если он был изменен
+    if update_data.slug is not None and update_data.slug != subcategory.slug:
+        slug_query = select(SubCategoryModel).filter(
+            SubCategoryModel.slug == update_data.slug,
+            SubCategoryModel.id != subcategory_id  # Исключаем текущую подкатегорию из проверки
+        )
+        result = await session.execute(slug_query)
+        existing_subcategory = result.scalars().first()
+        
+        if existing_subcategory:
+            raise HTTPException(status_code=400, detail=f"Подкатегория с slug '{update_data.slug}' уже существует")
+
+    # Обновляем поля подкатегории, используя только переданные данные
     update_fields = update_data.model_dump(exclude_unset=True)
     for field, value in update_fields.items():
         setattr(subcategory, field, value)
@@ -844,8 +940,8 @@ async def get_subcategory_id(subcategory_id: int, session: SessionDep):
 @app.delete("/subcategories/{subcategory_id}", status_code=204)
 async def delete_subcategory(
     subcategory_id: int,
-    admin = Depends(require_admin),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
 ):
     # Ищем подкатегорию по id
     query = select(SubCategoryModel).filter(SubCategoryModel.id == subcategory_id)
@@ -886,6 +982,84 @@ async def check_auth(user = Depends(get_current_user)):
             "authenticated": False,
             "message": "Пользователь не авторизован"
         }
+
+@app.post('/products',response_model = ProductSchema)
+async def add_products(
+    data: ProductAddSchema,
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
+):
+    # Проверка уникальности slug
+    slug_query = select(ProductModel).filter(ProductModel.slug == data.slug)
+    result = await session.execute(slug_query)
+    existing_product = result.scalars().first()
+    
+    if existing_product:
+        raise HTTPException(status_code=400, detail=f"Продукт с slug '{data.slug}' уже существует")
+    
+    new_product = ProductModel(
+        name = data.name,
+        slug = data.slug,
+        description = data.description,
+        category_id = data.category_id,
+        subcategory_id = data.subcategory_id,
+        price = data.price,
+        discount_percentage = data.discount_percentage,
+        tags = data.tags,
+        country_id = data.country_id,
+        brand_id = data.brand_id,
+        thumbnail = data.thumbnail
+    )
+    session.add(new_product)
+    try:
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        error_detail = str(e.orig) if e.orig else str(e)
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+    return new_product
+
+@app.put("/products/{product_id}", response_model=ProductSchema)
+async def update_product(
+    product_id: int,
+    update_data: ProductUpdateSchema,
+    session: AsyncSession = Depends(get_session),
+    admin: dict = Depends(require_admin)
+):
+    # Ищем продукт по id
+    query = select(ProductModel).filter(ProductModel.id == product_id)
+    result = await session.execute(query)
+    product = result.scalars().first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # Проверка уникальности slug при обновлении, если он был изменен
+    if update_data.slug is not None and update_data.slug != product.slug:
+        slug_query = select(ProductModel).filter(
+            ProductModel.slug == update_data.slug,
+            ProductModel.id != product_id  # Исключаем текущий продукт из проверки
+        )
+        result = await session.execute(slug_query)
+        existing_product = result.scalars().first()
+        
+        if existing_product:
+            raise HTTPException(status_code=400, detail=f"Продукт с slug '{update_data.slug}' уже существует")
+
+    # Обновляем поля продукта, используя только переданные данные
+    update_fields = update_data.model_dump(exclude_unset=True)
+    for field, value in update_fields.items():
+        setattr(product, field, value)
+    
+    try:
+        await session.commit()
+        await session.refresh(product)
+    except IntegrityError as e:
+        await session.rollback()
+        error_detail = str(e.orig) if e.orig else str(e)
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+
+    return product
 
 if __name__ == "__main__":
     import uvicorn

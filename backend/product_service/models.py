@@ -15,7 +15,7 @@ class CategoryModel(Base):
     id: Mapped[int] = mapped_column(primary_key = True,index = True)
     name: Mapped[str] = mapped_column(String(50))
     slug: Mapped[str] = mapped_column(String(50))
-    products = relationship("ProductModel", back_populates="category", cascade="all, delete-orphan")
+    products = relationship("ProductModel", back_populates="category", cascade="save-update")
     subcategories = relationship("SubCategoryModel", back_populates="category", cascade="all, delete-orphan")
 
 
@@ -25,7 +25,7 @@ class CountryModel(Base):
     id: Mapped[int] = mapped_column(primary_key = True,index = True)
     name: Mapped[str] = mapped_column(String(50))
     slug: Mapped[str] = mapped_column(String(50))
-    products = relationship("ProductModel", back_populates="country", cascade="all, delete-orphan")
+    products = relationship("ProductModel", back_populates="country", cascade="save-update")
 
 class BrandModel(Base):
     __tablename__ = 'brands' 
@@ -33,7 +33,7 @@ class BrandModel(Base):
     id: Mapped[int] = mapped_column(primary_key = True,index = True)
     name: Mapped[str] = mapped_column(String(50))
     slug: Mapped[str] = mapped_column(String(50))
-    products = relationship("ProductModel", back_populates="brand", cascade="all, delete-orphan")
+    products = relationship("ProductModel", back_populates="brand", cascade="save-update")
 
 class SubCategoryModel(Base):
     __tablename__ = 'subcategories'
@@ -47,7 +47,7 @@ class SubCategoryModel(Base):
     # Связь с родительской категорией
     category = relationship("CategoryModel", back_populates="subcategories")
     # Связь с товарами, относящимися к данной подкатегории
-    products = relationship("ProductModel", back_populates="subcategory", cascade="all, delete-orphan")
+    products = relationship("ProductModel", back_populates="subcategory", cascade="save-update")
 
 
 class ProductModel(Base):
@@ -59,11 +59,11 @@ class ProductModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key = True, index = True)
     name: Mapped[str] = mapped_column(String(100),index=True, nullable = False)
-    category_id: Mapped[int] = mapped_column(ForeignKey('categories.id', ondelete='CASCADE'))
-    country_id: Mapped[int] = mapped_column(ForeignKey('countries.id', ondelete='CASCADE'))
-    brand_id: Mapped[int] = mapped_column(ForeignKey('brands.id', ondelete='CASCADE'))
+    category_id: Mapped[int] = mapped_column(ForeignKey('categories.id', ondelete='SET NULL'), nullable=True)
+    country_id: Mapped[int] = mapped_column(ForeignKey('countries.id', ondelete='SET NULL'), nullable=True)
+    brand_id: Mapped[int] = mapped_column(ForeignKey('brands.id', ondelete='SET NULL'), nullable=True)
     subcategory_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey('subcategories.id', ondelete='CASCADE'),
+        ForeignKey('subcategories.id', ondelete='SET NULL'),
         nullable=True
     )
     price: Mapped[int] = mapped_column(Integer, nullable = False)

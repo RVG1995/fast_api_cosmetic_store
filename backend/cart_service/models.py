@@ -2,7 +2,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from sqlalchemy.orm import selectinload
 
 class Base(DeclarativeBase):
@@ -54,6 +54,81 @@ class CartModel(Base):
             # Логируем ошибку и возвращаем None
             print(f"Ошибка при получении корзины сессии: {str(e)}")
             return None
+            
+    @classmethod
+    async def get_user_carts(
+        cls, 
+        session: AsyncSession, 
+        page: int = 1, 
+        limit: int = 10,
+        sort_by: str = "updated_at",
+        sort_order: str = "desc",
+        user_id: Optional[int] = None
+    ) -> Tuple[List["CartModel"], int]:
+        """
+        Получить список корзин пользователей (не анонимных) с пагинацией
+        
+        Args:
+            session: Асинхронная сессия SQLAlchemy
+            page: Номер страницы (начиная с 1)
+            limit: Количество записей на странице
+            sort_by: Поле для сортировки (id, user_id, created_at, updated_at)
+            sort_order: Порядок сортировки (asc, desc)
+            user_id: Опциональный фильтр по ID пользователя
+            
+        Returns:
+            Кортеж (список корзин, общее количество)
+        """
+        try:
+            # Основной запрос с фильтрацией только пользовательских корзин
+            query = select(cls).options(
+                selectinload(cls.items)
+            ).filter(
+                cls.user_id != None  # только корзины с user_id (не анонимные)
+            )
+            
+            # Если указан фильтр по user_id, добавляем его
+            if user_id is not None:
+                query = query.filter(cls.user_id == user_id)
+            
+            # Добавляем сортировку
+            if sort_by == "id":
+                query = query.order_by(cls.id.desc() if sort_order == "desc" else cls.id.asc())
+            elif sort_by == "user_id":
+                query = query.order_by(cls.user_id.desc() if sort_order == "desc" else cls.user_id.asc())
+            elif sort_by == "created_at":
+                query = query.order_by(cls.created_at.desc() if sort_order == "desc" else cls.created_at.asc())
+            else:  # default: updated_at
+                query = query.order_by(cls.updated_at.desc() if sort_order == "desc" else cls.updated_at.asc())
+                
+            # Выполняем запрос для подсчета общего количества корзин
+            count_query = select(func.count()).select_from(
+                select(cls).filter(cls.user_id != None).subquery()
+            )
+            
+            # Если указан фильтр по user_id, добавляем его и в запрос подсчета
+            if user_id is not None:
+                count_query = select(func.count()).select_from(
+                    select(cls).filter(cls.user_id != None, cls.user_id == user_id).subquery()
+                )
+                
+            count_result = await session.execute(count_query)
+            total_count = count_result.scalar() or 0
+            
+            # Добавляем пагинацию
+            offset = (page - 1) * limit
+            query = query.offset(offset).limit(limit)
+            
+            # Выполняем основной запрос
+            result = await session.execute(query)
+            carts = result.scalars().all()
+            
+            return carts, total_count
+            
+        except Exception as e:
+            # Логируем ошибку и возвращаем пустой список
+            print(f"Ошибка при получении списка корзин пользователей: {str(e)}")
+            return [], 0
 
 class CartItemModel(Base):
     """Модель элемента корзины"""

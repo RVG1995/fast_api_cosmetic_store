@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Response, Cookie, Request
+from fastapi import FastAPI, Depends, HTTPException, Response, Cookie, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -11,7 +11,7 @@ from schema import (
     CartItemAddSchema, CartItemUpdateSchema, CartSchema, 
     CartResponseSchema, ProductInfoSchema, CartSummarySchema,
     CleanupResponseSchema, ShareCartRequestSchema, ShareCartResponseSchema,
-    LoadSharedCartSchema
+    LoadSharedCartSchema, UserCartSchema, PaginatedUserCartsResponse, UserCartItemSchema
 )
 from product_api import ProductAPI
 from typing import Optional, List, Dict, Any, Annotated
@@ -853,6 +853,191 @@ async def cleanup_anonymous_carts(days: int = 1, current_user: User = Depends(ge
             "deleted_count": 0,
             "message": f"Ошибка при выполнении очистки: {str(e)}"
         }
+
+@app.get("/admin/carts", response_model=PaginatedUserCartsResponse, tags=["Администрирование"])
+async def get_user_carts(
+    page: int = Query(1, description="Номер страницы", ge=1),
+    limit: int = Query(10, description="Количество записей на странице", ge=1, le=100),
+    sort_by: str = Query("updated_at", description="Поле для сортировки", regex="^(id|user_id|created_at|updated_at)$"),
+    sort_order: str = Query("desc", description="Порядок сортировки", regex="^(asc|desc)$"),
+    user_id: Optional[int] = Query(None, description="Фильтр по ID пользователя"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    Получить список корзин пользователей.
+    Только для администраторов.
+    
+    Возвращает только корзины зарегистрированных пользователей, не включает анонимные корзины.
+    """
+    # Проверка прав администратора
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    
+    if not getattr(current_user, 'is_admin', False) and not getattr(current_user, 'is_super_admin', False):
+        logger.warning(f"Пользователь {current_user.id} пытался получить доступ к корзинам без прав администратора")
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    
+    logger.info(f"Получение списка корзин пользователей, страница {page}, лимит {limit}")
+    
+    try:
+        # Получаем корзины пользователей с пагинацией
+        carts, total_count = await CartModel.get_user_carts(
+            session=db, 
+            page=page, 
+            limit=limit,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            user_id=user_id  # Передаем фильтр в метод модели
+        )
+        
+        # Получаем информацию о товарах для всех корзин
+        product_ids = []
+        for cart in carts:
+            for item in cart.items:
+                product_ids.append(item.product_id)
+        
+        # Получаем информацию о продуктах
+        products_info = await product_api.get_products_info(list(set(product_ids))) if product_ids else {}
+        
+        # Формируем ответ
+        result_items = []
+        for cart in carts:
+            cart_total_items = 0
+            cart_total_price = 0
+            cart_items = []
+            
+            for item in cart.items:
+                # Получаем информацию о продукте
+                product_info = products_info.get(item.product_id, {})
+                
+                # Создаем объект элемента корзины
+                cart_item = UserCartItemSchema(
+                    id=item.id,
+                    product_id=item.product_id,
+                    quantity=item.quantity,
+                    added_at=item.added_at,
+                    updated_at=item.updated_at,
+                    product_name=product_info.get("name", "Неизвестный товар"),
+                    product_price=product_info.get("price", 0)
+                )
+                
+                # Обновляем общие показатели
+                cart_total_items += item.quantity
+                if product_info.get("price"):
+                    cart_total_price += product_info["price"] * item.quantity
+                
+                cart_items.append(cart_item)
+            
+            # Создаем объект корзины
+            user_cart = UserCartSchema(
+                id=cart.id,
+                user_id=cart.user_id,
+                created_at=cart.created_at,
+                updated_at=cart.updated_at,
+                items=cart_items,
+                total_items=cart_total_items,
+                total_price=cart_total_price
+            )
+            
+            result_items.append(user_cart)
+        
+        # Рассчитываем общее количество страниц
+        total_pages = (total_count + limit - 1) // limit  # Округление вверх
+        
+        # Формируем и возвращаем ответ
+        return {
+            "items": result_items,
+            "total": total_count,
+            "page": page,
+            "limit": limit,
+            "pages": total_pages
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка корзин: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+
+@app.get("/admin/carts/{cart_id}", response_model=UserCartSchema, tags=["Администрирование"])
+async def get_user_cart_by_id(
+    cart_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    Получить информацию о конкретной корзине пользователя по её ID.
+    Только для администраторов.
+    """
+    # Проверка прав администратора
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    
+    if not getattr(current_user, 'is_admin', False) and not getattr(current_user, 'is_super_admin', False):
+        logger.warning(f"Пользователь {current_user.id} пытался получить доступ к корзине без прав администратора")
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    
+    logger.info(f"Получение информации о корзине ID={cart_id}")
+    
+    try:
+        # Получаем корзину по ID
+        query = select(CartModel).options(
+            selectinload(CartModel.items)
+        ).filter(CartModel.id == cart_id, CartModel.user_id != None)
+        
+        result = await db.execute(query)
+        cart = result.scalars().first()
+        
+        if not cart:
+            logger.warning(f"Корзина ID={cart_id} не найдена или является анонимной")
+            raise HTTPException(status_code=404, detail="Корзина не найдена")
+        
+        # Получаем информацию о товарах
+        product_ids = [item.product_id for item in cart.items]
+        products_info = await product_api.get_products_info(product_ids)
+        
+        # Формируем ответ
+        cart_total_items = 0
+        cart_total_price = 0
+        cart_items = []
+        
+        for item in cart.items:
+            # Получаем информацию о продукте
+            product_info = products_info.get(item.product_id, {})
+            
+            # Создаем объект элемента корзины
+            cart_item = UserCartItemSchema(
+                id=item.id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                added_at=item.added_at,
+                updated_at=item.updated_at,
+                product_name=product_info.get("name", "Неизвестный товар"),
+                product_price=product_info.get("price", 0)
+            )
+            
+            # Обновляем общие показатели
+            cart_total_items += item.quantity
+            if product_info.get("price"):
+                cart_total_price += product_info["price"] * item.quantity
+            
+            cart_items.append(cart_item)
+        
+        # Создаем и возвращаем объект корзины
+        return UserCartSchema(
+            id=cart.id,
+            user_id=cart.user_id,
+            created_at=cart.created_at,
+            updated_at=cart.updated_at,
+            items=cart_items,
+            total_items=cart_total_items,
+            total_price=cart_total_price
+        )
+        
+    except HTTPException:
+        # Пробрасываем HTTP-исключения дальше
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при получении корзины ID={cart_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

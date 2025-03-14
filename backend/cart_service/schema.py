@@ -89,3 +89,37 @@ class LoadSharedCartSchema(BaseModel):
     """Схема запроса для загрузки опубликованной корзины"""
     share_code: str
     merge_strategy: Optional[str] = "replace"  # replace, merge_add, merge_max 
+
+class UserCartItemSchema(BaseModel):
+    """Схема для элемента корзины с информацией о товаре для админ-панели"""
+    id: int
+    product_id: int
+    quantity: int
+    added_at: datetime
+    updated_at: datetime
+    product_name: Optional[str] = None
+    product_price: Optional[int] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class UserCartSchema(BaseModel):
+    """Схема для корзины пользователя в админ-панели"""
+    id: int
+    user_id: int
+    created_at: datetime
+    updated_at: datetime
+    items: List[UserCartItemSchema] = []
+    total_items: int = 0
+    total_price: int = 0
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class PaginatedUserCartsResponse(BaseModel):
+    """Схема для ответа с пагинацией корзин пользователей"""
+    items: List[UserCartSchema]
+    total: int
+    page: int
+    limit: int
+    pages: int
+    
+    model_config = ConfigDict(from_attributes=True) 

@@ -568,6 +568,35 @@ async def get_category_id(category_id: int, session: SessionDep):
         raise HTTPException(status_code=404, detail="Category not found")
     return category
 
+@app.delete("/categories/{category_id}", status_code=204)
+async def delete_category(
+    category_id: int,
+    admin = Depends(require_admin),
+    session: AsyncSession = Depends(get_session)
+):
+    # Ищем категорию по id
+    query = select(CategoryModel).filter(CategoryModel.id == category_id)
+    result = await session.execute(query)
+    category = result.scalars().first()
+    
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    # Удаляем категорию
+    try:
+        await session.delete(category)
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        error_detail = str(e.orig) if e.orig else str(e)
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Невозможно удалить категорию, так как она используется в других объектах. Ошибка: {error_detail}"
+        )
+    
+    # Возвращаем None для статуса 204 No Content
+    return None
+
 @app.get('/countries',response_model = List[CountrySchema])
 async def get_countries(session: SessionDep):
     query = select(CountryModel)
@@ -592,7 +621,7 @@ async def add_countries(data: CountryAddSchema, session: SessionDep):
     return new_country
 
 @app.put("/countries/{country_id}", response_model=CountrySchema)
-async def update_category(
+async def update_country(
     country_id: int,
     update_data: CountryUpdateSchema,
     session: SessionDep
@@ -629,6 +658,35 @@ async def get_country_id(country_id: int, session: SessionDep):
     if not country:
         raise HTTPException(status_code=404, detail="Category not found")
     return country
+
+@app.delete("/countries/{country_id}", status_code=204)
+async def delete_country(
+    country_id: int,
+    admin = Depends(require_admin),
+    session: AsyncSession = Depends(get_session)
+):
+    # Ищем страну по id
+    query = select(CountryModel).filter(CountryModel.id == country_id)
+    result = await session.execute(query)
+    country = result.scalars().first()
+    
+    if not country:
+        raise HTTPException(status_code=404, detail="Country not found")
+
+    # Удаляем страну
+    try:
+        await session.delete(country)
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        error_detail = str(e.orig) if e.orig else str(e)
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Невозможно удалить страну, так как она используется в других объектах. Ошибка: {error_detail}"
+        )
+    
+    # Возвращаем None для статуса 204 No Content
+    return None
 
 @app.get('/brands',response_model = List[BrandSchema])
 async def get_brands(session: SessionDep):
@@ -692,6 +750,34 @@ async def get_brand_id(brand_id: int, session: SessionDep):
         raise HTTPException(status_code=404, detail="Category not found")
     return brand
 
+@app.delete("/brands/{brand_id}", status_code=204)
+async def delete_brand(
+    brand_id: int,
+    admin = Depends(require_admin),
+    session: AsyncSession = Depends(get_session)
+):
+    # Ищем бренд по id
+    query = select(BrandModel).filter(BrandModel.id == brand_id)
+    result = await session.execute(query)
+    brand = result.scalars().first()
+    
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    # Удаляем бренд
+    try:
+        await session.delete(brand)
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        error_detail = str(e.orig) if e.orig else str(e)
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Невозможно удалить бренд, так как он используется в других объектах. Ошибка: {error_detail}"
+        )
+    
+    # Возвращаем None для статуса 204 No Content
+    return None
 
 @app.get('/subcategories',response_model = List[SubCategorySchema])
 async def get_subcategories(session: SessionDep):
@@ -754,6 +840,35 @@ async def get_subcategory_id(subcategory_id: int, session: SessionDep):
     if not subcategory:
         raise HTTPException(status_code=404, detail="Category not found")
     return subcategory
+
+@app.delete("/subcategories/{subcategory_id}", status_code=204)
+async def delete_subcategory(
+    subcategory_id: int,
+    admin = Depends(require_admin),
+    session: AsyncSession = Depends(get_session)
+):
+    # Ищем подкатегорию по id
+    query = select(SubCategoryModel).filter(SubCategoryModel.id == subcategory_id)
+    result = await session.execute(query)
+    subcategory = result.scalars().first()
+    
+    if not subcategory:
+        raise HTTPException(status_code=404, detail="Subcategory not found")
+
+    # Удаляем подкатегорию
+    try:
+        await session.delete(subcategory)
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        error_detail = str(e.orig) if e.orig else str(e)
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Невозможно удалить подкатегорию, так как она используется в других объектах. Ошибка: {error_detail}"
+        )
+    
+    # Возвращаем None для статуса 204 No Content
+    return None
 
 @app.get('/auth-check')
 async def check_auth(user = Depends(get_current_user)):

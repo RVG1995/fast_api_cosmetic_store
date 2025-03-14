@@ -100,8 +100,12 @@ const CartPage = () => {
 
   // Очищаем все таймеры при размонтировании компонента
   useEffect(() => {
+    // Сохраняем ссылку на текущее значение таймеров внутри эффекта
+    const currentTimers = updateTimers.current;
+    
     return () => {
-      Object.values(updateTimers.current).forEach(timerId => {
+      // Используем сохраненную переменную при очистке
+      Object.values(currentTimers).forEach(timerId => {
         clearTimeout(timerId);
       });
     };
@@ -281,9 +285,13 @@ const CartPage = () => {
               <button 
                 className="btn btn-sm btn-outline-danger"
                 onClick={handleClearCart}
-                disabled={loading}
+                disabled={loading || isClearingCart}
               >
-                <i className="bi bi-trash me-1"></i>
+                {isClearingCart ? (
+                  <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                ) : (
+                  <i className="bi bi-trash me-1"></i>
+                )}
                 Очистить корзину
               </button>
             </div>

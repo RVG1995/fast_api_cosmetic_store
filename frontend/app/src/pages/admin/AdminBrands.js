@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { productAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css'; // Используем те же стили, что и для товаров
-import axios from 'axios';
-import { Alert, Button, Modal, Form, Table } from 'react-bootstrap';
+// Импорты react-bootstrap и axios удалены, так как не используются в компоненте
 import { generateSlug } from '../../utils/slugUtils';
 
 const AdminBrands = () => {

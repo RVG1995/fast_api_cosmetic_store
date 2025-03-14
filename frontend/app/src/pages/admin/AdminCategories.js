@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { productAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css'; // Используем те же стили, что и для товаров
-import axios from 'axios';
-import { Alert, Button, Modal, Form, Table } from 'react-bootstrap';
 import { generateSlug } from '../../utils/slugUtils';
 import { useCategories } from '../../context/CategoryContext';
 
 const AdminCategories = () => {
-  const { categories, loading, error, fetchCategories, addCategory, updateCategory, deleteCategory } = useCategories();
+  const { categories, loading, error, addCategory, updateCategory, deleteCategory } = useCategories();
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('add'); // 'add' или 'edit'

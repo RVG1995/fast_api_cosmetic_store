@@ -3,14 +3,21 @@ from models import Base,UserModel
 from typing import AsyncGenerator
 import os
 from utils import get_password_hash
+import logging
 
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Получение URL базы данных из переменных окружения
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/auth_db")
+logger.info(f"URL базы данных: {DATABASE_URL}")
 
-engine = create_async_engine("postgresql+asyncpg://your_username:your_password@localhost:5433/your_dbname", echo = True)
+engine = create_async_engine(DATABASE_URL, echo = True)
 
 new_session = async_sessionmaker(engine,expire_on_commit=False)
 

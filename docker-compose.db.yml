@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # База данных для auth_service
+  auth-db:
+    image: postgres:15
+    container_name: auth-db
+    restart: always
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=auth_db
+      - TZ=Europe/Moscow
+
+  # База данных для product_service
+  product-db:
+    image: postgres:15
+    container_name: product-db
+    restart: always
+    ports:
+      - "5432:5432"
+    volumes:
+      - product-db-data:/var/lib/postgresql/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=product_db
+      - TZ=Europe/Moscow
+
+  # База данных для cart_service
+  cart-db:
+    image: postgres:15
+    container_name: cart-db
+    restart: always
+    ports:
+      - "5434:5432"
+    volumes:
+      - cart-db-data:/var/lib/postgresql/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=cart_db
+      - TZ=Europe/Moscow
+
+  # Redis для cart_service (для Celery)
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Europe/Moscow
+
+volumes:
+  auth-db-data:
+  product-db-data:
+  cart-db-data:
+  redis-data:

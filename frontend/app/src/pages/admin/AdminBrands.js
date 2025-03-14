@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { productAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css'; // Используем те же стили, что и для товаров
+import axios from 'axios';
+import { Alert, Button, Modal, Form, Table } from 'react-bootstrap';
+import { generateSlug } from '../../utils/slugUtils';
 
 const AdminBrands = () => {
   const [brands, setBrands] = useState([]);
@@ -36,6 +39,7 @@ const AdminBrands = () => {
   // Обработчик изменения полей формы
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    
     setFormData({
       ...formData,
       [name]: value
@@ -43,11 +47,7 @@ const AdminBrands = () => {
     
     // Если изменилось имя, автоматически генерируем slug
     if (name === 'name') {
-      const slug = value
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '') // Удаляем спецсимволы
-        .replace(/[\s_-]+/g, '-') // Заменяем пробелы и подчеркивания на дефисы
-        .replace(/^-+|-+$/g, ''); // Удаляем дефисы в начале и конце строки
+      const slug = generateSlug(value);
       
       setFormData(prev => ({
         ...prev,

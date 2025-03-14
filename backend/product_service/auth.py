@@ -29,9 +29,9 @@ elif parent_env_file.exists():
 else:
     logger.warning("Файл .env не найден!")
 
-# Константы для JWT - используем фиксированное значение для отладки
-# SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your_secret_key_here")
-SECRET_KEY = "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke"  # Жестко закодированное значение для тестирования
+# Константы для JWT
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
+# SECRET_KEY = "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke"  # Жестко закодированное значение для тестирования
 ALGORITHM = "HS256"
 
 logger.info(f"Загружена конфигурация JWT. SECRET_KEY: {SECRET_KEY[:5]}...")

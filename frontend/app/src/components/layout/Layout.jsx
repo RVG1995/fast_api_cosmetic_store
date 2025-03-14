@@ -2,8 +2,8 @@
 
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import React, { useEffect, useState } from 'react';
-import { productAPI } from '../../utils/api';
+import { useCategories } from "../../context/CategoryContext";
+import React, { useEffect } from 'react';
 import ProductSearch from "../ProductSearch";
 import CartIcon from "../cart/CartIcon";
 import { CartProvider } from "../../context/CartContext";
@@ -11,10 +11,9 @@ import "../../styles/Layout.css"; // Обновленный путь к стил
 
 const Layout = () => {
   const { user, loading, logout, isAdmin } = useAuth();
+  const { categories, loading: isLoadingCategories } = useCategories();
   const location = useLocation();
   const navigate = useNavigate();
-  const [categories, setCategories] = useState([]);
-  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
 
   useEffect(() => {
     if (!loading) {
@@ -29,23 +28,6 @@ const Layout = () => {
       }
     }
   }, [loading, user, location.pathname, navigate]);
-
-  // Загружаем категории при монтировании компонента
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        setIsLoadingCategories(true);
-        const response = await productAPI.getCategories();
-        setCategories(response.data);
-      } catch (err) {
-        console.error('Ошибка при загрузке категорий:', err);
-      } finally {
-        setIsLoadingCategories(false);
-      }
-    };
-    
-    fetchCategories();
-  }, []);
 
   const handleLogout = async () => {
     await logout();

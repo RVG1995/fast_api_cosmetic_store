@@ -1,10 +1,26 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, validator
 from typing import Optional, List
+import re
 
+# Функция валидации slug
+def validate_slug(slug: str) -> str:
+    if not slug:
+        raise ValueError("Slug не может быть пустым")
+    if ' ' in slug:
+        raise ValueError("Slug не может содержать пробелы")
+    # Проверяем, что slug содержит только допустимые символы
+    if not re.match(r'^[a-z0-9-]+$', slug):
+        raise ValueError("Slug может содержать только строчные буквы латинского алфавита, цифры и дефисы")
+    return slug
 
 class CategoryAddSchema(BaseModel):
     name: str
     slug: str
+
+    # Валидация slug
+    @validator('slug')
+    def slug_must_be_valid(cls, v):
+        return validate_slug(v)
 
 class CategorySchema(CategoryAddSchema):
     id:int
@@ -19,6 +35,11 @@ class CategoryUpdateSchema(BaseModel):
 class CountryAddSchema(BaseModel):
     name: str
     slug: str
+    
+    # Валидация slug
+    @validator('slug')
+    def slug_must_be_valid(cls, v):
+        return validate_slug(v)
 
 class CountrySchema(CountryAddSchema):
     id:int
@@ -32,6 +53,11 @@ class CountryUpdateSchema(BaseModel):
 class BrandAddSchema(BaseModel):
     name: str
     slug: str
+    
+    # Валидация slug
+    @validator('slug')
+    def slug_must_be_valid(cls, v):
+        return validate_slug(v)
 
 class BrandSchema(BrandAddSchema):
     id:int
@@ -46,6 +72,11 @@ class SubCategoryAddSchema(BaseModel):
     name: str
     slug: str
     category_id: int
+    
+    # Валидация slug
+    @validator('slug')
+    def slug_must_be_valid(cls, v):
+        return validate_slug(v)
 
 class SubCategorySchema(SubCategoryAddSchema):
     id:int

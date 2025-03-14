@@ -19,7 +19,7 @@ load_dotenv()
 
 SessionDep = Annotated[AsyncSession,Depends(get_session)]
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your_secret_key_here")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 

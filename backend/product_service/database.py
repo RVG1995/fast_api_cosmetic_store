@@ -6,9 +6,21 @@ from models import Base
 
 import os
 from typing import List, Optional, AsyncGenerator
+from dotenv import load_dotenv
+import logging
 
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-engine = create_async_engine("postgresql+asyncpg://your_username:your_password@localhost:5432/your_dbname", echo = True)
+# Загрузка переменных окружения
+load_dotenv()
+
+# Получение URL базы данных из переменных окружения
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/product_db")
+logger.info(f"URL базы данных: {DATABASE_URL}")
+
+engine = create_async_engine(DATABASE_URL, echo = True)
 
 new_session = async_sessionmaker(engine,expire_on_commit=False)
 

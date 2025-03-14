@@ -6,6 +6,7 @@ import reportWebVitals from './utils/reportWebVitals';
 import './styles/output.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
+import 'bootstrap-icons/font/bootstrap-icons.css';
 
 // Глобальный обработчик ошибок для отладки белого экрана
 window.addEventListener('error', function(event) {

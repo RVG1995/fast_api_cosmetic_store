@@ -7,6 +7,7 @@ export const API_URLS = {
   AUTH: 'http://localhost:8000',       // Сервис аутентификации
   PRODUCT: 'http://localhost:8001',    // Сервис продуктов
   CART: 'http://localhost:8002',       // Сервис корзины
+  CART_SERVICE: 'http://localhost:8002', // Альтернативное имя для сервиса корзины (используется в новых компонентах)
   USER: 'http://localhost:8003',       // Сервис пользователей (если будет)
   CONTENT: 'http://localhost:8004',    // Сервис контента (если будет)
   NOTIFICATION: 'http://localhost:8005' // Сервис уведомлений (если будет)
@@ -22,6 +23,12 @@ export const ROUTES = {
   ADMIN: '/admin',
   ADMIN_USERS: '/admin/users',
   ADMIN_PERMISSIONS: '/admin/permissions',
+  ADMIN_PRODUCTS: '/admin/products',
+  ADMIN_CATEGORIES: '/admin/categories',
+  ADMIN_SUBCATEGORIES: '/admin/subcategories',
+  ADMIN_BRANDS: '/admin/brands',
+  ADMIN_COUNTRIES: '/admin/countries',
+  ADMIN_CARTS: '/admin/carts',
   REGISTRATION_CONFIRMATION: '/registration-confirmation',
   PRODUCTS: '/products',
   CATEGORIES: '/categories',

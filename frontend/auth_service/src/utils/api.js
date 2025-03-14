@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { API_URLS } from './constants';
+import { API_URLS, STORAGE_KEYS } from './constants';
 
 /**
  * Создает экземпляр axios с настройками для указанного сервиса
@@ -37,9 +37,10 @@ const setupInterceptors = (api, serviceName) => {
       });
       
       // Добавляем bearer токен в заголовок Authorization, если он есть в localStorage
-      const token = localStorage.getItem('access_token');
+      const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
       if (token && !config.headers.Authorization) {
         config.headers.Authorization = `Bearer ${token}`;
+        console.log(`[${serviceName} API] Добавлен токен авторизации: ${token.substring(0, 15)}...`);
       }
       
       return config;
@@ -62,7 +63,7 @@ const setupInterceptors = (api, serviceName) => {
       // Проверяем, содержит ли ответ новый токен
       if (response.data && response.data.access_token) {
         console.log(`[${serviceName} API] Получен новый токен в ответе`);
-        localStorage.setItem('access_token', response.data.access_token);
+        localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, response.data.access_token);
       }
       
       return response;
@@ -79,7 +80,7 @@ const setupInterceptors = (api, serviceName) => {
       if (error.response && error.response.status === 401) {
         console.log('Ошибка авторизации, перенаправление на страницу входа');
         // Удаляем токен при 401 ошибке
-        localStorage.removeItem('access_token');
+        localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
         // При необходимости можно добавить редирект на страницу входа
         // window.location.href = '/login';
       }
@@ -112,7 +113,7 @@ export const authAPI = {
     }).then(response => {
       // Сохраняем токен в localStorage
       if (response.data && response.data.access_token) {
-        localStorage.setItem('access_token', response.data.access_token);
+        localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, response.data.access_token);
         console.log('Токен сохранен в localStorage из login API');
       }
       return response;
@@ -121,7 +122,7 @@ export const authAPI = {
   register: (userData) => authApi.post('/auth/register', userData),
   logout: () => authApi.post('/auth/logout').then(response => {
     // Удаляем токен из localStorage
-    localStorage.removeItem('access_token');
+    localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
     console.log('Токен удален из localStorage из logout API');
     return response;
   }),
@@ -129,7 +130,7 @@ export const authAPI = {
   activateUser: (token) => authApi.get(`/auth/activate/${token}`).then(response => {
     // Сохраняем токен в localStorage при активации
     if (response.data && response.data.access_token) {
-      localStorage.setItem('access_token', response.data.access_token);
+      localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, response.data.access_token);
       console.log('Токен сохранен в localStorage из activate API');
     }
     return response;
@@ -496,6 +497,148 @@ export const cartAPI = {
   }
 };
 
+// API для работы с корзинами
+export const cartService = {
+  // Получение списка всех корзин (для администратора)
+  getAllCarts: async (page = 1, pageSize = 10, filter = 'all', sort = 'newest') => {
+    console.log('cartService.getAllCarts вызван с параметрами:', { page, pageSize, filter, sort });
+    
+    const params = {
+      page,
+      page_size: pageSize,
+    };
+    
+    if (filter !== 'all') {
+      params.filter = filter;
+    }
+    
+    if (sort) {
+      params.sort = sort;
+    }
+    
+    try {
+      const response = await cartApi.get('/admin/carts', { params });
+      console.log('API getAllCarts ответ успешно получен, общее количество:', response.data.total);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API getAllCarts:', error);
+      throw error;
+    }
+  },
+  
+  // Получение детальной информации о корзине (для администратора)
+  getCartById: async (cartId) => {
+    console.log(`cartService.getCartById вызван с cartId: ${cartId}`);
+    try {
+      const response = await cartApi.get(`/admin/carts/${cartId}`);
+      console.log('API getCartById ответ успешно получен:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API getCartById:', error);
+      throw error;
+    }
+  },
+  
+  // Получение корзины пользователя или создание новой
+  getUserCart: async () => {
+    console.log('cartService.getUserCart вызван');
+    try {
+      const response = await cartApi.get('/cart');
+      console.log('API getUserCart ответ успешно получен:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API getUserCart:', error);
+      throw error;
+    }
+  },
+  
+  // Добавление товара в корзину
+  addToCart: async (productId, quantity = 1) => {
+    console.log(`cartService.addToCart вызван с productId: ${productId}, quantity: ${quantity}`);
+    try {
+      const response = await cartApi.post('/cart/items', {
+        product_id: productId,
+        quantity
+      });
+      console.log('API addToCart ответ успешно получен:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API addToCart:', error);
+      throw error;
+    }
+  },
+  
+  // Обновление количества товара в корзине
+  updateCartItem: async (itemId, quantity) => {
+    console.log(`cartService.updateCartItem вызван с itemId: ${itemId}, quantity: ${quantity}`);
+    try {
+      const response = await cartApi.put(`/cart/items/${itemId}`, {
+        quantity
+      });
+      console.log('API updateCartItem ответ успешно получен:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API updateCartItem:', error);
+      throw error;
+    }
+  },
+  
+  // Удаление товара из корзины
+  removeCartItem: async (itemId) => {
+    console.log(`cartService.removeCartItem вызван с itemId: ${itemId}`);
+    try {
+      const response = await cartApi.delete(`/cart/items/${itemId}`);
+      console.log('API removeCartItem ответ успешно получен');
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API removeCartItem:', error);
+      throw error;
+    }
+  },
+  
+  // Очистка корзины
+  clearCart: async () => {
+    console.log('cartService.clearCart вызван');
+    try {
+      const response = await cartApi.delete('/cart/items');
+      console.log('API clearCart ответ успешно получен');
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API clearCart:', error);
+      throw error;
+    }
+  },
+  
+  // Создание кода доступа для шаринга корзины
+  shareCart: async () => {
+    console.log('cartService.shareCart вызван');
+    try {
+      const response = await cartApi.post('/cart/share', {});
+      console.log('API shareCart ответ успешно получен:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API shareCart:', error);
+      throw error;
+    }
+  },
+  
+  // Загрузка шаринговой корзины
+  loadSharedCart: async (shareCode, mergeStrategy = 'merge') => {
+    console.log(`cartService.loadSharedCart вызван с shareCode: ${shareCode}, mergeStrategy: ${mergeStrategy}`);
+    try {
+      const response = await cartApi.post('/cart/load', {
+        share_code: shareCode,
+        merge_strategy: mergeStrategy
+      });
+      console.log('API loadSharedCart ответ успешно получен:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API loadSharedCart:', error);
+      throw error;
+    }
+  }
+};
+
 // Экспортируем все API и инстансы для возможного прямого использования
 const apiExports = {
   authApi,
@@ -509,7 +652,8 @@ const apiExports = {
   contentAPI,
   notificationAPI,
   productAPI,
-  cartAPI
+  cartAPI,
+  cartService
 };
 
 export default apiExports; 

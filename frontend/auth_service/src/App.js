@@ -18,6 +18,8 @@ import AdminCategories from './pages/admin/AdminCategories';
 import AdminSubcategories from './pages/admin/AdminSubcategories';
 import AdminBrands from './pages/admin/AdminBrands';
 import AdminCountries from './pages/admin/AdminCountries';
+import AdminCarts from './pages/admin/AdminCarts'; // Импортируем новую страницу корзин
+import AdminCartDetail from './pages/admin/AdminCartDetail'; // Импортируем страницу с деталями корзины
 import HomePage from './pages/HomePage';
 import ProductsPage from './pages/ProductsPage';
 import ProductDetailPage from './pages/ProductDetailPage';
@@ -144,6 +146,23 @@ function App() {
               element={
                 <AdminRoute>
                   <AdminCountries />
+                </AdminRoute>
+              } 
+            />
+            {/* Новые маршруты для управления корзинами пользователей */}
+            <Route 
+              path="admin/carts" 
+              element={
+                <AdminRoute>
+                  <AdminCarts />
+                </AdminRoute>
+              } 
+            />
+            <Route 
+              path="admin/carts/:cartId" 
+              element={
+                <AdminRoute>
+                  <AdminCartDetail />
                 </AdminRoute>
               } 
             />

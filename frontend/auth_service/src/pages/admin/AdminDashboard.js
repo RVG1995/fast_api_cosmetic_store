@@ -100,6 +100,20 @@ const AdminDashboard = () => {
           </div>
         </div>
         
+        {/* Управление корзинами */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-cart-fill admin-card-icon"></i>
+              <h3>Корзины</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Просмотр и управление корзинами пользователей. Анализ заброшенных корзин.</p>
+              <Link to="/admin/carts" className="btn btn-primary">Управление корзинами</Link>
+            </div>
+          </div>
+        </div>
+        
         {/* Блок для суперадминов */}
         {isSuperAdmin() && (
           <div className="col-md-4 mb-4">

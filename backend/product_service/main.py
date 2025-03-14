@@ -310,6 +310,15 @@ async def get_admin_products(
     sort: Optional[str] = Query(None, description="Сортировка (newest, price_asc, price_desc)"),
     admin = Depends(require_admin)  # Только администраторы могут использовать этот эндпоинт
 ):
+    # Формируем ключ кэша на основе параметров запроса
+    cache_key = f"{CACHE_KEYS['products']}admin:page={page}:limit={limit}:cat={category_id}:subcat={subcategory_id}:brand={brand_id}:country={country_id}:sort={sort}"
+    
+    # Пробуем получить данные из кэша
+    cached_data = await cache_get(cache_key)
+    if cached_data:
+        logger.info(f"Админские данные о продуктах получены из кэша: page={page}, limit={limit}")
+        return cached_data
+    
     # Расчет пропуска записей для пагинации
     skip = (page - 1) * limit
     
@@ -349,13 +358,20 @@ async def get_admin_products(
     result = await session.execute(query)
     paginated_products = result.scalars().all()
     
-    # Возвращаем ответ с информацией о пагинации
-    return {
+    # Формируем ответ с информацией о пагинации
+    response_data = {
         "total": total,
         "limit": limit,
         "offset": skip,
         "items": paginated_products
     }
+    
+    # Сохраняем данные в кэш с уменьшенным TTL для админского интерфейса
+    # Для админского интерфейса устанавливаем меньшее время жизни кэша, чтобы данные быстрее обновлялись
+    await cache_set(cache_key, response_data, CACHE_TTL // 2)
+    logger.info(f"Админские данные о продуктах сохранены в кэш: page={page}, limit={limit}, total={total}")
+    
+    return response_data
 
 @app.get('/products/search', response_model=List[dict])
 async def search_products(session: SessionDep, name: str):

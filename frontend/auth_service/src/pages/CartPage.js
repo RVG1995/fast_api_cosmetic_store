@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { formatPrice } from '../utils/helpers';
@@ -11,34 +11,107 @@ const CartPage = () => {
   const [isRemoving, setIsRemoving] = useState({});
   const [isClearingCart, setIsClearingCart] = useState(false);
   const [updateMessage, setUpdateMessage] = useState({ type: '', text: '' });
+  // Таймеры для дебаунсинга обновления количества
+  const updateTimers = useRef({});
+  
+  // Инициализируем локальное состояние количества товаров при загрузке/обновлении корзины
+  useEffect(() => {
+    if (cart && cart.items && cart.items.length > 0) {
+      const newQuantities = {};
+      cart.items.forEach(item => {
+        newQuantities[item.id] = item.quantity;
+      });
+      setQuantities(newQuantities);
+    }
+  }, [cart]);
 
   // Обработчик изменения количества товара
   const handleQuantityChange = (itemId, value) => {
+    // Очищаем предыдущий таймер обновления для этого товара, если он есть
+    if (updateTimers.current[itemId]) {
+      clearTimeout(updateTimers.current[itemId]);
+    }
+
+    // Проверяем, что value - это число или может быть преобразовано в число
+    let newQuantity = parseInt(value, 10);
+    if (isNaN(newQuantity) || newQuantity < 1) {
+      newQuantity = 1;
+    }
+    
+    // Находим максимально доступное количество товара
+    const itemInCart = cart.items.find(item => item.id === itemId);
+    const maxStock = itemInCart && itemInCart.product ? itemInCart.product.stock : 1;
+    
+    // Ограничиваем новое количество максимальным значением
+    if (newQuantity > maxStock) {
+      newQuantity = maxStock;
+    }
+    
+    // Обновляем локальное состояние
     setQuantities(prev => ({
       ...prev,
-      [itemId]: parseInt(value, 10) || 1
+      [itemId]: newQuantity
     }));
+
+    // Устанавливаем новый таймер для обновления через 800 мс - увеличили задержку для стабильности
+    updateTimers.current[itemId] = setTimeout(() => {
+      // Проверяем, изменилось ли количество по сравнению с корзиной
+      const currentItem = cart.items.find(item => item.id === itemId);
+      if (currentItem && currentItem.quantity !== newQuantity) {
+        // Явно вызываем функцию обновления количества
+        handleUpdateQuantity(itemId, newQuantity);
+      }
+    }, 800);
   };
 
+  // Очищаем все таймеры при размонтировании компонента
+  useEffect(() => {
+    return () => {
+      Object.values(updateTimers.current).forEach(timerId => {
+        clearTimeout(timerId);
+      });
+    };
+  }, []);
+
   // Обработчик обновления количества товара
-  const handleUpdateQuantity = async (itemId) => {
+  const handleUpdateQuantity = async (itemId, quantity = null) => {
+    // Используем переданное количество или берем из локального состояния
+    const newQuantity = quantity !== null ? quantity : (quantities[itemId] || 1);
+    
     setIsUpdating(prev => ({ ...prev, [itemId]: true }));
     setUpdateMessage({ type: '', text: '' });
 
     try {
-      const quantity = quantities[itemId] || 1;
-      const result = await updateCartItem(itemId, quantity);
+      const result = await updateCartItem(itemId, newQuantity);
       
       if (result.success) {
         setUpdateMessage({ type: 'success', text: 'Количество товара обновлено' });
         // Обновляем корзину после успешного обновления
         await fetchCart();
       } else {
-        setUpdateMessage({ type: 'danger', text: result.message });
+        setUpdateMessage({ type: 'danger', text: result.message || 'Ошибка при обновлении количества' });
+        
+        // Восстанавливаем предыдущее значение, если обновление не удалось
+        const currentItem = cart.items.find(item => item.id === itemId);
+        if (currentItem) {
+          setQuantities(prev => ({
+            ...prev,
+            [itemId]: currentItem.quantity
+          }));
+        }
       }
     } catch (err) {
       console.error('Ошибка при обновлении количества товара:', err);
       setUpdateMessage({ type: 'danger', text: 'Ошибка при обновлении количества товара' });
+      
+      // Восстанавливаем предыдущее значение, если обновление не удалось
+      const currentItem = cart.items.find(item => item.id === itemId);
+      if (currentItem) {
+        setQuantities(prev => ({
+          ...prev,
+          [itemId]: currentItem.quantity
+        }));
+      }
     } finally {
       setIsUpdating(prev => ({ ...prev, [itemId]: false }));
       
@@ -277,19 +350,6 @@ const CartPage = () => {
                                 <i className="bi bi-plus"></i>
                               </button>
                             </div>
-                            {quantities[item.id] !== undefined && quantities[item.id] !== item.quantity && (
-                              <button 
-                                className="btn btn-sm btn-primary ms-2"
-                                onClick={() => handleUpdateQuantity(item.id)}
-                                disabled={isUpdating[item.id]}
-                              >
-                                {isUpdating[item.id] ? (
-                                  <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                ) : (
-                                  <i className="bi bi-check"></i>
-                                )}
-                              </button>
-                            )}
                           </div>
                         </td>
                         <td className="text-center align-middle fw-bold">

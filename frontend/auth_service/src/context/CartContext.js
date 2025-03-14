@@ -72,11 +72,23 @@ export const CartProvider = ({ children }) => {
         
         return { success: true, message: response.data.message };
       } else {
-        return { success: false, message: response.data.error || 'Не удалось добавить товар в корзину' };
+        // Получаем детали ошибки из ответа сервера
+        const errorMessage = response.data.error || response.data.message || 'Не удалось добавить товар в корзину';
+        console.warn('Ошибка при добавлении товара в корзину:', errorMessage);
+        
+        return { 
+          success: false, 
+          message: errorMessage,
+          error: errorMessage // Добавляем для обратной совместимости
+        };
       }
     } catch (err) {
       console.error('Ошибка при добавлении товара в корзину:', err);
-      return { success: false, message: 'Ошибка при добавлении товара в корзину' };
+      return { 
+        success: false, 
+        message: 'Ошибка при добавлении товара в корзину',
+        error: err.message || 'Неизвестная ошибка'
+      };
     } finally {
       setLoading(false);
     }

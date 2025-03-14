@@ -10,7 +10,7 @@ services:
     volumes:
       - .:/app
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres-cart:5432/cart_db
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres-cart:5434/cart_db
       - PRODUCT_SERVICE_URL=http://product-service:8001
       - JWT_SECRET_KEY=zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke
     depends_on:

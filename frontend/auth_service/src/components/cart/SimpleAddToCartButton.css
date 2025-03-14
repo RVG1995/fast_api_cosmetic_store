@@ -1,0 +1,27 @@
+.simple-add-to-cart-container {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.error-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  background-color: #f8d7da;
+  color: #721c24;
+  padding: 5px 10px;
+  margin-top: 5px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  z-index: 10;
+  text-align: center;
+  border: 1px solid #f5c6cb;
+  animation: fadeIn 0.3s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+} 

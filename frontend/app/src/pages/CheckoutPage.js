@@ -37,14 +37,7 @@ const CheckoutPage = () => {
     if (!cart || !cart.items || cart.items.length === 0) {
       navigate('/cart');
     }
-    
-    // Предупреждаем неавторизованных пользователей
-    if (!isAuthenticated) {
-      setError("На данный момент для оформления заказа необходима авторизация. Пожалуйста, войдите в систему.");
-    } else {
-      setError(null);
-    }
-  }, [cart, navigate, isAuthenticated, setError]);
+  }, [cart, navigate]);
   
   // Обработчик изменения полей формы
   const handleChange = (e) => {
@@ -62,12 +55,6 @@ const CheckoutPage = () => {
     
     console.log("Форма отправляется, валидность:", form.checkValidity());
     
-    // Проверка статуса авторизации
-    if (!isAuthenticated) {
-      setError("На данный момент для оформления заказа необходима авторизация. Пожалуйста, войдите в систему.");
-      return;
-    }
-    
     // Дополнительная проверка обязательных полей
     const requiredFields = ["fullName", "phone", "region", "city", "street"];
     const missingFields = requiredFields.filter(field => !formData[field]);
@@ -82,6 +69,14 @@ const CheckoutPage = () => {
         street: "Адрес доставки"
       };
       console.error("Отсутствуют обязательные поля:", missingFields.map(f => fieldNames[f]).join(", "));
+      return;
+    }
+    
+    // Проверка формата телефона
+    const phoneRegex = /^(\+7|8)\d{10}$/;
+    if (!phoneRegex.test(formData.phone)) {
+      setError("Неверный формат телефона. Используйте формат +79999999999 или 89999999999");
+      setValidated(true);
       return;
     }
     
@@ -174,16 +169,6 @@ const CheckoutPage = () => {
       {error && (
         <Alert variant="danger">
           {error}
-          {!isAuthenticated && (
-            <div className="mt-3">
-              <Button 
-                variant="primary" 
-                onClick={() => navigate('/login')}
-              >
-                Войти в систему
-              </Button>
-            </div>
-          )}
         </Alert>
       )}
       
@@ -236,11 +221,15 @@ const CheckoutPage = () => {
                         value={formData.phone}
                         onChange={handleChange}
                         required
-                        placeholder="9XXXXXXXXX"
+                        placeholder="+7XXXXXXXXXX или 8XXXXXXXXXX"
+                        pattern="^(\+7|8)\d{10}$"
                       />
                       <Form.Control.Feedback type="invalid">
-                        Пожалуйста, введите номер телефона
+                        Пожалуйста, введите корректный номер телефона (начинается с +7 или 8)
                       </Form.Control.Feedback>
+                      <Form.Text className="text-muted">
+                        Введите телефон в формате +79999999999 или 89999999999
+                      </Form.Text>
                     </Form.Group>
                   </Col>
                 </Row>
@@ -308,7 +297,7 @@ const CheckoutPage = () => {
                   variant="primary" 
                   type="submit" 
                   className="w-100 mt-3" 
-                  disabled={loading || !isAuthenticated}
+                  disabled={loading}
                 >
                   {loading ? (
                     <>

@@ -47,12 +47,23 @@ class OrderCreate(BaseModel):
     
     # Данные о клиенте и доставке
     full_name: str = Field(..., min_length=2, max_length=255)
-    email: Optional[EmailStr] = None
-    phone: str = Field(..., min_length=5, max_length=50)
+    email: EmailStr
+    phone: str = Field(..., min_length=11, max_length=12)
     region: str = Field(..., min_length=2, max_length=100)
     city: str = Field(..., min_length=2, max_length=100)
     street: str = Field(..., min_length=5, max_length=255)
     comment: Optional[str] = None
+    
+    @field_validator('phone')
+    def validate_phone_format(cls, v):
+        if not (v.startswith('+7') or v.startswith('8')):
+            raise ValueError('Телефон должен начинаться с "+7" или "8"')
+        if not (v.startswith('+7') and len(v) == 12) and not (v.startswith('8') and len(v) == 11):
+            raise ValueError('Неверный формат телефона. Примеры: 89999999999 или +79999999999')
+        # Проверяем, что строка состоит только из цифр (кроме символа '+')
+        if not all(c.isdigit() for c in v.replace('+', '')):
+            raise ValueError('Телефон должен содержать только цифры')
+        return v
 
 class OrderStatusCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=50)
@@ -84,13 +95,26 @@ class OrderUpdate(BaseModel):
     # Данные о клиенте и доставке
     full_name: Optional[str] = Field(None, min_length=2, max_length=255)
     email: Optional[EmailStr] = None
-    phone: Optional[str] = Field(None, min_length=5, max_length=50)
+    phone: Optional[str] = Field(None, min_length=11, max_length=12)
     region: Optional[str] = Field(None, min_length=2, max_length=100)
     city: Optional[str] = Field(None, min_length=2, max_length=100)
     street: Optional[str] = Field(None, min_length=5, max_length=255)
     comment: Optional[str] = None
     
     is_paid: Optional[bool] = None
+    
+    @field_validator('phone')
+    def validate_phone(cls, v):
+        if v is None:
+            return v
+        if not (v.startswith('+7') or v.startswith('8')):
+            raise ValueError('Телефон должен начинаться с +7 или 8')
+        if not (v.startswith('+7') and len(v) == 12) and not (v.startswith('8') and len(v) == 11):
+            raise ValueError('Неверный формат телефона. Примеры: 89999999999 или +79999999999')
+        # Проверяем, что строка состоит только из цифр (кроме символа '+')
+        if not all(c.isdigit() for c in v.replace('+', '')):
+            raise ValueError('Телефон должен содержать только цифры')
+        return v
 
 class OrderStatusUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=50)

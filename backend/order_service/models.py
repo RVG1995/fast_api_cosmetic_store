@@ -78,7 +78,7 @@ class OrderModel(Base):
     
     # Данные о клиенте и доставке
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    email: Mapped[str] = mapped_column(String(100), nullable=False)
     phone: Mapped[str] = mapped_column(String(50), nullable=False)
     region: Mapped[str] = mapped_column(String(100), nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=False)

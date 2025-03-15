@@ -56,11 +56,7 @@ function App() {
                 <Route path="cart" element={<CartPage />} />
                 
                 {/* Страница оформления заказа */}
-                <Route path="checkout" element={
-                  <PrivateRoute>
-                    <CheckoutPage />
-                  </PrivateRoute>
-                } />
+                <Route path="checkout" element={<CheckoutPage />} />
                 
                 {/* Страницы заказов пользователя */}
                 <Route path="orders" element={

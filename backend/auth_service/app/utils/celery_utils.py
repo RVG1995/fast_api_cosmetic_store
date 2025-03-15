@@ -6,6 +6,7 @@ import logging
 import time
 from datetime import datetime
 import base64
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,37 @@ REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379") 
 REDIS_DB = os.getenv("REDIS_DB", "0")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+
+logger.info(f"Redis подключение настроено: {REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+
+def get_redis_connection():
+    """
+    Возвращает соединение с Redis с обработкой возможных ошибок.
+    
+    Returns:
+        Redis: Объект соединения с Redis или None в случае ошибки
+    """
+    try:
+        # Создаем соединение с Redis
+        r = redis.Redis(
+            host=REDIS_HOST,
+            port=int(REDIS_PORT),
+            db=int(REDIS_DB),
+            password=REDIS_PASSWORD or None,
+            socket_timeout=5,
+            socket_connect_timeout=5
+        )
+        
+        # Проверяем подключение ping-ом
+        r.ping()
+        return r
+    
+    except redis.exceptions.ConnectionError as e:
+        logger.error(f"Ошибка подключения к Redis: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Непредвиденная ошибка при подключении к Redis: {str(e)}")
+        return None
 
 def send_celery_task(task_name, args=None, kwargs=None, queue=None):
     """

@@ -98,6 +98,13 @@ async def create_new_order(
         # Вручную запрашиваем заказ со всеми связанными данными
         loaded_order = await get_order_by_id(session, order.id)
         
+        # Отправляем подтверждение заказа на email
+        from app.services.order_service import send_order_confirmation
+        if order_data.email:
+            logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
+            task_id = send_order_confirmation(order.id, order_data.email)
+            logger.info(f"Задача подтверждения заказа {order.id} отправлена в Celery, task_id: {task_id}")
+        
         # Преобразуем модель в схему
         return OrderResponse.model_validate(loaded_order)
     except ValueError as e:
@@ -189,15 +196,23 @@ async def get_order(
                 detail="Для просмотра заказа необходима авторизация",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-            
-        # Получаем ID пользователя из токена
-        user_id = current_user["user_id"]
         
+        # Определяем пользователя
+        user_id = None
+        
+        # Если запрос от внутреннего сервиса, разрешаем получение заказа без проверки user_id
+        if current_user.get("is_service"):
+            logger.info(f"Внутренний запрос от сервиса {current_user.get('service_name')} для заказа {order_id}")
+            user_id = None  # None означает получение заказа без проверки принадлежности конкретному пользователю
+        else:
+            # Получаем ID пользователя из токена для обычных пользователей
+            user_id = current_user["user_id"]
+            
         # Получаем заказ
         order = await get_order_by_id(
             session=session,
             order_id=order_id,
-            user_id=user_id
+            user_id=user_id  # Если user_id=None и запрос от сервиса, то заказ будет получен без проверки пользователя
         )
         
         if not order:
@@ -491,14 +506,33 @@ async def update_order_status(
             notes=status_note
         )
         
-        # Коммитим изменения
+        # Получаем информацию о новом статусе
+        new_status = await session.get(OrderStatusModel, status_id)
+        new_status_name = new_status.name if new_status else "Неизвестный"
+        
+        # Получаем информацию о старом статусе
+        old_status = await session.get(OrderStatusModel, order.status_id)
+        old_status_name = old_status.name if old_status else "Неизвестный"
+        
+        # Фиксируем изменения в базе данных
         await session.commit()
         
-        # Получаем обновленный заказ со всеми связанными данными
-        updated_order = await get_order_by_id(session, order_id)
-        logger.info(f"Статус заказа {order_id} успешно обновлен на {status_id}")
+        # Отправляем уведомление об изменении статуса
+        from app.services.order_service import update_order_status
+        if order.email:
+            logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
+            task_id = update_order_status(
+                order_id=order_id,
+                new_status=new_status_name,
+                old_status=old_status_name,
+                email=order.email,
+                notify=True
+            )
+            logger.info(f"Задача уведомления об изменении статуса заказа {order_id} отправлена в Celery, task_id: {task_id}")
         
-        # Возвращаем обновленные данные
+        # Обновляем заказ в сессии
+        updated_order = await get_order_by_id(session, order_id)
+        
         return OrderResponse.model_validate(updated_order)
     except HTTPException:
         raise

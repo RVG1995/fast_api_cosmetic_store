@@ -3,12 +3,13 @@ import os
 import redis
 import uuid
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
 # Получаем настройки подключения к Redis из переменных окружения или используем значения по умолчанию
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = os.getenv("REDIS_PORT", "6379") 
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_DB = os.getenv("REDIS_DB", "0")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 
@@ -46,24 +47,45 @@ def send_celery_task(task_name, args=None, kwargs=None, queue=None):
         # Генерируем уникальный ID задачи
         task_id = str(uuid.uuid4())
         
-        # Создаем сообщение задачи в формате Celery
-        task_message = {
-            "id": task_id,
+        # Создаем сообщение для Celery с учетом требуемых полей
+        body = {
             "task": task_name,
+            "id": task_id,
             "args": args,
             "kwargs": kwargs,
             "retries": 0,
             "eta": None,
-            "expires": None,
+            "expires": None
+        }
+        
+        # Формируем полное сообщение в формате, который ожидает Celery
+        message = {
+            "body": json.dumps(body),
+            "headers": {},
+            "content-type": "application/json",
+            "content-encoding": "utf-8",
+            "properties": {
+                "correlation_id": task_id,
+                "reply_to": None,
+                "delivery_info": {
+                    "exchange": "",
+                    "routing_key": queue
+                },
+                "delivery_mode": 2,
+                "delivery_tag": str(time.time())
+            }
         }
         
         # Сериализуем сообщение в JSON
-        json_message = json.dumps(task_message)
+        json_message = json.dumps(message)
         
-        # Публикуем сообщение в очередь Celery
-        r.lpush(f'celery:{queue}', json_message)
+        # Определяем ключ очереди в Redis правильно
+        queue_key = queue
         
-        logger.info(f"Задача {task_name} с ID {task_id} отправлена в очередь {queue}")
+        # Добавляем задачу в очередь
+        r.lpush(queue_key, json_message)
+        
+        logger.info(f"Задача {task_name} с ID {task_id} отправлена в очередь {queue_key}")
         return task_id
         
     except Exception as e:

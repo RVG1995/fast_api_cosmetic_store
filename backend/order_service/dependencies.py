@@ -27,21 +27,27 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
 CART_SERVICE_URL = os.getenv("CART_SERVICE_URL", "http://localhost:8002")
 
+# Сервисный API-ключ для внутренней авторизации между микросервисами
+SERVICE_API_KEY = os.getenv("SERVICE_API_KEY", "service_secret_key_for_internal_use")
+
 # Схема OAuth2 для получения токена
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 # Функция для проверки токена и получения данных пользователя
 async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
+    x_service_name: Optional[str] = Header(None)
 ) -> Optional[Dict[str, Any]]:
     """
     Проверяет токен и возвращает данные пользователя.
     Если токен отсутствует, возвращает None для поддержки анонимных пользователей.
+    Поддерживает сервисную авторизацию для внутренних запросов между микросервисами.
     
     Args:
         token: Токен доступа из OAuth2
         authorization: Заголовок Authorization
+        x_service_name: Название сервиса для внутренних запросов
         
     Returns:
         Данные пользователя или None, если токен отсутствует
@@ -49,6 +55,19 @@ async def get_current_user(
     # Если токен не получен через OAuth2, пробуем получить из заголовка Authorization
     if not token and authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ")[1]
+    
+    # Проверяем сервисный API-ключ для внутренних запросов
+    if token == SERVICE_API_KEY and x_service_name:
+        logger.info(f"Внутренний запрос от сервиса {x_service_name} авторизован")
+        # Возвращаем специальные данные для внутреннего сервиса с повышенными правами
+        return {
+            "user_id": None,
+            "is_admin": True,
+            "is_super_admin": True,
+            "is_service": True,
+            "service_name": x_service_name,
+            "token": token
+        }
     
     # Если токен отсутствует, возвращаем None для поддержки анонимных пользователей
     if not token:

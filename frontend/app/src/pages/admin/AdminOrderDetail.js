@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Row, Col, Table, Badge, Button, Form, Alert, Spinner, Modal } from 'react-bootstrap';
 import { useOrders } from '../../context/OrderContext';
+import { useAuth } from '../../context/AuthContext';
 import { formatDateTime } from '../../utils/dateUtils';
 import { formatPrice } from '../../utils/helpers';
+import axios from 'axios';
+import { STORAGE_KEYS, API_URLS } from '../../utils/constants';
 
 const AdminOrderDetail = () => {
   const { orderId } = useParams();
@@ -15,6 +18,7 @@ const AdminOrderDetail = () => {
     loading, 
     error 
   } = useOrders();
+  const { token, user } = useAuth();
   
   const [order, setOrder] = useState(null);
   const [statuses, setStatuses] = useState([]);
@@ -22,25 +26,121 @@ const AdminOrderDetail = () => {
   const [statusNote, setStatusNote] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   
   // Загрузка деталей заказа и статусов
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Загрузка заказа
-        const orderData = await getAdminOrderById(orderId);
-        setOrder(orderData);
+        console.log('=== ДИАГНОСТИКА ЗАГРУЗКИ ЗАКАЗА АДМИНИСТРАТОРОМ ===');
+        console.log('ID заказа:', orderId);
+        console.log('Токен в localStorage:', localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN) ? 'Присутствует' : 'Отсутствует');
+        console.log('Токен в контексте:', token ? 'Присутствует' : 'Отсутствует');
+        console.log('Пользователь:', user);
         
-        // Загрузка всех возможных статусов
-        const statusesData = await getOrderStatuses();
-        setStatuses(statusesData);
+        const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+        
+        if (!actualToken) {
+          console.error('Отсутствует токен для запроса заказа администратором');
+          setLoadError('Для доступа к информации о заказе необходима авторизация');
+          return;
+        }
+        
+        // Проверка прав администратора
+        const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
+        const isAdmin = userData?.is_admin || userData?.is_super_admin;
+        
+        if (!isAdmin) {
+          console.error('Пользователь не является администратором');
+          setLoadError('Доступ запрещен. Для просмотра этой страницы необходимы права администратора');
+          return;
+        }
+        
+        // Напрямую вызываем axios вместо getAdminOrderById для диагностики
+        console.log('===== НАЧАЛО ЗАПРОСА ЗАКАЗА АДМИНИСТРАТОРОМ =====');
+        
+        const config = {
+          headers: {
+            'Authorization': `Bearer ${actualToken}`,
+            'Content-Type': 'application/json'
+          }
+        };
+        
+        const orderUrl = `${API_URLS.ORDER_SERVICE}/admin/orders/${orderId}`;
+        console.log('URL запроса заказа:', orderUrl);
+        console.log('Конфигурация:', JSON.stringify(config));
+        
+        // Выполняем запрос заказа
+        const orderResponse = await axios.get(orderUrl, config);
+        console.log('Ответ от сервера (заказ):', orderResponse.status);
+        console.log('Данные заказа:', orderResponse.data);
+        
+        // Устанавливаем данные заказа
+        setOrder(orderResponse.data);
+        
+        // Загружаем статусы заказов
+        const statusesUrl = `${API_URLS.ORDER_SERVICE}/order-statuses`;
+        console.log('URL запроса статусов:', statusesUrl);
+        
+        const statusesResponse = await axios.get(statusesUrl);
+        console.log('Ответ от сервера (статусы):', statusesResponse.status);
+        console.log('Данные статусов:', statusesResponse.data);
+        
+        // Устанавливаем статусы
+        setStatuses(statusesResponse.data || []);
+        
+        // Если у заказа есть статус, устанавливаем его как выбранный
+        if (orderResponse.data && orderResponse.data.status_id) {
+          setSelectedStatus(orderResponse.data.status_id.toString());
+        }
       } catch (err) {
-        console.error('Ошибка при загрузке данных заказа:', err);
+        console.error('===== ОШИБКА ЗАПРОСА ЗАКАЗА АДМИНИСТРАТОРОМ =====');
+        console.error('Имя ошибки:', err.name);
+        console.error('Сообщение ошибки:', err.message);
+        
+        if (err.response) {
+          console.error('Статус ошибки:', err.response.status);
+          console.error('Данные ошибки:', err.response.data);
+          
+          if (err.response.status === 401) {
+            setLoadError('Для просмотра заказа необходима авторизация');
+          } else if (err.response.status === 403) {
+            setLoadError('У вас нет прав администратора для просмотра этого заказа');
+          } else if (err.response.status === 404) {
+            setLoadError('Заказ не найден');
+          } else {
+            setLoadError(`Ошибка сервера: ${err.response.data.detail || 'Неизвестная ошибка'}`);
+          }
+        } else if (err.request) {
+          console.error('Запрос был отправлен, но ответ не получен:', err.request);
+          setLoadError('Не удалось получить ответ от сервера. Проверьте подключение к интернету');
+        } else {
+          setLoadError(`Ошибка при загрузке заказа: ${err.message}`);
+        }
       }
     };
-    
+
+    console.log('AdminOrderDetail: useEffect вызван');
     loadData();
-  }, [getAdminOrderById, getOrderStatuses, orderId]);
+  }, [orderId]);
+  
+  // Если произошла локальная ошибка загрузки
+  if (loadError) {
+    return (
+      <div className="container py-5">
+        <Alert variant="danger">
+          {loadError}
+        </Alert>
+        <Button 
+          variant="primary" 
+          onClick={() => navigate('/admin/orders')}
+          className="mt-3"
+        >
+          Вернуться к списку заказов
+        </Button>
+      </div>
+    );
+  }
   
   // Получение цвета для статуса заказа
   const getStatusBadgeVariant = (statusCode) => {

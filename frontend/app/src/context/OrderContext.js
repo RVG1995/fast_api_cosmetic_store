@@ -5,7 +5,8 @@ import { API_URLS, STORAGE_KEYS } from '../utils/constants';
 
 // URL сервиса заказов
 const ORDER_SERVICE_URL = API_URLS.ORDER_SERVICE;
-// В бэкенде API префикс не используется
+// Префикс API не используется, так как пути уже определены в роутерах бэкенда
+// Корректные пути: /orders, /admin/orders, /order-statuses
 const API_PREFIX = '';
 
 // Создаем контекст для заказов
@@ -24,41 +25,24 @@ export const OrderProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Конфигурация заголовков с токеном авторизации
+  // Функция для получения конфигурации запроса
   const getConfig = useCallback(() => {
-    // Пытаемся получить токен из контекста аутентификации
-    let authToken = token;
+    console.log('Получение конфигурации запроса');
+    // Получаем актуальный токен
+    const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+    console.log('Токен в момент запроса:', actualToken ? 'Присутствует' : 'Отсутствует');
     
-    // Если токен не найден в контексте, пробуем получить из localStorage
-    if (!authToken) {
-      authToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-      console.log("Получен токен из localStorage:", authToken ? `${authToken.substring(0, 20)}...` : "Токен не найден");
-    } else {
-      console.log("Получен токен из контекста:", `${authToken.substring(0, 20)}...`);
+    if (!actualToken) {
+      console.warn('Токен отсутствует в getConfig');
+      return {};
     }
     
-    if (!authToken) {
-      console.error("ВНИМАНИЕ: Не найден токен авторизации ни в контексте, ни в localStorage!");
-    }
-    
-    // Формируем заголовки
-    const headers = {
-      'Content-Type': 'application/json'
+    return {
+      headers: {
+        'Authorization': `Bearer ${actualToken}`,
+        'Content-Type': 'application/json'
+      }
     };
-    
-    // Добавляем токен только если он существует
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
-    
-    const config = { headers };
-    
-    console.log("Сформированы заголовки запроса:", {
-      Authorization: headers.Authorization ? `${headers.Authorization.substring(0, 30)}...` : 'Нет токена',
-      'Content-Type': headers['Content-Type']
-    });
-    
-    return config;
   }, [token]);
 
   // Проверка наличия токена
@@ -81,8 +65,8 @@ export const OrderProvider = ({ children }) => {
     setError(null);
     
     try {
-      // Исправлено: роут для получения заказов текущего пользователя
-      let url = `${ORDER_SERVICE_URL}${API_PREFIX}/orders?page=${page}&size=${size}`;
+      // Формируем URL запроса
+      let url = `${ORDER_SERVICE_URL}/orders?page=${page}&size=${size}`;
       if (statusId) {
         url += `&status_id=${statusId}`;
       }
@@ -122,26 +106,71 @@ export const OrderProvider = ({ children }) => {
 
   // Получение одного заказа по ID
   const fetchOrder = useCallback(async (orderId) => {
-    if (!token) return;
+    console.log('Вызов fetchOrder с ID:', orderId);
+    const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+    
+    if (!actualToken) {
+      console.error('Попытка получить заказ без токена авторизации');
+      setError('Для просмотра заказа необходима авторизация');
+      return null;
+    }
     
     setLoading(true);
     setError(null);
     
+    // Маршрут определен в бэкенде как /orders/{order_id}
+    const url = `${ORDER_SERVICE_URL}/orders/${orderId}`;
+    console.log('URL запроса заказа:', url);
+    console.log('Токен присутствует:', !!actualToken);
+    
     try {
-      const response = await axios.get(
-        `${ORDER_SERVICE_URL}${API_PREFIX}/orders/${orderId}`, 
-        getConfig()
-      );
+      const config = getConfig();
+      console.log('Конфигурация запроса:', JSON.stringify(config));
+      console.log('Заголовки запроса:', {
+        Authorization: config?.headers?.Authorization ? 'Bearer xxx...' : 'Отсутствует',
+        ContentType: config?.headers?.['Content-Type']
+      });
+      
+      const response = await axios.get(url, config);
+      console.log('Ответ от сервера fetchOrder:', response.status, response.data);
+      
+      // Записываем данные заказа в состояние
       setCurrentOrder(response.data);
+      
+      // Возвращаем данные для использования компонентом
       return response.data;
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось получить информацию о заказе');
-      console.error('Ошибка при получении заказа:', err);
-      return null;
-    } finally {
+    } catch (error) {
+      console.error('Ошибка при получении заказа:', error);
+      
+      // Анализируем ошибку
+      if (error.response) {
+        // Обработка ответа с ошибкой от сервера
+        console.error('Статус ошибки:', error.response.status);
+        console.error('Данные ошибки:', error.response.data);
+        
+        if (error.response.status === 401) {
+          setError('Для просмотра заказа необходима авторизация');
+        } else if (error.response.status === 403) {
+          setError('У вас нет прав для просмотра этого заказа');
+        } else if (error.response.status === 404) {
+          setError('Заказ не найден');
+        } else {
+          setError(`Ошибка сервера: ${error.response.data.detail || 'Неизвестная ошибка'}`);
+        }
+      } else if (error.request) {
+        // Обработка отсутствия ответа от сервера
+        console.error('Нет ответа от сервера:', error.request);
+        setError('Не удалось получить ответ от сервера. Проверьте подключение к интернету');
+      } else {
+        // Другие ошибки
+        console.error('Ошибка при настройке запроса:', error.message);
+        setError(`Ошибка запроса: ${error.message}`);
+      }
+      
       setLoading(false);
+      return null;
     }
-  }, [token, getConfig]);
+  }, [token, ORDER_SERVICE_URL, getConfig, setCurrentOrder]);
 
   // Создание нового заказа
   const createOrder = useCallback(async (orderData) => {
@@ -153,7 +182,7 @@ export const OrderProvider = ({ children }) => {
     console.log("Статус аутентификации при создании заказа:", isAuthenticated ? "Пользователь аутентифицирован" : "Пользователь не аутентифицирован");
     
     console.log("Исходные данные заказа:", orderData);
-    console.log("URL:", `${ORDER_SERVICE_URL}${API_PREFIX}/orders`);
+    console.log("URL:", `${ORDER_SERVICE_URL}/orders`);
     
     try {
       // Проверка наличия обязательных полей
@@ -215,7 +244,7 @@ export const OrderProvider = ({ children }) => {
       console.log("Используемые заголовки:", config);
       
       const response = await axios.post(
-        `${ORDER_SERVICE_URL}${API_PREFIX}/orders`, 
+        `${ORDER_SERVICE_URL}/orders`, 
         newOrderData,
         config
       );
@@ -268,7 +297,7 @@ export const OrderProvider = ({ children }) => {
     
     try {
       const response = await axios.post(
-        `${ORDER_SERVICE_URL}${API_PREFIX}/orders/${orderId}/cancel`,
+        `${ORDER_SERVICE_URL}/orders/${orderId}/cancel`,
         { notes: reason },
         getConfig()
       );
@@ -301,12 +330,11 @@ export const OrderProvider = ({ children }) => {
     setError(null);
     
     try {
-      // Исправлено: путь до статусов заказов с API_PREFIX
-      console.log("Запрос статусов заказов:", `${ORDER_SERVICE_URL}${API_PREFIX}/order-statuses`);
+      console.log("Запрос статусов заказов:", `${ORDER_SERVICE_URL}/order-statuses`);
       
       // Делаем запрос без аутентификации, так как статусы заказов публичны
       const response = await axios.get(
-        `${ORDER_SERVICE_URL}${API_PREFIX}/order-statuses`
+        `${ORDER_SERVICE_URL}/order-statuses`
       );
       
       console.log("Ответ со статусами заказов:", response.data);
@@ -366,10 +394,9 @@ export const OrderProvider = ({ children }) => {
         delete adjustedParams.limit;
       }
       
-      const url = `${ORDER_SERVICE_URL}${API_PREFIX}/orders`;
+      const url = `${ORDER_SERVICE_URL}/orders`;
       console.log("URL запроса:", url);
       
-      // Исправлено: получаем заказы пользователя через API_PREFIX
       const response = await axios.get(url, { 
         ...config,
         params: adjustedParams
@@ -429,10 +456,9 @@ export const OrderProvider = ({ children }) => {
       }
       console.log("Преобразованные параметры:", adjustedParams);
       
-      const url = `${ORDER_SERVICE_URL}${API_PREFIX}/admin/orders`;
+      const url = `${ORDER_SERVICE_URL}/admin/orders`;
       console.log("URL запроса:", url);
       
-      // Исправлено: маршрут для админских заказов с API_PREFIX
       const response = await axios.get(url, { 
         ...config,
         params: adjustedParams
@@ -481,7 +507,7 @@ export const OrderProvider = ({ children }) => {
     
     try {
       const response = await axios.put(
-        `${ORDER_SERVICE_URL}${API_PREFIX}/admin/orders/${orderId}/status`, 
+        `${ORDER_SERVICE_URL}/admin/orders/${orderId}/status`, 
         statusData,
         getConfig()
       );
@@ -497,25 +523,82 @@ export const OrderProvider = ({ children }) => {
 
   // Получение одного заказа по ID (для администраторов)
   const getAdminOrderById = useCallback(async (orderId) => {
-    if (!token) return;
+    console.log('Вызов getAdminOrderById с ID:', orderId);
+    const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+    
+    if (!actualToken) {
+      console.error('Попытка получить заказ администратором без токена авторизации');
+      setError('Для доступа к заказу необходима авторизация администратора');
+      return null;
+    }
+    
+    // Проверка прав администратора
+    const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
+    const isAdmin = userData?.is_admin || userData?.is_super_admin;
+    
+    if (!isAdmin) {
+      console.error('Пользователь не имеет прав администратора');
+      setError('Доступ запрещен. Требуются права администратора');
+      return null;
+    }
     
     setLoading(true);
     setError(null);
     
+    // Маршрут определен в бэкенде как /admin/orders/{order_id}
+    const url = `${ORDER_SERVICE_URL}/admin/orders/${orderId}`;
+    console.log('Запрос заказа администратором:', url);
+    console.log('Токен присутствует:', !!actualToken);
+    console.log('Пользователь админ:', isAdmin);
+    
     try {
-      const response = await axios.get(
-        `${ORDER_SERVICE_URL}${API_PREFIX}/admin/orders/${orderId}`, 
-        getConfig()
-      );
+      const config = getConfig();
+      console.log('Конфигурация запроса:', JSON.stringify(config));
+      console.log('Заголовки запроса:', {
+        Authorization: config?.headers?.Authorization ? 'Bearer xxx...' : 'Отсутствует',
+        ContentType: config?.headers?.['Content-Type']
+      });
+      
+      const response = await axios.get(url, config);
+      console.log('Ответ от сервера getAdminOrderById:', response.status, response.data);
+      
+      // Записываем данные заказа в состояние
+      setCurrentOrder(response.data);
+      
+      // Возвращаем данные для использования компонентом
       return response.data;
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось получить информацию о заказе');
-      console.error('Ошибка при получении заказа:', err);
-      return null;
-    } finally {
+    } catch (error) {
+      console.error('Ошибка при получении заказа администратором:', error);
+      
+      // Анализируем ошибку
+      if (error.response) {
+        // Обработка ответа с ошибкой от сервера
+        console.error('Статус ошибки:', error.response.status);
+        console.error('Данные ошибки:', error.response.data);
+        
+        if (error.response.status === 401) {
+          setError('Для доступа к заказу необходима авторизация');
+        } else if (error.response.status === 403) {
+          setError('У вас нет прав администратора для просмотра этого заказа');
+        } else if (error.response.status === 404) {
+          setError('Заказ не найден');
+        } else {
+          setError(`Ошибка сервера: ${error.response.data.detail || 'Неизвестная ошибка'}`);
+        }
+      } else if (error.request) {
+        // Обработка отсутствия ответа от сервера
+        console.error('Нет ответа от сервера:', error.request);
+        setError('Не удалось получить ответ от сервера. Проверьте подключение к интернету');
+      } else {
+        // Другие ошибки
+        console.error('Ошибка при настройке запроса:', error.message);
+        setError(`Ошибка запроса: ${error.message}`);
+      }
+      
       setLoading(false);
+      return null;
     }
-  }, [token, getConfig]);
+  }, [token, user, ORDER_SERVICE_URL, getConfig, setCurrentOrder]);
 
   // Значение контекста
   const contextValue = {

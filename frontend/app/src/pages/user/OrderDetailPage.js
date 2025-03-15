@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useOrders } from '../../context/OrderContext';
+import { useAuth } from '../../context/AuthContext';
 import { 
   Container, 
   Row, 
@@ -18,28 +19,95 @@ import { formatPrice } from '../../utils/helpers';
 import { formatDateTime } from '../../utils/dateUtils';
 import OrderStatusBadge from '../../components/OrderStatusBadge';
 import './OrderDetailPage.css';
+import axios from 'axios';
+import { STORAGE_KEYS, API_URLS } from '../../utils/constants';
 
 const OrderDetailPage = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
-  const { fetchOrder, cancelOrder, loading, error } = useOrders();
+  const { getOrderById, cancelOrder, loading, error } = useOrders();
+  const { token, user } = useAuth();
   const [order, setOrder] = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError, setCancelError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   
   // Загрузка заказа при монтировании компонента
-  useEffect(() => {
-    const loadOrder = async () => {
-      const result = await fetchOrder(orderId);
-      if (result) {
-        setOrder(result);
-      }
-    };
+  const loadOrder = async () => {
+    console.log('=== ДИАГНОСТИКА ЗАГРУЗКИ ЗАКАЗА ===');
+    console.log('ID заказа:', orderId);
+    console.log('Токен в localStorage:', localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN) ? 'Присутствует' : 'Отсутствует');
+    console.log('Токен в контексте:', token ? 'Присутствует' : 'Отсутствует');
+    console.log('Пользователь:', user);
     
+    try {
+      // НЕ делаем перенаправление здесь, так как это уже обрабатывается в PrivateRoute
+      
+      // Принудительно используем метод запроса с токеном из localStorage
+      console.log('===== НАЧАЛО ЗАПРОСА ЗАКАЗА =====');
+      const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      
+      if (!actualToken) {
+        console.error('Отсутствует токен для запроса заказа');
+        setLoadError('Для просмотра заказа необходима авторизация');
+        return;
+      }
+      
+      // Напрямую вызываем axios вместо getOrderById для диагностики
+      const config = {
+        headers: {
+          'Authorization': `Bearer ${actualToken}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const url = `${API_URLS.ORDER_SERVICE}/orders/${orderId}`;
+      console.log('URL запроса:', url);
+      console.log('Конфигурация:', JSON.stringify(config));
+      
+      // Выполняем запрос
+      const response = await axios.get(url, config);
+      console.log('Ответ от сервера:', response.status);
+      console.log('Данные заказа:', response.data);
+      
+      // Устанавливаем данные заказа
+      setOrder(response.data);
+    } catch (err) {
+      console.error('===== ОШИБКА ЗАПРОСА ЗАКАЗА =====');
+      console.error('Имя ошибки:', err.name);
+      console.error('Сообщение ошибки:', err.message);
+      
+      if (err.response) {
+        console.error('Статус ошибки:', err.response.status);
+        console.error('Данные ошибки:', err.response.data);
+        
+        if (err.response.status === 401) {
+          setLoadError('Для просмотра заказа необходима авторизация');
+        } else if (err.response.status === 403) {
+          setLoadError('У вас нет прав для просмотра этого заказа');
+        } else if (err.response.status === 404) {
+          setLoadError('Заказ не найден');
+        } else {
+          setLoadError(`Ошибка сервера: ${err.response.data.detail || 'Неизвестная ошибка'}`);
+        }
+      } else if (err.request) {
+        // Запрос был сделан, но ответ не получен
+        console.error('Запрос был отправлен, но ответ не получен:', err.request);
+        setLoadError('Не удалось получить ответ от сервера. Проверьте подключение к интернету');
+      } else {
+        // Что-то произошло при настройке запроса
+        setLoadError(`Ошибка при загрузке заказа: ${err.message}`);
+      }
+    }
+  };
+  
+  // Запускаем загрузку заказа при монтировании компонента
+  useEffect(() => {
+    console.log('OrderDetailPage: useEffect вызван');
     loadOrder();
-  }, [orderId, fetchOrder]);
+  }, [orderId]);
   
   // Обработчик отмены заказа
   const handleCancelOrder = async () => {

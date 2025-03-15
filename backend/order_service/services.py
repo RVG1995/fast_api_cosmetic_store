@@ -133,17 +133,47 @@ async def get_order_by_id(session: AsyncSession, order_id: int, user_id: Optiona
     Returns:
         Заказ или None, если заказ не найден или пользователь не имеет доступа
     """
-    query = select(OrderModel).options(
-        selectinload(OrderModel.items),
-        selectinload(OrderModel.status),
-        selectinload(OrderModel.status_history).selectinload(OrderStatusHistoryModel.status)
-    ).filter(OrderModel.id == order_id)
+    # Логирование запроса
+    logger.info(f"Запрос получения заказа: order_id={order_id}, user_id={user_id if user_id is not None else 'None (admin)'}")
     
-    if user_id is not None:
-        query = query.filter(OrderModel.user_id == user_id)
-    
-    result = await session.execute(query)
-    return result.scalars().first()
+    try:
+        # Формируем запрос с джойнами для загрузки всех связанных данных
+        query = select(OrderModel).options(
+            selectinload(OrderModel.items),
+            selectinload(OrderModel.status),
+            selectinload(OrderModel.status_history).selectinload(OrderStatusHistoryModel.status)
+        ).filter(OrderModel.id == order_id)
+        
+        # Если указан пользователь, фильтруем только его заказы
+        # Для администратора user_id=None, поэтому фильтрация не применяется
+        if user_id is not None:
+            logger.info(f"Применение фильтра по user_id={user_id}")
+            query = query.filter(OrderModel.user_id == user_id)
+        
+        # Выполняем запрос
+        result = await session.execute(query)
+        order = result.scalars().first()
+        
+        # Логируем результат
+        if order:
+            logger.info(f"Заказ найден: order_id={order_id}, user_id={order.user_id}, status={order.status_id if hasattr(order, 'status_id') else 'N/A'}")
+            # Выводим информацию о товарах в заказе
+            if hasattr(order, 'items') and order.items:
+                logger.info(f"Количество товаров в заказе: {len(order.items)}")
+        else:
+            # Если заказ не найден, логируем подробную информацию для отладки
+            logger.warning(f"Заказ с ID {order_id} не найден. Фильтр по пользователю: {user_id is not None}")
+            # Проверим, существует ли заказ вообще
+            check_query = select(OrderModel).filter(OrderModel.id == order_id)
+            check_result = await session.execute(check_query)
+            check_order = check_result.scalars().first()
+            if check_order:
+                logger.warning(f"Заказ с ID {order_id} существует, но не доступен для пользователя {user_id}. Владелец заказа: {check_order.user_id}")
+        
+        return order
+    except Exception as e:
+        logger.error(f"Ошибка при выполнении запроса заказа: {str(e)}")
+        raise
 
 async def get_orders(
     session: AsyncSession,

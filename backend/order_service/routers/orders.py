@@ -332,6 +332,8 @@ async def get_order_admin(
     - **order_id**: ID заказа
     """
     try:
+        logger.info(f"Запрос заказа администратором. ID заказа: {order_id}, ID пользователя: {current_user.get('user_id')}")
+        
         # Получаем заказ
         order = await get_order_by_id(
             session=session,
@@ -339,10 +341,13 @@ async def get_order_admin(
         )
         
         if not order:
+            logger.warning(f"Заказ с ID {order_id} не найден для администратора")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Заказ с ID {order_id} не найден",
             )
+        
+        logger.info(f"Заказ с ID {order_id} успешно найден для администратора")
         
         # Преобразуем модель в схему
         return OrderDetailResponse.model_validate(order)

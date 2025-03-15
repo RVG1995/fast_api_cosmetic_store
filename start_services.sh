@@ -101,6 +101,21 @@ stop_services() {
     exit 0
 }
 
+# Функция для проверки Redis без запуска нового контейнера
+start_redis() {
+    print_message "Проверка доступности Redis..."
+    
+    # Проверяем, доступен ли Redis с помощью timeout и curl
+    if timeout 1 bash -c "</dev/tcp/localhost/6379" >/dev/null 2>&1; then
+        echo -e "${GREEN}[OK]${NC} Redis доступен на localhost:6379"
+        return 0
+    else
+        echo -e "${YELLOW}[WARNING]${NC} Redis недоступен на localhost:6379"
+        echo -e "${YELLOW}[INFO]${NC} Убедитесь, что Redis запущен перед использованием Celery"
+        return 1
+    fi
+}
+
 # Обработка сигналов для корректного закрытия
 trap stop_services INT TERM
 
@@ -135,6 +150,42 @@ if [ -n "$PYTHON_ENV" ]; then
     print_message "Активация виртуального окружения Python: $PYTHON_ENV"
     source "$PYTHON_ENV"
 fi
+
+# Запуск Redis для Celery
+print_message "${BLUE}=== ЗАПУСК REDIS ДЛЯ CELERY ===${NC}"
+start_redis
+
+# Запуск Celery и Flower
+print_message "${BLUE}=== ЗАПУСК CELERY СЕРВИСОВ ===${NC}"
+
+# Проверяем наличие директории celery_service
+if [ -d "$BACKEND_DIR/celery_service" ]; then
+    print_message "Директория Celery найдена: $BACKEND_DIR/celery_service"
+    
+    # Проверяем наличие скрипта run_dev.sh и прав на исполнение
+    if [ -f "$BACKEND_DIR/celery_service/run_dev.sh" ]; then
+        if [ ! -x "$BACKEND_DIR/celery_service/run_dev.sh" ]; then
+            print_message "Устанавливаем права на исполнение для run_dev.sh"
+            chmod +x "$BACKEND_DIR/celery_service/run_dev.sh"
+        fi
+        
+        # Запуск Celery worker
+        start_service "celery_worker" "$BACKEND_DIR/celery_service" "./run_dev.sh worker"
+        sleep 3  # Ждем, чтобы worker успел запуститься
+        
+        # Запуск Flower для мониторинга
+        start_service "celery_flower" "$BACKEND_DIR/celery_service" "./run_dev.sh flower"
+        sleep 2
+        
+        print_message "${GREEN}[INFO]${NC} Celery worker и Flower запущены. Мониторинг доступен по адресу: http://localhost:5555"
+    else
+        print_message "${YELLOW}[WARNING]${NC} Скрипт run_dev.sh не найден. Celery не будет запущен."
+    fi
+else
+    print_message "${YELLOW}[WARNING]${NC} Директория celery_service не найдена. Celery не будет запущен."
+fi
+
+echo ""
 
 # Запуск бэкенд-сервисов
 print_message "${BLUE}=== ЗАПУСК БЭКЕНД-СЕРВИСОВ ===${NC}"
@@ -190,6 +241,7 @@ fi
 echo ""
 print_message "${GREEN}Все сервисы запущены!${NC}"
 print_message "Логи доступны в директории: ${YELLOW}$LOGS_DIR${NC}"
+print_message "Мониторинг Celery доступен по адресу: ${YELLOW}http://localhost:5555${NC}"
 print_message "${YELLOW}Для остановки всех сервисов нажмите Ctrl+C${NC}"
 echo ""
 

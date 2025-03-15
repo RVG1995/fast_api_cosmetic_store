@@ -1,6 +1,6 @@
 from fastapi import APIRouter,Depends,Cookie,HTTPException,status,Response, BackgroundTasks
 from sqlalchemy import select 
-from typing import Optional, Annotated
+from typing import Optional, Annotated, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import  get_session
 from models import UserModel
@@ -13,6 +13,11 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 import os
 from dotenv import load_dotenv
 from utils import get_password_hash, verify_password  # Импортируем из utils
+from app.services.email_service import send_verification_email
+import logging
+
+# Настройка логгера
+logger = logging.getLogger(__name__)
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -118,21 +123,6 @@ async def register(
     hashed_password = await get_password_hash(user.password)
     activation_token = secrets.token_urlsafe(32)
     
-    # Создаем сообщение для проверки
-    message = MessageSchema(
-        subject="Подтверждение регистрации",
-        recipients=[user.email],
-        body=f"""
-        Спасибо за регистрацию!
-        Для активации аккаунта перейдите по ссылке:
-        http://localhost:3000/activate/{activation_token}
-        """,
-        subtype="plain"
-    )
-    
-    # Создаем объект FastMail для проверки конфигурации
-    fm = FastMail(conf)
-    
     try:
         # Создаем пользователя
         new_user = UserModel(
@@ -148,12 +138,31 @@ async def register(
         await session.commit()
         await session.refresh(new_user)
         
-        # Добавляем отправку письма в фоновые задачи
-        background_tasks.add_task(
-            send_activation_email,
-            email_to=user.email,
-            activation_link=f"http://localhost:3000/activate/{activation_token}"
+        # Используем Celery для отправки письма (импортируем здесь, чтобы избежать циклических импортов)
+        from app.services.email_service import send_verification_email
+        
+        # Формируем ссылку активации
+        activation_link = f"http://localhost:3000/activate/{activation_token}"
+        
+        # Отправляем задачу через Celery
+        celery_task_id = send_verification_email(
+            str(new_user.id), 
+            user.email, 
+            activation_link
         )
+        
+        # Для отладки записываем ID задачи Celery
+        if celery_task_id:
+            logger.info(f"Отправка email активации через Celery, task_id: {celery_task_id}")
+        else:
+            logger.warning(f"Не удалось отправить email активации через Celery для пользователя {new_user.id}")
+            
+            # Запасной вариант - отправляем напрямую
+            background_tasks.add_task(
+                send_activation_email,
+                email_to=user.email,
+                activation_link=activation_link
+            )
         
         return UserReadShema(
             id = new_user.id,
@@ -165,6 +174,7 @@ async def register(
     except Exception as e:
         # Если произошла ошибка, откатываем изменения
         await session.rollback()
+        logger.error(f"Ошибка при регистрации: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail="Произошла ошибка при регистрации. Пожалуйста, попробуйте позже."

@@ -1,0 +1,72 @@
+.admin-orders-container {
+  padding-bottom: 50px;
+}
+
+.admin-orders-table {
+  margin-bottom: 2rem;
+}
+
+.admin-orders-table thead {
+  background-color: #f8f9fa;
+}
+
+.admin-orders-table th {
+  font-weight: 600;
+  padding: 1rem;
+  color: #333;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.admin-orders-table tbody tr:hover {
+  background-color: #f9f9f9;
+}
+
+.admin-orders-table td {
+  vertical-align: middle;
+  padding: 0.75rem;
+}
+
+.pagination {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.pagination .page-link {
+  color: #333;
+  border-color: #dee2e6;
+  min-width: 40px;
+  text-align: center;
+}
+
+.pagination .page-item.active .page-link {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  color: white;
+}
+
+.pagination .page-link:hover {
+  background-color: #f8f9fa;
+  color: #0d6efd;
+}
+
+/* Стили для фильтров */
+.filters-card {
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.filters-card .card-body {
+  padding: 1.5rem;
+}
+
+/* Адаптивность для мобильных устройств */
+@media (max-width: 768px) {
+  .admin-orders-table {
+    font-size: 0.85rem;
+  }
+  
+  .admin-orders-table th,
+  .admin-orders-table td {
+    padding: 0.5rem;
+  }
+} 

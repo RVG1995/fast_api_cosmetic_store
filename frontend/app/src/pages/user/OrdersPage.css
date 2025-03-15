@@ -1,6 +1,8 @@
 .orders-container {
   max-width: 1200px;
   margin: 0 auto;
+  min-height: calc(100vh - 250px); /* Уменьшаем вычитание для увеличения высоты */
+  padding-bottom: 50px; /* Добавляем отступ снизу */
 }
 
 .orders-title {
@@ -10,17 +12,20 @@
   margin-bottom: 2rem;
 }
 
-.orders-filter {
-  background-color: #f9f9f9;
-  padding: 1rem;
+/* Стили для фильтров */
+.filters-card {
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
   border-radius: 8px;
-  margin-bottom: 1.5rem;
+}
+
+.filters-card .card-body {
+  padding: 1.5rem;
 }
 
 .orders-table {
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-  border-radius: 8px;
-  overflow: hidden;
+  margin-bottom: 0;
+  width: 100%;
 }
 
 .orders-table thead {
@@ -29,8 +34,13 @@
 
 .orders-table th {
   font-weight: 600;
-  padding: 1rem;
+  padding: 1rem !important;
   color: #333;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.orders-table tbody {
+  border-top: none !important;
 }
 
 .order-item {
@@ -80,6 +90,30 @@
   font-size: 3rem;
   color: #ccc;
   margin-bottom: 1rem;
+}
+
+/* Стили для пагинации */
+.pagination {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.pagination .page-link {
+  color: #333;
+  border-color: #dee2e6;
+  min-width: 40px;
+  text-align: center;
+}
+
+.pagination .page-item.active .page-link {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  color: white;
+}
+
+.pagination .page-link:hover {
+  background-color: #f8f9fa;
+  color: #0d6efd;
 }
 
 /* Стили для мобильных устройств */

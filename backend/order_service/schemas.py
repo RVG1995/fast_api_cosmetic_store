@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 from enum import Enum
+import logging
 
 # Перечисления
 class OrderStatusEnum(str, Enum):
@@ -212,7 +213,19 @@ class PaginatedResponse(BaseModel):
         data = info.data
         total = data.get('total', 0)
         size = data.get('size', 1)
-        return (total + size - 1) // size if size > 0 else 0
+        
+        # Предотвращаем деление на ноль
+        if size <= 0:
+            size = 1
+        
+        # Вычисляем количество страниц
+        pages = (total + size - 1) // size
+        
+        # Логирование результата вычисления
+        logger = logging.getLogger("pagination")
+        logger.info(f"Вычисление страниц: total={total}, size={size}, pages={pages}")
+        
+        return pages
 
 class OrderFilterParams(BaseModel):
     page: int = Field(1, ge=1)

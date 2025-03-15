@@ -489,12 +489,14 @@ export const OrderProvider = ({ children }) => {
   
   // Получение всех заказов (для администраторов)
   const getAllOrders = useCallback(async (params = {}) => {
+    // Проверяем наличие токена
     if (!hasToken()) {
       console.warn("Попытка получить все заказы без авторизации");
+      setError("Для доступа к списку заказов необходима авторизация");
       return { items: [], total: 0, page: 1, limit: 10 };
     }
     
-    // Проверяем, является ли пользователь админом
+    // Проверяем права администратора
     const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
     const isAdmin = userData?.is_admin || userData?.is_super_admin;
     
@@ -518,6 +520,29 @@ export const OrderProvider = ({ children }) => {
         adjustedParams.size = adjustedParams.limit;
         delete adjustedParams.limit;
       }
+      
+      // Убедимся, что page является числом
+      if (adjustedParams.page && typeof adjustedParams.page !== 'number') {
+        const parsed = parseInt(adjustedParams.page, 10);
+        if (!isNaN(parsed)) {
+          adjustedParams.page = parsed;
+        } else {
+          adjustedParams.page = 1;
+          console.warn(`Некорректное значение page: "${adjustedParams.page}", установлено в 1`);
+        }
+      }
+      
+      // Убедимся, что size является числом
+      if (adjustedParams.size && typeof adjustedParams.size !== 'number') {
+        const parsed = parseInt(adjustedParams.size, 10);
+        if (!isNaN(parsed)) {
+          adjustedParams.size = parsed;
+        } else {
+          adjustedParams.size = 10;
+          console.warn(`Некорректное значение size: "${adjustedParams.size}", установлено в 10`);
+        }
+      }
+      
       console.log("Преобразованные параметры:", adjustedParams);
       
       const url = `${ORDER_SERVICE_URL}/admin/orders`;
@@ -529,7 +554,23 @@ export const OrderProvider = ({ children }) => {
       });
       
       console.log("Ответ сервера:", response.data);
-      return response.data || { items: [], total: 0, page: 1, limit: 10 };
+      
+      // Проверяем корректность ответа
+      const data = response.data || { items: [], total: 0, page: 1, size: 10, pages: 1 };
+      
+      // Проверяем и конвертируем числовые значения
+      data.total = typeof data.total === 'number' ? data.total : 0;
+      data.page = typeof data.page === 'number' ? data.page : 1;
+      data.size = typeof data.size === 'number' ? data.size : 10;
+      data.pages = typeof data.pages === 'number' ? data.pages : Math.max(1, Math.ceil(data.total / data.size));
+      
+      // Проверяем наличие массива items
+      if (!Array.isArray(data.items)) {
+        console.error("Ответ не содержит массив items:", data);
+        data.items = [];
+      }
+      
+      return data;
     } catch (err) {
       console.error("Полная ошибка при получении всех заказов:", err);
       console.error("Тип ошибки:", err.name);
@@ -556,7 +597,7 @@ export const OrderProvider = ({ children }) => {
         setError(err.response?.data?.detail || err.message || 'Не удалось получить список всех заказов');
       }
       
-      return { items: [], total: 0, page: 1, limit: 10 };
+      return { items: [], total: 0, page: 1, size: 10, pages: 1 };
     } finally {
       setLoading(false);
     }
@@ -564,6 +605,8 @@ export const OrderProvider = ({ children }) => {
 
   // Обновление статуса заказа (для администраторов)
   const updateOrderStatus = useCallback(async (orderId, statusData) => {
+    console.log('Запрос на обновление статуса заказа:', { orderId, statusData });
+    
     if (!token) {
       console.error('Попытка обновить статус заказа без токена авторизации');
       const localToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
@@ -577,6 +620,7 @@ export const OrderProvider = ({ children }) => {
     // Проверяем права администратора
     const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
     const isAdmin = userData?.is_admin || userData?.is_super_admin;
+    console.log('Проверка прав администратора:', { isAdmin, userData });
     
     if (!isAdmin) {
       console.error('Попытка обновить статус заказа без прав администратора');
@@ -591,9 +635,11 @@ export const OrderProvider = ({ children }) => {
       // Используем специальный эндпоинт для обновления статуса заказа
       const url = `${ORDER_SERVICE_URL}/admin/orders/${orderId}/status`;
       const config = getConfig();
+      console.log('Отправка запроса на обновление статуса:', { url, statusData, config: { headers: config.headers } });
       
       // Отправляем POST запрос
       const response = await axios.post(url, statusData, config);
+      console.log('Ответ на запрос обновления статуса:', { status: response.status, data: response.data });
       
       if (response.status >= 200 && response.status < 300) {
         return response.data;

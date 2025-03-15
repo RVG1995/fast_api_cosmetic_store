@@ -31,20 +31,30 @@ const OrdersPage = () => {
 
   // Загрузка заказов пользователя
   const loadOrders = useCallback(async () => {
-    const result = await fetchUserOrders(
-      pagination.page, 
-      pagination.limit, 
-      statusFilter
-    );
-    
-    if (result) {
-      setOrders(result.items || []);
-      setPagination({
-        page: result.page || 1,
-        pages: result.pages || 1,
-        total: result.total || 0,
-        limit: result.limit || 10
+    try {
+      console.log('Загрузка заказов с параметрами:', {
+        page: pagination.page,
+        limit: pagination.limit,
+        statusId: statusFilter
       });
+      
+      const result = await fetchUserOrders(
+        pagination.page, 
+        pagination.limit, 
+        statusFilter
+      );
+      
+      if (result) {
+        setOrders(result.items || []);
+        setPagination({
+          page: result.page || 1,
+          pages: result.pages || 1,
+          total: result.total || 0,
+          limit: result.limit || 10
+        });
+      }
+    } catch (error) {
+      console.error('Ошибка при загрузке заказов:', error);
     }
   }, [fetchUserOrders, pagination.page, pagination.limit, statusFilter]);
 
@@ -64,7 +74,16 @@ const OrdersPage = () => {
 
   // Обработчик смены страницы
   const handlePageChange = (page) => {
-    setPagination(prev => ({ ...prev, page }));
+    // Проверяем, что страница является числом и в пределах допустимого диапазона
+    const parsedPage = parseInt(page, 10);
+    if (!isNaN(parsedPage) && parsedPage > 0 && parsedPage <= pagination.pages) {
+      // Устанавливаем новую страницу и сохраняем текущие настройки фильтрации
+      setPagination(prev => ({ ...prev, page: parsedPage }));
+      // Скроллим страницу вверх для удобства просмотра
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      console.error('Некорректное значение страницы:', page);
+    }
   };
 
   // Обработчик выбора статуса для фильтрации
@@ -94,34 +113,32 @@ const OrdersPage = () => {
       )}
       
       {/* Фильтр по статусам */}
-      <div className="orders-filter mb-4">
-        <Row>
-          <Col>
-            <div className="d-flex flex-wrap align-items-center">
-              <span className="me-2">Фильтр по статусу:</span>
-              <Button 
-                variant={statusFilter === null ? "primary" : "outline-primary"}
+      <Card className="mb-4 filters-card">
+        <Card.Body>
+          <h5 className="mb-3">Фильтр по статусу</h5>
+          <div className="d-flex flex-wrap align-items-center">
+            <Button 
+              variant={statusFilter === null ? "primary" : "outline-primary"}
+              className="me-2 mb-2"
+              onClick={() => handleStatusFilterChange(null)}
+            >
+              Все
+            </Button>
+            
+            {statuses.map(status => (
+              <Button
+                key={status.id}
+                variant={statusFilter === status.id ? "primary" : "outline-primary"}
                 className="me-2 mb-2"
-                onClick={() => handleStatusFilterChange(null)}
+                onClick={() => handleStatusFilterChange(status.id)}
+                style={{ borderColor: status.color }}
               >
-                Все
+                {status.name}
               </Button>
-              
-              {statuses.map(status => (
-                <Button
-                  key={status.id}
-                  variant={statusFilter === status.id ? "primary" : "outline-primary"}
-                  className="me-2 mb-2"
-                  onClick={() => handleStatusFilterChange(status.id)}
-                  style={{ borderColor: status.color }}
-                >
-                  {status.name}
-                </Button>
-              ))}
-            </div>
-          </Col>
-        </Row>
-      </div>
+            ))}
+          </div>
+        </Card.Body>
+      </Card>
       
       {/* Список заказов */}
       {orders.length === 0 ? (
@@ -135,96 +152,101 @@ const OrdersPage = () => {
           </Card.Body>
         </Card>
       ) : (
-        <div className="orders-list">
-          <Table responsive className="orders-table">
-            <thead>
-              <tr>
-                <th>№ заказа</th>
-                <th>Дата</th>
-                <th>Статус</th>
-                <th>Сумма</th>
-                <th className="text-center">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className="order-item">
-                  <td className="order-number">{order.id}-{new Date(order.created_at).getFullYear()}</td>
-                  <td className="order-date">{formatDate(order.created_at)}</td>
-                  <td className="order-status">
-                    <OrderStatusBadge status={order.status} />
-                  </td>
-                  <td className="order-price">{formatPrice(order.total_price)}</td>
-                  <td className="order-actions text-center">
-                    <Link 
-                      to={`/orders/${order.id}`} 
-                      className="btn btn-sm btn-outline-primary"
-                    >
-                      Подробнее
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-          
-          {/* Пагинация */}
-          {pagination.pages > 1 && (
-            <div className="d-flex justify-content-center mt-4">
-              <Pagination>
-                <Pagination.First 
-                  onClick={() => handlePageChange(1)}
-                  disabled={pagination.page === 1}
-                />
-                <Pagination.Prev 
-                  onClick={() => handlePageChange(pagination.page - 1)}
-                  disabled={pagination.page === 1}
-                />
-                
-                {/* Отображаем максимум 5 страниц вокруг текущей */}
-                {[...Array(pagination.pages)].map((_, i) => {
-                  const pageNumber = i + 1;
-                  
-                  // Отображаем только 5 страниц вокруг текущей
-                  if (
-                    pageNumber === 1 || 
-                    pageNumber === pagination.pages ||
-                    (pageNumber >= pagination.page - 2 && pageNumber <= pagination.page + 2)
-                  ) {
-                    return (
-                      <Pagination.Item
-                        key={pageNumber}
-                        active={pagination.page === pageNumber}
-                        onClick={() => handlePageChange(pageNumber)}
-                      >
-                        {pageNumber}
-                      </Pagination.Item>
-                    );
-                  }
-                  
-                  // Отображаем разделитель, если есть пропуски
-                  if (
-                    (pageNumber === 2 && pagination.page > 4) ||
-                    (pageNumber === pagination.pages - 1 && pagination.page < pagination.pages - 3)
-                  ) {
-                    return <Pagination.Ellipsis key={`ellipsis-${pageNumber}`} />;
-                  }
-                  
-                  return null;
-                })}
-                
-                <Pagination.Next 
-                  onClick={() => handlePageChange(pagination.page + 1)}
-                  disabled={pagination.page === pagination.pages}
-                />
-                <Pagination.Last 
-                  onClick={() => handlePageChange(pagination.pages)}
-                  disabled={pagination.page === pagination.pages}
-                />
-              </Pagination>
+        <Card>
+          <Card.Body>
+            <div className="table-responsive">
+              <Table className="orders-table">
+                <thead>
+                  <tr>
+                    <th>№ заказа</th>
+                    <th>Дата</th>
+                    <th>Статус</th>
+                    <th>Сумма</th>
+                    <th className="text-center">Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map((order) => (
+                    <tr key={order.id} className="order-item">
+                      <td className="order-number">{order.id}-{new Date(order.created_at).getFullYear()}</td>
+                      <td className="order-date">{formatDate(order.created_at)}</td>
+                      <td className="order-status">
+                        <OrderStatusBadge status={order.status} />
+                      </td>
+                      <td className="order-price">{formatPrice(order.total_price)}</td>
+                      <td className="order-actions text-center">
+                        <Link 
+                          to={`/orders/${order.id}`} 
+                          className="btn btn-sm btn-outline-primary"
+                          data-discover="true"
+                        >
+                          Подробнее
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
             </div>
-          )}
-        </div>
+            
+            {/* Пагинация */}
+            {pagination.pages > 1 && (
+              <div className="d-flex justify-content-center mt-4">
+                <Pagination>
+                  <Pagination.First 
+                    onClick={() => handlePageChange(1)}
+                    disabled={pagination.page === 1}
+                  />
+                  <Pagination.Prev 
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={pagination.page === 1}
+                  />
+                  
+                  {/* Отображаем максимум 5 страниц вокруг текущей */}
+                  {Array.from({ length: pagination.pages }).map((_, i) => {
+                    const pageNumber = i + 1;
+                    
+                    // Отображаем только 5 страниц вокруг текущей
+                    if (
+                      pageNumber === 1 || 
+                      pageNumber === pagination.pages ||
+                      (pageNumber >= pagination.page - 2 && pageNumber <= pagination.page + 2)
+                    ) {
+                      return (
+                        <Pagination.Item
+                          key={pageNumber}
+                          active={pagination.page === pageNumber}
+                          onClick={() => handlePageChange(pageNumber)}
+                        >
+                          {pageNumber}
+                        </Pagination.Item>
+                      );
+                    }
+                    
+                    // Отображаем разделитель, если есть пропуски
+                    if (
+                      (pageNumber === 2 && pagination.page > 4) ||
+                      (pageNumber === pagination.pages - 1 && pagination.page < pagination.pages - 3)
+                    ) {
+                      return <Pagination.Ellipsis key={`ellipsis-${pageNumber}`} />;
+                    }
+                    
+                    return null;
+                  })}
+                  
+                  <Pagination.Next 
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={pagination.page === pagination.pages}
+                  />
+                  <Pagination.Last 
+                    onClick={() => handlePageChange(pagination.pages)}
+                    disabled={pagination.page === pagination.pages}
+                  />
+                </Pagination>
+              </div>
+            )}
+          </Card.Body>
+        </Card>
       )}
     </Container>
   );

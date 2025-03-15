@@ -5,6 +5,7 @@ import { useOrders } from '../../context/OrderContext';
 import { formatDateTime } from '../../utils/dateUtils';
 import { formatPrice } from '../../utils/helpers';
 import OrderStatusBadge from '../../components/OrderStatusBadge';
+import './AdminOrders.css';
 
 const AdminOrders = () => {
   const { getAllOrders, getOrderStatuses, loading, error } = useOrders();
@@ -53,11 +54,38 @@ const AdminOrders = () => {
         console.log('Отправляем запрос с параметрами:', params);
         
         const response = await getAllOrders(params);
+        console.log('Полученный ответ от API:', response);
         
         if (response && response.items) {
           setOrders(response.items);
-          setTotalPages(Math.ceil(response.total / response.limit));
+          
+          // Проверяем, что значения total и limit являются числами и корректны
+          const total = typeof response.total === 'number' ? response.total : 0;
+          const size = typeof response.size === 'number' && response.size > 0 ? response.size : 10;
+          // Используем pages из ответа API, если оно доступно, иначе вычисляем
+          let calculatedPages;
+          if (typeof response.pages === 'number' && response.pages > 0) {
+            calculatedPages = response.pages;
+            console.log('Используем значение pages из API:', calculatedPages);
+          } else {
+            calculatedPages = Math.max(1, Math.ceil(total / size));
+            console.log('Вычисляем pages локально:', calculatedPages, 'из total:', total, 'и size:', size);
+          }
+          
+          // Убедимся, что totalPages не меньше 1
+          const finalPages = Math.max(1, calculatedPages);
+          console.log('Итоговое количество страниц:', finalPages);
+          
+          setTotalPages(finalPages);
+          
+          // Если текущая страница больше общего количества страниц,
+          // автоматически перейдем на последнюю доступную страницу
+          if (currentPage > finalPages) {
+            console.log(`Текущая страница (${currentPage}) больше общего количества (${finalPages}), переходим на страницу ${finalPages}`);
+            setCurrentPage(finalPages);
+          }
         } else {
+          console.log('Ответ не содержит элементов или некорректен');
           setOrders([]);
           setTotalPages(1);
         }
@@ -94,17 +122,40 @@ const AdminOrders = () => {
 
   // Формирование элементов пагинации
   const renderPagination = () => {
+    console.log('Рендеринг пагинации, totalPages:', totalPages, 'currentPage:', currentPage);
+    
+    // Если страниц нет или только одна, не показываем пагинацию
+    if (totalPages <= 1) {
+      return null;
+    }
+    
+    // Проверка валидности currentPage перед рендерингом
+    let activePage = currentPage;
+    if (isNaN(activePage) || activePage < 1) {
+      console.error('Некорректная активная страница:', activePage, 'установлена на 1');
+      activePage = 1;
+    } else if (activePage > totalPages) {
+      console.error('Активная страница больше максимума:', activePage, 'установлена на', totalPages);
+      activePage = totalPages;
+    }
+    
     // Если страниц мало, просто показываем все
     if (totalPages <= 5) {
-      return Array.from({ length: totalPages }, (_, i) => (
-        <Pagination.Item
-          key={i + 1}
-          active={i + 1 === currentPage}
-          onClick={() => setCurrentPage(i + 1)}
-        >
-          {i + 1}
-        </Pagination.Item>
-      ));
+      return Array.from({ length: totalPages }, (_, i) => {
+        const pageNum = i + 1;
+        return (
+          <Pagination.Item
+            key={pageNum}
+            active={pageNum === activePage}
+            onClick={() => {
+              console.log(`Клик на страницу ${pageNum}`);
+              safeSetCurrentPage(pageNum);
+            }}
+          >
+            {pageNum}
+          </Pagination.Item>
+        );
+      });
     }
     
     // Для большого количества страниц показываем текущую, несколько соседних и краевые
@@ -114,25 +165,31 @@ const AdminOrders = () => {
     items.push(
       <Pagination.Item
         key={1}
-        active={1 === currentPage}
-        onClick={() => setCurrentPage(1)}
+        active={1 === activePage}
+        onClick={() => {
+          console.log('Клик на страницу 1');
+          safeSetCurrentPage(1);
+        }}
       >
         1
       </Pagination.Item>
     );
     
     // Если текущая страница далеко от начала - добавляем троеточие
-    if (currentPage > 3) {
+    if (activePage > 3) {
       items.push(<Pagination.Ellipsis key="ellipsis1" />);
     }
     
     // Страницы вокруг текущей
-    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+    for (let i = Math.max(2, activePage - 1); i <= Math.min(totalPages - 1, activePage + 1); i++) {
       items.push(
         <Pagination.Item
           key={i}
-          active={i === currentPage}
-          onClick={() => setCurrentPage(i)}
+          active={i === activePage}
+          onClick={() => {
+            console.log(`Клик на страницу ${i}`);
+            safeSetCurrentPage(i);
+          }}
         >
           {i}
         </Pagination.Item>
@@ -140,7 +197,7 @@ const AdminOrders = () => {
     }
     
     // Если текущая страница далеко от конца - добавляем троеточие
-    if (currentPage < totalPages - 2) {
+    if (activePage < totalPages - 2) {
       items.push(<Pagination.Ellipsis key="ellipsis2" />);
     }
     
@@ -149,8 +206,11 @@ const AdminOrders = () => {
       items.push(
         <Pagination.Item
           key={totalPages}
-          active={totalPages === currentPage}
-          onClick={() => setCurrentPage(totalPages)}
+          active={totalPages === activePage}
+          onClick={() => {
+            console.log(`Клик на страницу ${totalPages}`);
+            safeSetCurrentPage(totalPages);
+          }}
         >
           {totalPages}
         </Pagination.Item>
@@ -160,8 +220,37 @@ const AdminOrders = () => {
     return items;
   };
 
+  // Безопасная установка страницы с проверкой на валидное число
+  const safeSetCurrentPage = (page) => {
+    // Преобразуем вход в целое число
+    const parsedPage = parseInt(page, 10);
+    console.log('Попытка установить страницу:', parsedPage, 'максимум страниц:', totalPages);
+    
+    // Проверка валидности
+    if (isNaN(parsedPage)) {
+      console.error('Некорректное значение страницы (не число):', page);
+      return; // Выходим без изменения страницы
+    }
+    
+    // Проверка диапазона
+    if (parsedPage < 1) {
+      console.error('Некорректное значение страницы (меньше 1):', parsedPage);
+      setCurrentPage(1); // Устанавливаем минимальное значение
+      return;
+    }
+    
+    if (parsedPage > totalPages) {
+      console.error('Некорректное значение страницы (больше максимума):', parsedPage, 'максимум:', totalPages);
+      setCurrentPage(totalPages); // Устанавливаем максимальное значение
+      return;
+    }
+    
+    // Если все проверки пройдены, устанавливаем новую страницу
+    setCurrentPage(parsedPage);
+  };
+
   return (
-    <div className="container py-4">
+    <div className="container py-4 admin-orders-container">
       <h2 className="mb-4">Управление заказами</h2>
       
       {error && (
@@ -171,7 +260,7 @@ const AdminOrders = () => {
       )}
       
       {/* Фильтры */}
-      <Card className="mb-4">
+      <Card className="mb-4 filters-card">
         <Card.Body>
           <h5 className="mb-3">Фильтры</h5>
           <Form>
@@ -260,7 +349,7 @@ const AdminOrders = () => {
             </div>
           ) : (
             <>
-              <Table responsive hover>
+              <Table responsive hover className="admin-orders-table">
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -320,15 +409,37 @@ const AdminOrders = () => {
               {totalPages > 1 && (
                 <div className="d-flex justify-content-center mt-4">
                   <Pagination>
+                    <Pagination.First
+                      onClick={() => {
+                        console.log('Клик на First, переход на страницу 1');
+                        safeSetCurrentPage(1);
+                      }}
+                      disabled={currentPage === 1}
+                    />
                     <Pagination.Prev
-                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      onClick={() => {
+                        const prevPage = currentPage - 1;
+                        console.log(`Клик на Prev, переход с ${currentPage} на ${prevPage}`);
+                        safeSetCurrentPage(prevPage);
+                      }}
                       disabled={currentPage === 1}
                     />
                     
                     {renderPagination()}
                     
                     <Pagination.Next
-                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      onClick={() => {
+                        const nextPage = currentPage + 1;
+                        console.log(`Клик на Next, переход с ${currentPage} на ${nextPage}`);
+                        safeSetCurrentPage(nextPage);
+                      }}
+                      disabled={currentPage === totalPages}
+                    />
+                    <Pagination.Last
+                      onClick={() => {
+                        console.log(`Клик на Last, переход на страницу ${totalPages}`);
+                        safeSetCurrentPage(totalPages);
+                      }}
                       disabled={currentPage === totalPages}
                     />
                   </Pagination>

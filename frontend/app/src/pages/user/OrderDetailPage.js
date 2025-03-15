@@ -109,21 +109,60 @@ const OrderDetailPage = () => {
     loadOrder();
   }, [orderId]);
   
+  // Диагностика условий отображения кнопки отмены
+  useEffect(() => {
+    if (order && order.status) {
+      console.log('===== ДИАГНОСТИКА КНОПКИ ОТМЕНЫ =====');
+      console.log('Статус заказа:', order.status);
+      console.log('order.status.allow_cancel:', order.status.allow_cancel);
+      console.log('!order.status.is_final:', !order.status.is_final);
+      console.log('Условие отображения кнопки:', order.status.allow_cancel && !order.status.is_final);
+      
+      if (!order.status.allow_cancel) {
+        console.log('Кнопка отмены скрыта: статус не позволяет отмену');
+      } else if (order.status.is_final) {
+        console.log('Кнопка отмены скрыта: статус является финальным');
+      } else {
+        console.log('Кнопка отмены должна отображаться');
+      }
+    }
+  }, [order]);
+  
   // Обработчик отмены заказа
   const handleCancelOrder = async () => {
+    console.log('=== НАЧАЛО ФУНКЦИИ handleCancelOrder ===');
+    console.log('ID заказа:', orderId);
+    console.log('Причина отмены:', cancelReason);
+    console.log('Отображаем индикатор загрузки');
+    
     setCancelLoading(true);
     setCancelError(null);
     
     try {
+      console.log('Вызываем функцию cancelOrder из контекста заказов');
       const result = await cancelOrder(orderId, cancelReason);
+      console.log('Результат отмены заказа:', result ? 'Успешно' : 'Ошибка');
+      
       if (result) {
+        console.log('Обновляем данные заказа в состоянии компонента');
         setOrder(result);
         setShowCancelModal(false);
+        console.log('Закрываем модальное окно');
+      } else {
+        console.error('Функция cancelOrder вернула null');
+        setCancelError('Не удалось отменить заказ. Сервер вернул неверные данные.');
       }
     } catch (err) {
+      console.error('=== ОШИБКА В handleCancelOrder ===');
+      console.error('Сообщение ошибки:', err.message);
+      if (err.response) {
+        console.error('Ответ сервера:', err.response.status, err.response.data);
+      }
       setCancelError('Не удалось отменить заказ. Пожалуйста, попробуйте позже.');
     } finally {
+      console.log('Скрываем индикатор загрузки');
       setCancelLoading(false);
+      console.log('=== ЗАВЕРШЕНИЕ ФУНКЦИИ handleCancelOrder ===');
     }
   };
   
@@ -185,7 +224,7 @@ const OrderDetailPage = () => {
         <Col lg={8}>
           <Card className="order-main-card mb-4">
             <Card.Header className="d-flex justify-content-between align-items-center">
-              <h2 className="order-title mb-0">Заказ №{order.id}</h2>
+              <h2 className="order-title mb-0">Заказ №{order.id}-{new Date(order.created_at).getFullYear()}</h2>
               <OrderStatusBadge status={order.status} />
             </Card.Header>
             <Card.Body>
@@ -302,9 +341,16 @@ const OrderDetailPage = () => {
               <div className="shipping-address">
                 <h5>Адрес доставки</h5>
                 <p>
-                  <strong>{order.full_name}</strong><br />
-                  {order.street}<br />
-                  {order.city}, {order.region}
+                  <strong>{order.full_name}</strong>
+                </p>
+                <p>
+                  <strong>Улица:</strong> {order.street || "Не указана"}
+                </p>
+                <p>
+                  <strong>Город:</strong> {order.city || "Не указан"}
+                </p>
+                <p>
+                  <strong>Регион:</strong> {order.region || "Не указан"}
                 </p>
               </div>
               

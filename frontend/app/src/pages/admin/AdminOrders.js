@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useOrders } from '../../context/OrderContext';
 import { formatDateTime } from '../../utils/dateUtils';
 import { formatPrice } from '../../utils/helpers';
+import OrderStatusBadge from '../../components/OrderStatusBadge';
 
 const AdminOrders = () => {
   const { getAllOrders, getOrderStatuses, loading, error } = useOrders();
@@ -82,20 +83,6 @@ const AdminOrders = () => {
       dateTo: '',
     });
     setCurrentPage(1);
-  };
-
-  // Получение цвета для статуса заказа
-  const getStatusBadgeVariant = (statusCode) => {
-    const statusMap = {
-      'NEW': 'info',
-      'PROCESSING': 'primary',
-      'SHIPPED': 'warning',
-      'DELIVERED': 'success',
-      'CANCELLED': 'danger',
-      'RETURNED': 'secondary'
-    };
-    
-    return statusMap[statusCode] || 'light';
   };
 
   // Формирование элементов пагинации
@@ -291,9 +278,7 @@ const AdminOrders = () => {
                         <td>{order.total_price !== undefined ? formatPrice(order.total_price) : '-'}</td>
                         <td>
                           {order.status ? (
-                            <Badge bg={getStatusBadgeVariant(order.status.code)}>
-                              {order.status.name}
-                            </Badge>
+                            <OrderStatusBadge status={order.status} />
                           ) : '-'}
                         </td>
                         <td>Онлайн</td>

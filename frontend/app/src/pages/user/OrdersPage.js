@@ -149,7 +149,7 @@ const OrdersPage = () => {
             <tbody>
               {orders.map((order) => (
                 <tr key={order.id} className="order-item">
-                  <td className="order-number">{order.id}</td>
+                  <td className="order-number">{order.id}-{new Date(order.created_at).getFullYear()}</td>
                   <td className="order-date">{formatDate(order.created_at)}</td>
                   <td className="order-status">
                     <OrderStatusBadge status={order.status} />

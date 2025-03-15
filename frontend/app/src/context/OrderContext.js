@@ -306,17 +306,50 @@ export const OrderProvider = ({ children }) => {
 
   // Отмена заказа
   const cancelOrder = useCallback(async (orderId, reason) => {
-    if (!token) return;
+    console.log('===== НАЧАЛО ОТМЕНЫ ЗАКАЗА =====');
+    console.log('ID заказа:', orderId);
+    console.log('Причина отмены:', reason);
+    console.log('Наличие токена:', !!token);
+    
+    if (!token) {
+      console.error('Нет токена авторизации для отмены заказа');
+      const localToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      if (!localToken) {
+        setError('Для отмены заказа необходима авторизация');
+        console.error('Токен не найден ни в контексте, ни в localStorage');
+        return null;
+      }
+      console.log('Токен найден в localStorage');
+    }
     
     setLoading(true);
     setError(null);
     
     try {
+      const config = getConfig();
+      console.log('Конфигурация запроса:', JSON.stringify({
+        headers: {
+          Authorization: config.headers?.Authorization ? 'Bearer xxx...' : 'Отсутствует',
+          'Content-Type': config.headers?.['Content-Type']
+        }
+      }));
+      
+      const url = `${ORDER_SERVICE_URL}/orders/${orderId}/cancel`;
+      console.log('URL для отмены заказа:', url);
+      
+      // Проверка всех полей, переданных в запрос
+      const requestData = { notes: reason };
+      console.log('Данные запроса:', JSON.stringify(requestData));
+      
+      console.log('Отправка POST запроса для отмены заказа...');
       const response = await axios.post(
-        `${ORDER_SERVICE_URL}/orders/${orderId}/cancel`,
-        { notes: reason },
-        getConfig()
+        url,
+        requestData,
+        config
       );
+      
+      console.log('Ответ сервера для отмены заказа:', response.status);
+      console.log('Данные ответа:', response.data);
       
       // Обновляем текущий заказ, если это он
       if (currentOrder && currentOrder.id === orderId) {
@@ -332,11 +365,26 @@ export const OrderProvider = ({ children }) => {
       
       return response.data;
     } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось отменить заказ');
-      console.error('Ошибка при отмене заказа:', err);
+      console.error('===== ОШИБКА ПРИ ОТМЕНЕ ЗАКАЗА =====');
+      console.error('Тип ошибки:', err.name);
+      console.error('Сообщение ошибки:', err.message);
+      
+      if (err.response) {
+        console.error('Статус ошибки:', err.response.status);
+        console.error('Данные ошибки:', err.response.data);
+        setError(err.response?.data?.detail || 'Не удалось отменить заказ');
+      } else if (err.request) {
+        console.error('Запрос был отправлен, но ответ не получен:', err.request);
+        setError('Сервер не отвечает. Пожалуйста, повторите попытку позже.');
+      } else {
+        console.error('Произошла ошибка при настройке запроса:', err.message);
+        setError(`Ошибка при отмене заказа: ${err.message}`);
+      }
+      
       return null;
     } finally {
       setLoading(false);
+      console.log('===== ЗАВЕРШЕНИЕ ОТМЕНЫ ЗАКАЗА =====');
     }
   }, [token, getConfig, currentOrder]);
 

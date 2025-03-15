@@ -5,6 +5,7 @@ import { useOrders } from '../../context/OrderContext';
 import { useAuth } from '../../context/AuthContext';
 import { formatDateTime } from '../../utils/dateUtils';
 import { formatPrice } from '../../utils/helpers';
+import OrderStatusBadge from '../../components/OrderStatusBadge';
 import axios from 'axios';
 import { STORAGE_KEYS, API_URLS } from '../../utils/constants';
 
@@ -143,35 +144,6 @@ const AdminOrderDetail = () => {
       </div>
     );
   }
-  
-  // Получение цвета для статуса заказа
-  const getStatusBadgeVariant = (statusCode) => {
-    // Если код статуса определен как строка (NEW, PROCESSING и т.д.)
-    if (typeof statusCode === 'string') {
-      const statusMap = {
-        'NEW': 'info',
-        'PROCESSING': 'primary',
-        'SHIPPED': 'warning',
-        'DELIVERED': 'success',
-        'CANCELLED': 'danger',
-        'RETURNED': 'secondary'
-      };
-      return statusMap[statusCode] || 'light';
-    } 
-    
-    // Если передано название статуса
-    const nameMap = {
-      'Новый': 'info',
-      'В обработке': 'primary',
-      'Оплачен': 'success',
-      'Отправлен': 'warning',
-      'Доставлен': 'success',
-      'Отменен': 'danger',
-      'Возвращен': 'secondary'
-    };
-    
-    return nameMap[statusCode] || 'light';
-  };
   
   // Обработчик изменения статуса заказа
   const handleStatusChange = (e) => {
@@ -316,7 +288,7 @@ const AdminOrderDetail = () => {
                 <Col md={6}>
                   <p><strong>ID заказа:</strong> {order.id}-{new Date(order.created_at).getFullYear()}</p>
                   <p><strong>Дата создания:</strong> {formatDateTime(order.created_at)}</p>
-                  <p><strong>Статус:</strong> <Badge bg={getStatusBadgeVariant(order.status.name)}>{order.status.name}</Badge></p>
+                  <p><strong>Статус:</strong> <OrderStatusBadge status={order.status} /></p>
                 </Col>
                 <Col md={6}>
                   <p><strong>ID пользователя:</strong> {order.user_id}</p>
@@ -384,9 +356,7 @@ const AdminOrderDetail = () => {
                     <div key={index} className="status-item mb-3">
                       <div className="d-flex justify-content-between">
                         <div>
-                          <Badge bg={getStatusBadgeVariant(statusChange.status.name)}>
-                            {statusChange.status.name}
-                          </Badge>
+                          <OrderStatusBadge status={statusChange.status} />
                         </div>
                         <small className="text-muted">
                           {formatDateTime(statusChange.changed_at || statusChange.timestamp)}
@@ -415,14 +385,12 @@ const AdminOrderDetail = () => {
               <h5 className="mb-0">Информация о получателе</h5>
             </Card.Header>
             <Card.Body>
-              <p><strong>{order.full_name}</strong></p>
-              <p>{order.street}</p>
-              <p>
-                {order.city && <span><strong>Город:</strong> {order.city}</span>}
-                {order.region && <span><br /><strong>Область:</strong> {order.region}</span>}
-              </p>
-              <p>Телефон: {order.phone}</p>
-              <p>Email: {order.email}</p>
+              <p><strong>Получатель:</strong> {order.full_name}</p>
+              <p><strong>Улица:</strong> {order.street || "Не указана"}</p>
+              <p><strong>Город:</strong> {order.city || "Не указан"}</p>
+              <p><strong>Регион:</strong> {order.region || "Не указан"}</p>
+              <p><strong>Телефон:</strong> {order.phone || "Не указан"}</p>
+              <p><strong>Email:</strong> {order.email}</p>
             </Card.Body>
           </Card>
           

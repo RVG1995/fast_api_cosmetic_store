@@ -344,7 +344,7 @@ const CheckoutPage = () => {
                       {item.product.name} x {item.quantity}
                     </div>
                     <div className="checkout-item-price">
-                      {formatPrice(item.total_price)}
+                      {formatPrice(item.product.price * item.quantity)}
                     </div>
                   </div>
                 ))}

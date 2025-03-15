@@ -255,7 +255,77 @@ export const productAPI = {
       throw error;
     });
   },
-  getProductById: (id) => productApi.get(`/products/${id}`),
+  getProductById: (id, timestamp = '') => {
+    const url = timestamp ? `/products/${id}${timestamp}` : `/products/${id}`;
+    return productApi.get(url);
+  },
+  
+  // Получение похожих товаров
+  getRelatedProducts: async (productId, categoryId, subcategoryId) => {
+    console.log('getRelatedProducts вызван с параметрами:', { productId, categoryId, subcategoryId });
+    
+    // Пробуем найти товары по категории и подкатегории
+    if (categoryId && subcategoryId) {
+      // Формируем параметры запроса
+      const params = {
+        page: 1,
+        limit: 4, // Увеличиваем лимит, чтобы было больше шансов найти похожие товары
+        category_id: categoryId,
+        subcategory_id: subcategoryId
+      };
+      
+      console.log('Отправляем запрос с параметрами (категория + подкатегория):', params);
+      
+      try {
+        const response = await productApi.get('/products', { params });
+        console.log('API getRelatedProducts ответ (категория + подкатегория):', response);
+        
+        if (response.data && response.data.items) {
+          // Фильтруем, чтобы исключить текущий товар
+          const filtered = response.data.items.filter(item => item.id !== parseInt(productId));
+          console.log('Отфильтрованные похожие товары (категория + подкатегория):', filtered.length, 'шт.');
+          
+          // Если нашли хотя бы один товар, возвращаем результат
+          if (filtered.length > 0) {
+            console.log('Возвращаем похожие товары по категории и подкатегории');
+            return filtered;
+          }
+        }
+      } catch (error) {
+        console.error('Ошибка при поиске товаров по категории и подкатегории:', error);
+      }
+    }
+    
+    // Если по подкатегории не нашли или произошла ошибка, ищем только по категории
+    if (categoryId) {
+      const params = {
+        page: 1,
+        limit: 4, // Увеличиваем лимит еще больше
+        category_id: categoryId
+      };
+      
+      console.log('Отправляем запрос с параметрами (только категория):', params);
+      
+      try {
+        const response = await productApi.get('/products', { params });
+        console.log('API getRelatedProducts ответ (только категория):', response);
+        
+        if (response.data && response.data.items) {
+          // Фильтруем, чтобы исключить текущий товар
+          const filtered = response.data.items.filter(item => item.id !== parseInt(productId));
+          console.log('Отфильтрованные похожие товары (только категория):', filtered.length, 'шт.');
+          
+          return filtered;
+        }
+      } catch (error) {
+        console.error('Ошибка при поиске товаров по категории:', error);
+      }
+    }
+    
+    // Если ничего не нашли или произошла ошибка, возвращаем пустой массив
+    console.log('Не удалось найти похожие товары, возвращаем пустой массив');
+    return [];
+  },
   
   // Получение категории по ID
   getCategoryById: (id) => productApi.get(`/categories/${id}`),

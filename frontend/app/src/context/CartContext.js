@@ -159,6 +159,10 @@ export const CartProvider = ({ children }) => {
       if (response.data.success) {
         setCart(response.data.cart);
         setCartSummary({ total_items: 0, total_price: 0 });
+        
+        // Оповещаем всех, что корзина обновилась (очищена)
+        window.dispatchEvent(new CustomEvent('cart:updated'));
+        
         return { success: true, message: response.data.message };
       } else {
         return { success: false, message: response.data.error || 'Не удалось очистить корзину' };

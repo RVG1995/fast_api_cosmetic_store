@@ -36,8 +36,19 @@ const ProductDetailPage = () => {
     const fetchProductDetails = async () => {
       try {
         setLoading(true);
+        
+        // Проверяем флаг обновления кеша
+        const refreshCache = localStorage.getItem('refreshProductsCache');
+        let timestamp = '';
+        
+        if (refreshCache === 'true') {
+          console.log('Обнаружен флаг обновления кеша продуктов, добавляем timestamp к запросу');
+          timestamp = `?_t=${new Date().getTime()}`;
+          localStorage.removeItem('refreshProductsCache');
+        }
+        
         // Получаем информацию о товаре (теперь с полной информацией о связанных сущностях)
-        const response = await productAPI.getProductById(productId);
+        const response = await productAPI.getProductById(productId, timestamp);
         
         // Проверяем, есть ли данные в ответе
         if (!response.data) {
@@ -49,33 +60,50 @@ const ProductDetailPage = () => {
         // Товар уже содержит все связанные данные
         setProduct(response.data);
         
-        // После получения информации о товаре, загружаем похожие товары
-        if (response.data.category_id) {
-          const relatedResponse = await productAPI.getProducts(1, 4, {
-            category_id: response.data.category_id,
+        // Получаем похожие товары
+        try {
+          // Используем категорию и подкатегорию товара для поиска похожих
+          console.log('Запрашиваем похожие товары с параметрами:', {
+            productId,
+            categoryId: response.data.category_id,
+            subcategoryId: response.data.subcategory_id
           });
-          // Фильтруем, чтобы исключить текущий товар из списка похожих
-          const filtered = relatedResponse.data.items.filter(item => item.id !== parseInt(productId));
-          setRelatedProducts(filtered);
+          
+          const relatedProducts = await productAPI.getRelatedProducts(
+            productId, 
+            response.data.category_id,
+            response.data.subcategory_id
+          );
+          
+          console.log('Получены похожие товары:', relatedProducts);
+          console.log('Тип полученных данных:', typeof relatedProducts);
+          console.log('Это массив?', Array.isArray(relatedProducts));
+          console.log('Длина массива:', relatedProducts?.length);
+          
+          // Теперь relatedProducts - это массив товаров, а не объект с полем data
+          if (relatedProducts && Array.isArray(relatedProducts)) {
+            console.log('Устанавливаем похожие товары в состояние');
+            setRelatedProducts(relatedProducts);
+          } else {
+            console.warn('Полученные похожие товары не являются массивом');
+            setRelatedProducts([]);
+          }
+        } catch (relatedError) {
+          console.error('Ошибка при загрузке похожих товаров:', relatedError);
+          // Не устанавливаем ошибку, так как это не критично
+          setRelatedProducts([]);
         }
-      } catch (err) {
-        console.error('Ошибка при загрузке данных о товаре:', err);
         
-        // Определяем тип ошибки
-        if (err.response && err.response.status === 404) {
-          setError('Товар не найден');
-        } else {
-          setError('Не удалось загрузить информацию о товаре');
-        }
-      } finally {
+        setLoading(false);
+      } catch (err) {
+        console.error('Ошибка при загрузке товара:', err);
+        setError('Не удалось загрузить информацию о товаре. Пожалуйста, попробуйте позже.');
         setLoading(false);
       }
     };
-
-    if (productId) {
-      fetchProductDetails();
-    }
-  }, [productId]);
+    
+    fetchProductDetails();
+  }, [productId]); // Перезагружаем при изменении ID товара
 
   if (loading) {
     return (
@@ -235,4 +263,4 @@ const ProductDetailPage = () => {
   );
 };
 
-export default ProductDetailPage; 
+export default ProductDetailPage;

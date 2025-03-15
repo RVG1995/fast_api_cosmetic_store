@@ -15,8 +15,8 @@ const AdminOrderDetail = () => {
     getAdminOrderById, 
     getOrderStatuses, 
     updateOrderStatus, 
-    loading, 
-    error 
+    loading: contextLoading, 
+    error: contextError 
   } = useOrders();
   const { token, user } = useAuth();
   
@@ -27,6 +27,8 @@ const AdminOrderDetail = () => {
   const [showModal, setShowModal] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   
   // Загрузка деталей заказа и статусов
   useEffect(() => {
@@ -90,8 +92,8 @@ const AdminOrderDetail = () => {
         setStatuses(statusesResponse.data || []);
         
         // Если у заказа есть статус, устанавливаем его как выбранный
-        if (orderResponse.data && orderResponse.data.status_id) {
-          setSelectedStatus(orderResponse.data.status_id.toString());
+        if (orderResponse.data && orderResponse.data.status && orderResponse.data.status.id) {
+          setSelectedStatus(orderResponse.data.status.id.toString());
         }
       } catch (err) {
         console.error('===== ОШИБКА ЗАПРОСА ЗАКАЗА АДМИНИСТРАТОРОМ =====');
@@ -144,16 +146,31 @@ const AdminOrderDetail = () => {
   
   // Получение цвета для статуса заказа
   const getStatusBadgeVariant = (statusCode) => {
-    const statusMap = {
-      'NEW': 'info',
-      'PROCESSING': 'primary',
-      'SHIPPED': 'warning',
-      'DELIVERED': 'success',
-      'CANCELLED': 'danger',
-      'RETURNED': 'secondary'
+    // Если код статуса определен как строка (NEW, PROCESSING и т.д.)
+    if (typeof statusCode === 'string') {
+      const statusMap = {
+        'NEW': 'info',
+        'PROCESSING': 'primary',
+        'SHIPPED': 'warning',
+        'DELIVERED': 'success',
+        'CANCELLED': 'danger',
+        'RETURNED': 'secondary'
+      };
+      return statusMap[statusCode] || 'light';
+    } 
+    
+    // Если передано название статуса
+    const nameMap = {
+      'Новый': 'info',
+      'В обработке': 'primary',
+      'Оплачен': 'success',
+      'Отправлен': 'warning',
+      'Доставлен': 'success',
+      'Отменен': 'danger',
+      'Возвращен': 'secondary'
     };
     
-    return statusMap[statusCode] || 'light';
+    return nameMap[statusCode] || 'light';
   };
   
   // Обработчик изменения статуса заказа
@@ -180,25 +197,49 @@ const AdminOrderDetail = () => {
   // Обработчик подтверждения изменения статуса
   const handleConfirmStatusUpdate = async () => {
     try {
-      await updateOrderStatus(orderId, {
-        status_code: selectedStatus,
-        note: statusNote || undefined
-      });
+      setLoading(true);
       
-      // Обновление данных заказа после изменения статуса
-      const updatedOrder = await getAdminOrderById(orderId);
-      setOrder(updatedOrder);
+      // Формируем данные для обновления в соответствии со схемой API
+      const updateData = {
+        status_id: parseInt(selectedStatus)
+      };
       
-      setUpdateSuccess(true);
-      setTimeout(() => setUpdateSuccess(false), 3000);
+      // Если есть примечание, добавляем его как комментарий
+      if (statusNote) {
+        updateData.comment = statusNote;
+      }
+      
+      // Выполняем запрос на обновление статуса заказа
+      const result = await updateOrderStatus(orderId, updateData);
+      
+      if (result) {
+        // Обновление данных заказа после изменения статуса
+        const updatedOrder = await getAdminOrderById(orderId);
+        
+        setOrder(updatedOrder);
+        setUpdateSuccess(true);
+        setTimeout(() => setUpdateSuccess(false), 3000);
+      } else {
+        setError('Не удалось обновить статус заказа');
+      }
+      
       setShowModal(false);
     } catch (err) {
       console.error('Ошибка при обновлении статуса заказа:', err);
+      
+      if (err.response) {
+        console.error('Статус ошибки:', err.response.status);
+        console.error('Данные ошибки:', err.response.data);
+      }
+      
+      setError(err.response?.data?.detail || 'Не удалось обновить статус заказа');
+    } finally {
+      setLoading(false);
     }
   };
   
   // Если заказ не загружен, показываем индикатор загрузки
-  if (loading && !order) {
+  if ((loading || contextLoading) && !order) {
     return (
       <div className="container py-5 text-center">
         <Spinner animation="border" role="status">
@@ -209,11 +250,12 @@ const AdminOrderDetail = () => {
   }
   
   // Если произошла ошибка, показываем сообщение
-  if (error && !order) {
+  if ((error || contextError) && !order) {
+    const errorMessage = error || contextError;
     return (
       <div className="container py-5">
         <Alert variant="danger">
-          {typeof error === 'object' ? JSON.stringify(error) : (error || 'Произошла ошибка при загрузке данных заказа')}
+          {typeof errorMessage === 'object' ? JSON.stringify(errorMessage) : (errorMessage || 'Произошла ошибка при загрузке данных заказа')}
         </Alert>
         <Button 
           variant="primary" 
@@ -247,7 +289,7 @@ const AdminOrderDetail = () => {
   return (
     <div className="container py-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2>Детали заказа #{order.id}</h2>
+        <h2>Детали заказа #{order.id}-{new Date(order.created_at).getFullYear()}</h2>
         <Button 
           variant="outline-secondary" 
           onClick={() => navigate('/admin/orders')}
@@ -272,9 +314,9 @@ const AdminOrderDetail = () => {
             <Card.Body>
               <Row>
                 <Col md={6}>
-                  <p><strong>ID заказа:</strong> {order.id}</p>
+                  <p><strong>ID заказа:</strong> {order.id}-{new Date(order.created_at).getFullYear()}</p>
                   <p><strong>Дата создания:</strong> {formatDateTime(order.created_at)}</p>
-                  <p><strong>Статус:</strong> <Badge bg={getStatusBadgeVariant(order.status.code)}>{order.status.name}</Badge></p>
+                  <p><strong>Статус:</strong> <Badge bg={getStatusBadgeVariant(order.status.name)}>{order.status.name}</Badge></p>
                 </Col>
                 <Col md={6}>
                   <p><strong>ID пользователя:</strong> {order.user_id}</p>
@@ -314,16 +356,16 @@ const AdminOrderDetail = () => {
                     <tr key={item.id}>
                       <td>{item.product_id}</td>
                       <td>{item.product_name}</td>
-                      <td>{formatPrice(item.unit_price)}</td>
+                      <td>{formatPrice(item.unit_price || item.product_price || 0)}</td>
                       <td>{item.quantity}</td>
-                      <td>{formatPrice(item.unit_price * item.quantity)}</td>
+                      <td>{formatPrice((item.unit_price || item.product_price || 0) * item.quantity)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr>
                     <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
-                    <td><strong>{formatPrice(order.total_amount)}</strong></td>
+                    <td><strong>{formatPrice(order.total_price || order.total_amount || 0)}</strong></td>
                   </tr>
                 </tfoot>
               </Table>
@@ -342,19 +384,19 @@ const AdminOrderDetail = () => {
                     <div key={index} className="status-item mb-3">
                       <div className="d-flex justify-content-between">
                         <div>
-                          <Badge bg={getStatusBadgeVariant(statusChange.status.code)}>
+                          <Badge bg={getStatusBadgeVariant(statusChange.status.name)}>
                             {statusChange.status.name}
                           </Badge>
                         </div>
                         <small className="text-muted">
-                          {formatDateTime(statusChange.timestamp)}
+                          {formatDateTime(statusChange.changed_at || statusChange.timestamp)}
                         </small>
                       </div>
-                      {statusChange.note && (
+                      {statusChange.notes || statusChange.note ? (
                         <div className="status-note mt-1 bg-light p-2 rounded">
-                          {statusChange.note}
+                          {statusChange.notes || statusChange.note}
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   ))
                 ) : (
@@ -376,8 +418,8 @@ const AdminOrderDetail = () => {
               <p><strong>{order.full_name}</strong></p>
               <p>{order.street}</p>
               <p>
-                {order.city}
-                {order.region && `, ${order.region}`}
+                {order.city && <span><strong>Город:</strong> {order.city}</span>}
+                {order.region && <span><br /><strong>Область:</strong> {order.region}</span>}
               </p>
               <p>Телефон: {order.phone}</p>
               <p>Email: {order.email}</p>
@@ -400,9 +442,9 @@ const AdminOrderDetail = () => {
                     <option value="">Выберите статус</option>
                     {statuses.map(status => (
                       <option 
-                        key={status.code} 
-                        value={status.code}
-                        disabled={status.code === order.status.code}
+                        key={status.id} 
+                        value={status.id.toString()}
+                        disabled={status.id.toString() === order.status.id.toString()}
                       >
                         {status.name}
                       </option>
@@ -455,9 +497,9 @@ const AdminOrderDetail = () => {
         </Modal.Header>
         <Modal.Body>
           <p>Вы уверены, что хотите изменить статус заказа на <strong>
-            {statuses.find(s => s.code === selectedStatus)?.name || selectedStatus}
+            {statuses.find(s => s.id.toString() === selectedStatus)?.name || selectedStatus}
           </strong>?</p>
-          {selectedStatus === 'CANCELLED' && (
+          {statuses.find(s => s.id.toString() === selectedStatus)?.name === 'Отменен' && (
             <Alert variant="warning">
               Внимание! Отмена заказа необратима. После отмены заказ не может быть восстановлен.
             </Alert>

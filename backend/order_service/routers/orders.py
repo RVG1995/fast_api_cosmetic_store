@@ -389,12 +389,15 @@ async def update_order_admin(
         
         # Добавляем запись в историю статусов, если статус был изменен
         if order_data.status_id is not None:
+            # Используем комментарий, если он предоставлен, иначе используем стандартное сообщение
+            status_note = order_data.comment if order_data.comment else "Статус обновлен администратором"
+            
             await OrderStatusHistoryModel.add_status_change(
                 session=session,
                 order_id=order.id,
                 status_id=order_data.status_id,
                 changed_by_user_id=current_user["user_id"],
-                notes="Статус обновлен администратором"
+                notes=status_note
             )
         
         # Коммитим сессию
@@ -418,6 +421,85 @@ async def update_order_admin(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при обновлении заказа",
+        )
+
+@admin_router.post("/{order_id}/status", response_model=OrderResponse)
+async def update_order_status(
+    order_id: int = Path(..., ge=1),
+    status_data: dict = Body(...),
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Обновление статуса заказа (только для администраторов).
+    Упрощенный эндпоинт для обновления только статуса.
+    
+    - **order_id**: ID заказа
+    - **status_data**: Данные о новом статусе:
+      - status_id: ID нового статуса
+      - comment: Комментарий к изменению статуса (опционально)
+    """
+    try:
+        logger.info(f"Запрос на обновление статуса заказа. ID: {order_id}, данные: {status_data}")
+        
+        # Проверяем наличие обязательного поля status_id
+        if not status_data.get("status_id"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Не указан ID статуса",
+            )
+        
+        # Создаем объект OrderUpdate только с нужными полями
+        status_id = status_data.get("status_id")
+        comment = status_data.get("comment")
+        
+        # Проверяем, что статус существует
+        status = await session.get(OrderStatusModel, status_id)
+        if not status:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Статус с ID {status_id} не найден",
+            )
+        
+        # Получаем текущий заказ
+        order = await get_order_by_id(session, order_id)
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Заказ с ID {order_id} не найден",
+            )
+        
+        # Обновляем статус заказа
+        order.status_id = status_id
+        session.add(order)
+        
+        # Добавляем запись в историю статусов
+        status_note = comment if comment else "Статус обновлен администратором"
+        await OrderStatusHistoryModel.add_status_change(
+            session=session,
+            order_id=order_id,
+            status_id=status_id,
+            changed_by_user_id=current_user["user_id"],
+            notes=status_note
+        )
+        
+        # Коммитим изменения
+        await session.commit()
+        
+        # Получаем обновленный заказ со всеми связанными данными
+        updated_order = await get_order_by_id(session, order_id)
+        logger.info(f"Статус заказа {order_id} успешно обновлен на {status_id}")
+        
+        # Возвращаем обновленные данные
+        return OrderResponse.model_validate(updated_order)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении статуса заказа: {str(e)}")
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Произошла ошибка при обновлении статуса заказа: {str(e)}",
         )
 
 class BatchStatusUpdate(BaseModel):

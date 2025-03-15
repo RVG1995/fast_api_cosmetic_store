@@ -27,14 +27,30 @@ export const OrderProvider = ({ children }) => {
 
   // Функция для получения конфигурации запроса
   const getConfig = useCallback(() => {
-    console.log('Получение конфигурации запроса');
     // Получаем актуальный токен
     const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-    console.log('Токен в момент запроса:', actualToken ? 'Присутствует' : 'Отсутствует');
     
     if (!actualToken) {
-      console.warn('Токен отсутствует в getConfig');
+      console.warn('Токен отсутствует. Запрос может быть отклонен.');
       return {};
+    }
+    
+    // Проверяем, не истек ли токен
+    try {
+      if (actualToken) {
+        const tokenParts = actualToken.split('.');
+        if (tokenParts.length === 3) {
+          const payload = JSON.parse(atob(tokenParts[1]));
+          const expTime = payload.exp * 1000; // переводим в миллисекунды
+          const now = Date.now();
+          
+          if (expTime < now) {
+            console.error('ВНИМАНИЕ: Токен истек!');
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Ошибка при проверке токена:', err);
     }
     
     return {
@@ -500,26 +516,62 @@ export const OrderProvider = ({ children }) => {
 
   // Обновление статуса заказа (для администраторов)
   const updateOrderStatus = useCallback(async (orderId, statusData) => {
-    if (!token) return null;
+    if (!token) {
+      console.error('Попытка обновить статус заказа без токена авторизации');
+      const localToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      
+      if (!localToken) {
+        setError('Для обновления статуса заказа необходима авторизация');
+        return null;
+      }
+    }
+    
+    // Проверяем права администратора
+    const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
+    const isAdmin = userData?.is_admin || userData?.is_super_admin;
+    
+    if (!isAdmin) {
+      console.error('Попытка обновить статус заказа без прав администратора');
+      setError('Для обновления статуса заказа необходимы права администратора');
+      return null;
+    }
     
     setLoading(true);
     setError(null);
     
     try {
-      const response = await axios.put(
-        `${ORDER_SERVICE_URL}/admin/orders/${orderId}/status`, 
-        statusData,
-        getConfig()
-      );
-      return response.data;
+      // Используем специальный эндпоинт для обновления статуса заказа
+      const url = `${ORDER_SERVICE_URL}/admin/orders/${orderId}/status`;
+      const config = getConfig();
+      
+      // Отправляем POST запрос
+      const response = await axios.post(url, statusData, config);
+      
+      if (response.status >= 200 && response.status < 300) {
+        return response.data;
+      } else {
+        console.error('Неожиданный статус ответа:', response.status);
+        setError(`Неожиданный статус ответа: ${response.status}`);
+        return null;
+      }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось обновить статус заказа');
       console.error('Ошибка при обновлении статуса заказа:', err);
+      let errorMessage = 'Не удалось обновить статус заказа';
+      
+      if (err.response) {
+        errorMessage = err.response.data.detail || errorMessage;
+      } else if (err.request) {
+        errorMessage = 'Сервер не отвечает. Проверьте соединение с интернетом.';
+      } else {
+        errorMessage = `Ошибка: ${err.message}`;
+      }
+      
+      setError(errorMessage);
       return null;
     } finally {
       setLoading(false);
     }
-  }, [token, getConfig]);
+  }, [token, user, getConfig]);
 
   // Получение одного заказа по ID (для администраторов)
   const getAdminOrderById = useCallback(async (orderId) => {

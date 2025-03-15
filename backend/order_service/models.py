@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional, List, Tuple
 from sqlalchemy.orm import selectinload
 import enum
+import logging
 
 class Base(DeclarativeBase):
     pass
@@ -170,11 +171,19 @@ class OrderModel(Base):
         limit: int = 10,
         status_id: Optional[int] = None,
         user_id: Optional[int] = None,
+        id: Optional[int] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
         order_by: str = "created_at",
         order_dir: str = "desc"
     ) -> Tuple[List["OrderModel"], int]:
         """Получить все заказы с пагинацией и фильтрацией"""
         try:
+            # Логируем входящие параметры фильтрации
+            logger = logging.getLogger("order_model")
+            logger.info(f"Запрос всех заказов с параметрами: page={page}, limit={limit}, status_id={status_id}, "
+                       f"user_id={user_id}, id={id}, date_from={date_from}, date_to={date_to}")
+            
             # Формируем базовый запрос
             query = select(cls)
             count_query = select(func.count()).select_from(cls)
@@ -185,6 +194,27 @@ class OrderModel(Base):
                 filters.append(cls.status_id == status_id)
             if user_id is not None:
                 filters.append(cls.user_id == user_id)
+            if id is not None:
+                filters.append(cls.id == id)
+            
+            # Добавляем фильтрацию по датам
+            if date_from is not None:
+                try:
+                    # Создаем объект datetime для начала дня
+                    date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+                    filters.append(cls.created_at >= date_from_obj)
+                    logger.info(f"Применяется фильтр по начальной дате: created_at >= {date_from_obj}")
+                except Exception as e:
+                    logger.error(f"Ошибка при обработке date_from={date_from}: {str(e)}")
+            
+            if date_to is not None:
+                try:
+                    # Создаем объект datetime для конца дня
+                    date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+                    filters.append(cls.created_at <= date_to_obj)
+                    logger.info(f"Применяется фильтр по конечной дате: created_at <= {date_to_obj}")
+                except Exception as e:
+                    logger.error(f"Ошибка при обработке date_to={date_to}: {str(e)}")
             
             if filters:
                 query = query.filter(*filters)
@@ -219,7 +249,8 @@ class OrderModel(Base):
             
             return items, total
         except Exception as e:
-            print(f"Ошибка при получении всех заказов: {str(e)}")
+            logger = logging.getLogger("order_model")
+            logger.error(f"Ошибка при получении всех заказов: {str(e)}")
             return [], 0
 
 class OrderItemModel(Base):

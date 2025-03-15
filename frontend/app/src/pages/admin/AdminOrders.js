@@ -13,10 +13,10 @@ const AdminOrders = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [filters, setFilters] = useState({
-    status: '',
-    userId: '',
-    dateFrom: '',
-    dateTo: '',
+    status_id: '',
+    order_id: '',
+    date_from: '',
+    date_to: '',
   });
 
   // Загрузка статусов заказов при монтировании компонента
@@ -38,14 +38,21 @@ const AdminOrders = () => {
   useEffect(() => {
     const loadOrders = async () => {
       try {
-        const response = await getAllOrders({
+        // Подготавливаем параметры запроса
+        const params = {
           page: currentPage,
-          limit: 10,
-          status: filters.status || undefined,
-          user_id: filters.userId || undefined,
-          date_from: filters.dateFrom || undefined,
-          date_to: filters.dateTo || undefined,
-        });
+          size: 10
+        };
+        
+        // Добавляем параметры фильтрации только если они заданы
+        if (filters.status_id) params.status_id = Number(filters.status_id);
+        if (filters.order_id) params.id = Number(filters.order_id);
+        if (filters.date_from) params.date_from = filters.date_from;
+        if (filters.date_to) params.date_to = filters.date_to;
+        
+        console.log('Отправляем запрос с параметрами:', params);
+        
+        const response = await getAllOrders(params);
         
         if (response && response.items) {
           setOrders(response.items);
@@ -77,10 +84,10 @@ const AdminOrders = () => {
   // Обработчик сброса фильтров
   const handleResetFilters = () => {
     setFilters({
-      status: '',
-      userId: '',
-      dateFrom: '',
-      dateTo: '',
+      status_id: '',
+      order_id: '',
+      date_from: '',
+      date_to: '',
     });
     setCurrentPage(1);
   };
@@ -173,14 +180,14 @@ const AdminOrders = () => {
                 <Form.Group className="mb-3">
                   <Form.Label>Статус заказа</Form.Label>
                   <Form.Select
-                    name="status"
-                    value={filters.status}
+                    name="status_id"
+                    value={filters.status_id}
                     onChange={handleFilterChange}
                   >
                     <option value="">Все статусы</option>
                     {Array.isArray(statuses) && statuses.length > 0 ? (
                       statuses.map(status => (
-                        <option key={status.code} value={status.code}>
+                        <option key={status.id} value={status.id}>
                           {status.name}
                         </option>
                       ))
@@ -193,13 +200,13 @@ const AdminOrders = () => {
               
               <Col md={3}>
                 <Form.Group className="mb-3">
-                  <Form.Label>ID пользователя</Form.Label>
+                  <Form.Label>ID заказа</Form.Label>
                   <Form.Control
-                    type="text"
-                    name="userId"
-                    value={filters.userId}
+                    type="number"
+                    name="order_id"
+                    value={filters.order_id}
                     onChange={handleFilterChange}
-                    placeholder="Введите ID пользователя"
+                    placeholder="Введите ID заказа"
                   />
                 </Form.Group>
               </Col>
@@ -209,8 +216,8 @@ const AdminOrders = () => {
                   <Form.Label>Дата от</Form.Label>
                   <Form.Control
                     type="date"
-                    name="dateFrom"
-                    value={filters.dateFrom}
+                    name="date_from"
+                    value={filters.date_from}
                     onChange={handleFilterChange}
                   />
                 </Form.Group>
@@ -221,8 +228,8 @@ const AdminOrders = () => {
                   <Form.Label>Дата до</Form.Label>
                   <Form.Control
                     type="date"
-                    name="dateTo"
-                    value={filters.dateTo}
+                    name="date_to"
+                    value={filters.date_to}
                     onChange={handleFilterChange}
                   />
                 </Form.Group>
@@ -258,6 +265,7 @@ const AdminOrders = () => {
                   <tr>
                     <th>ID</th>
                     <th>Дата создания</th>
+                    <th>Зарегистрирован</th>
                     <th>Пользователь</th>
                     <th>Сумма</th>
                     <th>Статус</th>
@@ -271,8 +279,15 @@ const AdminOrders = () => {
                       <tr key={order.id}>
                         <td>{order.id}-{new Date(order.created_at).getFullYear()}</td>
                         <td>{order.created_at ? formatDateTime(order.created_at) : '-'}</td>
+                        <td className="text-center">
+                          {order.user_id ? (
+                            <i className="bi bi-check-circle-fill text-success" title="Зарегистрированный пользователь"></i>
+                          ) : (
+                            <i className="bi bi-x-circle-fill text-danger" title="Гость"></i>
+                          )}
+                        </td>
                         <td>
-                          {order.user_id || '-'}
+                          {order.full_name || 'Нет данных'}
                           <div className="small text-muted">{order.email || '-'}</div>
                         </td>
                         <td>{order.total_price !== undefined ? formatPrice(order.total_price) : '-'}</td>

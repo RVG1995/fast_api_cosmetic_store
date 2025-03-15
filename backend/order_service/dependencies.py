@@ -115,6 +115,9 @@ def get_order_filter_params(
     size: int = 10,
     status_id: Optional[int] = None,
     user_id: Optional[int] = None,
+    id: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     order_by: str = "created_at",
     order_dir: str = "desc"
 ) -> OrderFilterParams:
@@ -126,6 +129,9 @@ def get_order_filter_params(
         size: Размер страницы
         status_id: ID статуса заказа
         user_id: ID пользователя
+        id: ID заказа
+        date_from: Дата начала периода (YYYY-MM-DD)
+        date_to: Дата окончания периода (YYYY-MM-DD)
         order_by: Поле для сортировки
         order_dir: Направление сортировки
         
@@ -137,6 +143,9 @@ def get_order_filter_params(
         size=size,
         status_id=status_id,
         user_id=user_id,
+        id=id,
+        date_from=date_from,
+        date_to=date_to,
         order_by=order_by,
         order_dir=order_dir
     )

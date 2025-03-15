@@ -295,10 +295,18 @@ async def list_all_orders(
     - **size**: Размер страницы
     - **status_id**: ID статуса заказа
     - **user_id**: ID пользователя
+    - **id**: ID заказа
+    - **date_from**: Дата начала периода (YYYY-MM-DD)
+    - **date_to**: Дата окончания периода (YYYY-MM-DD)
     - **order_by**: Поле для сортировки
     - **order_dir**: Направление сортировки
     """
     try:
+        # Логируем запрос с параметрами фильтрации
+        logger.info(f"Запрос списка всех заказов с параметрами: page={filters.page}, size={filters.size}, "
+                   f"status_id={filters.status_id}, user_id={filters.user_id}, id={filters.id}, "
+                   f"date_from={filters.date_from}, date_to={filters.date_to}")
+        
         # Получаем заказы
         orders, total = await get_orders(
             session=session,

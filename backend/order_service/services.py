@@ -206,6 +206,9 @@ async def get_orders(
             limit=filters.size,
             status_id=filters.status_id,
             user_id=filters.user_id,
+            id=filters.id,
+            date_from=filters.date_from,
+            date_to=filters.date_to,
             order_by=filters.order_by,
             order_dir=filters.order_dir
         )

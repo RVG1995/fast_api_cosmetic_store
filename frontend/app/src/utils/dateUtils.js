@@ -1,118 +1,118 @@
 /**
- * Форматирует дату и время в читабельный вид
- * 
- * @param {string|Date} dateTime - Дата и время для форматирования
- * @param {boolean} includeTime - Включать ли время в результат (по умолчанию true)
- * @returns {string} Отформатированная дата и время
- */
-export const formatDateTime = (dateTime, includeTime = true) => {
-  if (!dateTime) return '';
-
-  try {
-    const date = new Date(dateTime);
-    
-    // Проверка валидности даты
-    if (isNaN(date.getTime())) {
-      return 'Некорректная дата';
-    }
-    
-    // Опции для форматирования даты
-    const dateOptions = { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric'
-    };
-    
-    // Если нужно включить время, добавляем опции времени
-    if (includeTime) {
-      return `${date.toLocaleDateString('ru-RU', dateOptions)} ${date.toLocaleTimeString('ru-RU', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      })}`;
-    }
-    
-    // Если время не нужно, возвращаем только дату
-    return date.toLocaleDateString('ru-RU', dateOptions);
-  } catch (error) {
-    console.error('Ошибка при форматировании даты:', error);
-    return 'Ошибка форматирования';
-  }
-};
-
-/**
- * Форматирует дату в читабельный вид без времени
- * 
- * @param {string|Date} date - Дата для форматирования
+ * Форматирует дату в формате DD.MM.YYYY
+ * @param {string} dateString - Строка с датой в формате ISO
  * @returns {string} Отформатированная дата
  */
-export const formatDate = (date) => {
-  return formatDateTime(date, false);
-};
-
-/**
- * Возвращает относительное время (например, "5 минут назад")
- * 
- * @param {string|Date} dateTime - Дата и время
- * @returns {string} Относительное время
- */
-export const getRelativeTime = (dateTime) => {
-  if (!dateTime) return '';
-
-  try {
-    const date = new Date(dateTime);
-    
-    // Проверка валидности даты
-    if (isNaN(date.getTime())) {
-      return 'Некорректная дата';
-    }
-    
-    const now = new Date();
-    const diffMs = now - date;
-    const diffSec = Math.floor(diffMs / 1000);
-    
-    // Меньше минуты
-    if (diffSec < 60) {
-      return 'Только что';
-    }
-    
-    // Меньше часа
-    if (diffSec < 3600) {
-      const minutes = Math.floor(diffSec / 60);
-      return `${minutes} ${getEnding(minutes, ['минуту', 'минуты', 'минут'])} назад`;
-    }
-    
-    // Меньше суток
-    if (diffSec < 86400) {
-      const hours = Math.floor(diffSec / 3600);
-      return `${hours} ${getEnding(hours, ['час', 'часа', 'часов'])} назад`;
-    }
-    
-    // Меньше недели
-    if (diffSec < 604800) {
-      const days = Math.floor(diffSec / 86400);
-      return `${days} ${getEnding(days, ['день', 'дня', 'дней'])} назад`;
-    }
-    
-    // Возвращаем полную дату для более старых дат
-    return formatDateTime(date);
-  } catch (error) {
-    console.error('Ошибка при расчете относительного времени:', error);
-    return 'Ошибка форматирования';
+export const formatDate = (dateString) => {
+  if (!dateString) return '';
+  
+  const date = new Date(dateString);
+  
+  // Проверка на валидность даты
+  if (isNaN(date.getTime())) {
+    return '';
   }
+  
+  // Добавляем ведущий ноль при необходимости
+  const padZero = (num) => {
+    return num < 10 ? `0${num}` : num;
+  };
+  
+  const day = padZero(date.getDate());
+  const month = padZero(date.getMonth() + 1);
+  const year = date.getFullYear();
+  
+  return `${day}.${month}.${year}`;
 };
 
 /**
- * Вспомогательная функция для правильного склонения слов
- * 
- * @param {number} number - Число для которого выбираем склонение
- * @param {Array<string>} titles - Массив вариантов склонения [1, 2-4, 5-0]
- * @returns {string} Правильно склоненное слово
+ * Форматирует дату и время в формате DD.MM.YYYY HH:MM
+ * @param {string} dateString - Строка с датой в формате ISO
+ * @returns {string} Отформатированная дата и время
  */
-const getEnding = (number, titles) => {
+export const formatDateTime = (dateString) => {
+  if (!dateString) return '';
+  
+  const date = new Date(dateString);
+  
+  // Проверка на валидность даты
+  if (isNaN(date.getTime())) {
+    return '';
+  }
+  
+  // Добавляем ведущий ноль при необходимости
+  const padZero = (num) => {
+    return num < 10 ? `0${num}` : num;
+  };
+  
+  const day = padZero(date.getDate());
+  const month = padZero(date.getMonth() + 1);
+  const year = date.getFullYear();
+  const hours = padZero(date.getHours());
+  const minutes = padZero(date.getMinutes());
+  
+  return `${day}.${month}.${year} ${hours}:${minutes}`;
+};
+
+/**
+ * Возвращает относительную дату (например, "2 дня назад")
+ * @param {string} dateString - Строка с датой в формате ISO
+ * @returns {string} Относительная дата
+ */
+export const getRelativeDate = (dateString) => {
+  if (!dateString) return '';
+  
+  const date = new Date(dateString);
+  
+  // Проверка на валидность даты
+  if (isNaN(date.getTime())) {
+    return '';
+  }
+  
+  const now = new Date();
+  const diffInSeconds = Math.floor((now - date) / 1000);
+  
+  // Менее минуты назад
+  if (diffInSeconds < 60) {
+    return 'только что';
+  }
+  
+  // Менее часа
+  if (diffInSeconds < 3600) {
+    const minutes = Math.floor(diffInSeconds / 60);
+    return `${minutes} ${getDeclension(minutes, ['минуту', 'минуты', 'минут'])} назад`;
+  }
+  
+  // Менее суток
+  if (diffInSeconds < 86400) {
+    const hours = Math.floor(diffInSeconds / 3600);
+    return `${hours} ${getDeclension(hours, ['час', 'часа', 'часов'])} назад`;
+  }
+  
+  // Менее 30 дней
+  if (diffInSeconds < 2592000) {
+    const days = Math.floor(diffInSeconds / 86400);
+    return `${days} ${getDeclension(days, ['день', 'дня', 'дней'])} назад`;
+  }
+  
+  // Менее года
+  if (diffInSeconds < 31536000) {
+    const months = Math.floor(diffInSeconds / 2592000);
+    return `${months} ${getDeclension(months, ['месяц', 'месяца', 'месяцев'])} назад`;
+  }
+  
+  // Более года
+  const years = Math.floor(diffInSeconds / 31536000);
+  return `${years} ${getDeclension(years, ['год', 'года', 'лет'])} назад`;
+};
+
+/**
+ * Возвращает правильное склонение слова в зависимости от числа
+ * @param {number} number - Число
+ * @param {Array} words - Массив слов в формате [один, два-четыре, пять-двадцать]
+ * @returns {string} Склоненное слово
+ */
+const getDeclension = (number, words) => {
   const cases = [2, 0, 1, 1, 1, 2];
-  return titles[
-    number % 100 > 4 && number % 100 < 20 
-      ? 2 
-      : cases[Math.min(number % 10, 5)]
-  ];
+  return words[(number % 100 > 4 && number % 100 < 20) ? 2 : cases[Math.min(number % 10, 5)]];
 }; 

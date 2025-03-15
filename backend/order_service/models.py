@@ -18,13 +18,6 @@ class OrderStatusEnum(enum.Enum):
     RETURNED = "returned"
     REFUNDED = "refunded"
 
-class PaymentMethodEnum(enum.Enum):
-    CREDIT_CARD = "credit_card"
-    DEBIT_CARD = "debit_card"
-    PAYPAL = "paypal"
-    BANK_TRANSFER = "bank_transfer"
-    CASH_ON_DELIVERY = "cash_on_delivery"
-
 class OrderStatusModel(Base):
     """Модель статуса заказа"""
     __tablename__ = 'order_statuses'
@@ -77,17 +70,22 @@ class OrderModel(Base):
     __tablename__ = 'orders'
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)  # Может быть null для анонимных пользователей
     status_id: Mapped[int] = mapped_column(ForeignKey("order_statuses.id", ondelete="RESTRICT"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
     total_price: Mapped[int] = mapped_column(Integer, nullable=False)
-    shipping_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    contact_phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    contact_email: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Данные о клиенте и доставке
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    phone: Mapped[str] = mapped_column(String(50), nullable=False)
+    region: Mapped[str] = mapped_column(String(100), nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    street: Mapped[str] = mapped_column(String(255), nullable=False)
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
     is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    payment_method: Mapped[PaymentMethodEnum] = mapped_column(Enum(PaymentMethodEnum), nullable=False, default=PaymentMethodEnum.CASH_ON_DELIVERY)
     
     # Связь с элементами заказа
     items = relationship("OrderItemModel", back_populates="order", cascade="all, delete-orphan")

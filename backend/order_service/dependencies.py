@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from database import get_db
 from schemas import OrderFilterParams
+from product_api import get_product_api
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -33,62 +34,54 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     authorization: Optional[str] = Header(None)
-) -> Dict[str, Any]:
+) -> Optional[Dict[str, Any]]:
     """
     Проверяет токен и возвращает данные пользователя.
+    Если токен отсутствует, возвращает None для поддержки анонимных пользователей.
     
     Args:
         token: Токен доступа из OAuth2
         authorization: Заголовок Authorization
         
     Returns:
-        Данные пользователя
-        
-    Raises:
-        HTTPException: Если токен недействителен или отсутствует
+        Данные пользователя или None, если токен отсутствует
     """
     # Если токен не получен через OAuth2, пробуем получить из заголовка Authorization
-    if not token and authorization:
-        if authorization.startswith("Bearer "):
-            token = authorization.replace("Bearer ", "")
+    if not token and authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
     
+    # Если токен отсутствует, возвращаем None для поддержки анонимных пользователей
     if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не предоставлены учетные данные",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
+        logger.info("Токен не предоставлен")
+        return None
+        
     try:
-        # Декодирование токена
+        # Декодируем токен
+        logger.info(f"Попытка декодирования токена: {token[:20]}...")
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        
+        # Используем ключ "sub" вместо "user_id" как в других сервисах
         user_id = payload.get("sub")
         if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Недействительный токен",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Проверка роли пользователя
-        is_admin = payload.get("is_admin", False)
-        
+            logger.warning("Токен не содержит поле 'sub'")
+            return None
+            
+        # Возвращаем данные пользователя с добавлением токена для передачи в другие сервисы
+        logger.info(f"Пользователь {user_id} успешно аутентифицирован (admin={payload.get('is_admin', False)})")
         return {
             "user_id": int(user_id),
-            "is_admin": is_admin,
-            "email": payload.get("email"),
-            "full_name": payload.get("full_name")
+            "is_admin": payload.get("is_admin", False),
+            "is_super_admin": payload.get("is_super_admin", False),
+            "token": token
         }
     except PyJWTError as e:
         logger.error(f"Ошибка при декодировании токена: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Недействительный токен",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return None
 
 # Функция для проверки прав администратора
-async def get_admin_user(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+async def get_admin_user(
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Проверяет, является ли пользователь администратором.
     
@@ -96,16 +89,24 @@ async def get_admin_user(current_user: Dict[str, Any] = Depends(get_current_user
         current_user: Данные текущего пользователя
         
     Returns:
-        Данные пользователя
+        Данные пользователя, если он администратор
         
     Raises:
-        HTTPException: Если пользователь не является администратором
+        HTTPException: Если пользователь не является администратором или не аутентифицирован
     """
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Не предоставлены учетные данные",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
     if not current_user.get("is_admin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для выполнения операции",
         )
+        
     return current_user
 
 # Функция для получения параметров фильтрации заказов
@@ -141,68 +142,70 @@ def get_order_filter_params(
     )
 
 # Функция для проверки наличия товаров в сервисе продуктов
-async def check_products_availability(product_ids: list[int]) -> Dict[int, bool]:
+async def check_products_availability(product_ids: list[int], token: Optional[str] = None) -> Dict[int, bool]:
     """
     Проверяет наличие товаров в сервисе продуктов.
     
     Args:
         product_ids: Список ID товаров
+        token: Токен авторизации
         
     Returns:
         Словарь с ID товаров и их доступностью
     """
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{PRODUCT_SERVICE_URL}/api/products/check-availability",
-                json={"product_ids": product_ids},
-                timeout=5.0
-            )
-            
-            if response.status_code == 200:
-                return response.json()
+        # Получаем экземпляр API для работы с продуктами
+        product_api = await get_product_api()
+        
+        # Получаем информацию о продуктах с использованием batch-запроса
+        products = await product_api.get_products_batch(product_ids, token)
+        
+        # Проверяем наличие (stock > 0)
+        result = {}
+        for product_id in product_ids:
+            if product_id in products:
+                result[product_id] = products[product_id].stock > 0
             else:
-                logger.error(f"Ошибка при проверке наличия товаров: {response.text}")
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Сервис продуктов недоступен",
-                )
-    except httpx.RequestError as e:
-        logger.error(f"Ошибка при запросе к сервису продуктов: {str(e)}")
+                # Если продукт не найден, считаем его недоступным
+                result[product_id] = False
+        
+        logger.info(f"Проверка наличия товаров: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Ошибка при проверке наличия товаров: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Сервис продуктов недоступен",
         )
 
 # Функция для получения информации о товарах из сервиса продуктов
-async def get_products_info(product_ids: list[int]) -> Dict[int, Dict[str, Any]]:
+async def get_products_info(product_ids: list[int], token: Optional[str] = None) -> Dict[int, Dict[str, Any]]:
     """
     Получает информацию о товарах из сервиса продуктов.
     
     Args:
         product_ids: Список ID товаров
+        token: Токен авторизации
         
     Returns:
         Словарь с ID товаров и информацией о них
     """
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{PRODUCT_SERVICE_URL}/api/products/batch",
-                json={"product_ids": product_ids},
-                timeout=5.0
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Ошибка при получении информации о товарах: {response.text}")
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Сервис продуктов недоступен",
-                )
-    except httpx.RequestError as e:
-        logger.error(f"Ошибка при запросе к сервису продуктов: {str(e)}")
+        # Получаем экземпляр API для работы с продуктами
+        product_api = await get_product_api()
+        
+        # Получаем информацию о продуктах с использованием batch-запроса
+        products = await product_api.get_products_batch(product_ids, token)
+        
+        # Преобразуем словарь с объектами ProductInfoSchema в словарь с dict
+        result = {}
+        for product_id, product in products.items():
+            result[product_id] = product.to_dict()
+        
+        logger.info(f"Получена информация о товарах: {list(result.keys())}")
+        return result
+    except Exception as e:
+        logger.error(f"Ошибка при получении информации о товарах: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Сервис продуктов недоступен",

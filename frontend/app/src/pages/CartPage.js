@@ -454,13 +454,26 @@ const CartPage = () => {
                 <span className="fw-bold">Итого:</span>
                 <span className="fw-bold fs-5">{formatPrice(cart.total_price)} ₽</span>
               </div>
-              <button className="btn btn-primary w-100">
-                Оформить заказ
-              </button>
-              <div className="text-center mt-3">
-                <Link to="/products" className="text-decoration-none">
-                  <i className="bi bi-arrow-left me-1"></i>
+              <div className="cart-summary-total">
+                <div className="cart-summary-total-label">Итого:</div>
+                <div className="cart-summary-total-value">
+                  {formatPrice(cart?.total_price || 0)}
+                </div>
+              </div>
+              
+              <div className="cart-checkout-btns mt-4">
+                <Link 
+                  to="/products" 
+                  className="btn btn-outline-secondary w-100 mb-2"
+                >
                   Продолжить покупки
+                </Link>
+                <Link 
+                  to="/checkout" 
+                  className="btn btn-primary w-100"
+                  disabled={!cart?.items?.length}
+                >
+                  Оформить заказ
                 </Link>
               </div>
             </div>

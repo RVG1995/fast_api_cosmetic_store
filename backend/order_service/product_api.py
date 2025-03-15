@@ -15,6 +15,9 @@ logger = logging.getLogger("order_product_api")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
 logger.info(f"URL сервиса продуктов: {PRODUCT_SERVICE_URL}")
 
+# Секретный ключ для доступа к API продуктов
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "your-internal-service-key")
+
 # Конфигурация Redis для кэширования
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 CACHE_TTL = int(os.getenv("CACHE_TTL", "300"))  # TTL кэша в секундах (по умолчанию 5 минут)
@@ -24,6 +27,9 @@ redis_client = redis.from_url(REDIS_URL)
 class ProductAPI:
     """Класс для взаимодействия с API сервиса продуктов"""
     
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+
     async def get_product(self, product_id: int) -> Optional[ProductInfoSchema]:
         """Получение информации о продукте по ID"""
         cache_key = f"product:{product_id}"
@@ -41,7 +47,7 @@ class ProductAPI:
         # Запрос к сервису продуктов, если данных нет в кэше
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(f"{PRODUCT_SERVICE_URL}/products/{product_id}")
+                response = await client.get(f"{self.base_url}/products/{product_id}")
                 
                 if response.status_code == 200:
                     product_data = response.json()
@@ -87,13 +93,14 @@ class ProductAPI:
         
         return True, product
     
-    async def update_stock(self, product_id: int, quantity_change: int) -> bool:
+    async def update_stock(self, product_id: int, quantity_change: int, token: Optional[str] = None) -> bool:
         """
         Обновление количества товара на складе
         
         Args:
             product_id: ID товара
             quantity_change: Изменение количества (отрицательное для уменьшения)
+            token: Токен авторизации (опционально для публичного API)
             
         Returns:
             bool: Успешность операции
@@ -109,15 +116,23 @@ class ProductAPI:
                 # Вычисляем новое количество
                 new_stock = max(0, product.stock + quantity_change)
                 
-                # Отправляем запрос на обновление с использованием правильного эндпоинта /products/{product_id}/form
-                # и передаем данные через FormData, а не JSON
+                # Настраиваем заголовки с секретным ключом и авторизацией, если доступна
+                headers = {
+                    "Service-Key": INTERNAL_SERVICE_KEY  # Добавляем секретный ключ
+                }
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+                
+                # Используем публичный API с секретным ключом для обновления количества
                 response = await client.put(
-                    f"{PRODUCT_SERVICE_URL}/products/{product_id}/form",
-                    data={"stock": str(new_stock)}
+                    f"{self.base_url}/products/{product_id}/public-stock",
+                    json={"stock": new_stock},
+                    headers=headers
                 )
                 
+                # Если публичный API успешно обработал запрос
                 if response.status_code == 200:
-                    logger.info(f"Обновлено количество товара {product_id}: {product.stock} -> {new_stock}")
+                    logger.info(f"Обновлено количество товара {product_id} через публичный API: {product.stock} -> {new_stock}")
                     
                     # Инвалидируем кэш
                     try:
@@ -126,19 +141,45 @@ class ProductAPI:
                         logger.error(f"Ошибка при инвалидации кэша: {str(e)}")
                     
                     return True
-                else:
-                    logger.error(f"Ошибка при обновлении товара {product_id}, статус: {response.status_code}, ответ: {response.text}")
-                    return False
+                
+                # Если публичный API недоступен или вернул ошибку, пробуем использовать API с авторизацией
+                # Это важно для действий администраторов или когда товар нужно пополнить
+                if token and response.status_code != 200:
+                    logger.info(f"Пробуем обновить количество товара {product_id} через API с авторизацией")
+                    
+                    auth_response = await client.put(
+                        f"{self.base_url}/products/{product_id}/stock",
+                        json={"stock": new_stock},
+                        headers=headers
+                    )
+                    
+                    if auth_response.status_code == 200:
+                        logger.info(f"Обновлено количество товара {product_id} через API с авторизацией: {product.stock} -> {new_stock}")
+                        
+                        # Инвалидируем кэш
+                        try:
+                            await redis_client.delete(f"product:{product_id}")
+                        except Exception as e:
+                            logger.error(f"Ошибка при инвалидации кэша: {str(e)}")
+                        
+                        return True
+                    else:
+                        logger.error(f"Ошибка при обновлении товара {product_id} через API с авторизацией, статус: {auth_response.status_code}, ответ: {auth_response.text}")
+                
+                # Если все попытки обновления не удались
+                logger.error(f"Не удалось обновить количество товара {product_id}, статус: {response.status_code}, ответ: {response.text}")
+                return False
         except Exception as e:
             logger.error(f"Ошибка при обновлении количества товара {product_id}: {str(e)}")
             return False
     
-    async def get_products_batch(self, product_ids: List[int]) -> Dict[int, ProductInfoSchema]:
+    async def get_products_batch(self, product_ids: List[int], token: Optional[str] = None) -> Dict[int, ProductInfoSchema]:
         """
         Получение информации о нескольких продуктах по ID
         
         Args:
             product_ids: Список ID продуктов
+            token: Токен авторизации (опционально для публичного API)
             
         Returns:
             Dict[int, ProductInfoSchema]: Словарь {product_id: продукт}
@@ -169,10 +210,18 @@ class ProductAPI:
         if products_to_fetch:
             try:
                 async with httpx.AsyncClient() as client:
-                    # Используем эндпоинт batch для запроса нескольких продуктов одновременно
+                    # Настраиваем заголовки для авторизации и секретный ключ сервиса
+                    headers = {
+                        "Service-Key": INTERNAL_SERVICE_KEY  # Добавляем секретный ключ
+                    }
+                    if token:
+                        headers["Authorization"] = f"Bearer {token}"
+                
+                    # Используем публичный эндпоинт с секретным ключом
                     response = await client.post(
-                        f"{PRODUCT_SERVICE_URL}/products/batch",
-                        json={"product_ids": products_to_fetch}
+                        f"{self.base_url}/products/public-batch",
+                        json={"product_ids": products_to_fetch},
+                        headers=headers
                     )
                     
                     if response.status_code == 200:
@@ -194,12 +243,49 @@ class ProductAPI:
                             except Exception as e:
                                 logger.error(f"Ошибка при записи в кэш для продукта {product_id}: {str(e)}")
                     else:
-                        logger.error(f"Ошибка при получении списка продуктов, статус: {response.status_code}")
+                        logger.error(f"Ошибка при получении списка продуктов, статус: {response.status_code}, ответ: {response.text}")
+                        
+                        # Если публичный API недоступен и есть токен, пробуем использовать обычный API
+                        if token:
+                            logger.info("Пробуем получить данные через API с авторизацией")
+                            auth_response = await client.post(
+                                f"{self.base_url}/products/batch",
+                                json={"product_ids": products_to_fetch},
+                                headers=headers
+                            )
+                            
+                            if auth_response.status_code == 200:
+                                auth_products_data = auth_response.json()
+                                
+                                for product_data in auth_products_data:
+                                    product_id = product_data["id"]
+                                    product = ProductInfoSchema(**product_data)
+                                    result[product_id] = product
+                                    
+                                    # Кэшируем результат
+                                    try:
+                                        cache_key = f"product:{product_id}"
+                                        await redis_client.set(
+                                            cache_key, 
+                                            json.dumps(product_data), 
+                                            ex=CACHE_TTL
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"Ошибка при записи в кэш для продукта {product_id}: {str(e)}")
+                            else:
+                                logger.error(f"Ошибка при получении списка продуктов через авторизованный API, статус: {auth_response.status_code}")
+                        
             except Exception as e:
                 logger.error(f"Ошибка при получении списка продуктов: {str(e)}")
         
         return result
 
 async def get_product_api() -> ProductAPI:
-    """Dependency для получения экземпляра ProductAPI"""
-    return ProductAPI() 
+    """
+    Создает и возвращает экземпляр ProductAPI
+    
+    Returns:
+        ProductAPI: Экземпляр API для работы с продуктами
+    """
+    # Возвращаем экземпляр ProductAPI
+    return ProductAPI(base_url=PRODUCT_SERVICE_URL) 

@@ -11,6 +11,16 @@ class ProductInfoSchema(BaseModel):
     stock: int
     
     model_config = ConfigDict(from_attributes=True)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Безопасное преобразование объекта в словарь"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "price": self.price,
+            "image": self.image,
+            "stock": self.stock
+        }
 
 class OrderItemAddSchema(BaseModel):
     """Схема для добавления товара в заказ"""

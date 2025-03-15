@@ -7,6 +7,8 @@ from datetime import datetime
 
 from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel, ShippingAddressModel, BillingAddressModel
 from schemas import OrderCreate, OrderUpdate, OrderStatusHistoryCreate, OrderFilterParams, OrderStatistics
+from dependencies import check_products_availability, get_products_info
+from product_api import ProductAPI, get_product_api
 
 # Настройка логирования
 logger = logging.getLogger("order_service")
@@ -14,18 +16,20 @@ logger = logging.getLogger("order_service")
 # Сервисные функции для работы с заказами
 async def create_order(
     session: AsyncSession,
-    user_id: int,
+    user_id: Optional[int],
     order_data: OrderCreate,
-    product_service_url: str
+    product_service_url: str,
+    token: Optional[str] = None
 ) -> OrderModel:
     """
     Создание нового заказа
     
     Args:
         session: Сессия базы данных
-        user_id: ID пользователя, создающего заказ
+        user_id: ID пользователя, создающего заказ (может быть None для анонимных пользователей)
         order_data: Данные для создания заказа
         product_service_url: URL сервиса продуктов для проверки наличия товаров
+        token: Токен авторизации для запросов к другим сервисам
         
     Returns:
         Созданный заказ
@@ -36,81 +40,71 @@ async def create_order(
         logger.error("Не найден статус заказа по умолчанию")
         raise ValueError("Не найден статус заказа по умолчанию")
     
-    # TODO: Проверка наличия товаров через product_service_url
-    # TODO: Получение информации о товарах (название, цена) через product_service_url
+    # Получаем информацию о товарах
+    product_ids = [item.product_id for item in order_data.items]
+    products_info = await get_products_info(product_ids, token)
+    
+    # Получаем API для работы с товарами
+    product_api = await get_product_api()
+    
+    # Проверка наличия товаров
+    availability = await check_products_availability(product_ids, token)
+    
+    # Проверяем, все ли товары доступны
+    unavailable_products = [pid for pid, available in availability.items() if not available]
+    if unavailable_products:
+        logger.error(f"Товары с ID {unavailable_products} недоступны для заказа")
+        raise ValueError(f"Товары с ID {unavailable_products} недоступны для заказа")
     
     # Создаем заказ
     total_price = 0  # Будет рассчитано на основе товаров
     
-    # Обработка адреса доставки
-    shipping_address_str = None
-    if order_data.shipping_address:
-        # Создаем новый адрес доставки
-        shipping_address = ShippingAddressModel(
-            user_id=user_id,
-            full_name=order_data.shipping_address.full_name,
-            address_line1=order_data.shipping_address.address_line1,
-            address_line2=order_data.shipping_address.address_line2,
-            city=order_data.shipping_address.city,
-            state=order_data.shipping_address.state,
-            postal_code=order_data.shipping_address.postal_code,
-            country=order_data.shipping_address.country,
-            phone_number=order_data.shipping_address.phone_number,
-            is_default=order_data.shipping_address.is_default
-        )
-        session.add(shipping_address)
-        await session.flush()
-        
-        # Формируем строку с адресом
-        shipping_address_str = f"{shipping_address.full_name}, {shipping_address.address_line1}, "
-        if shipping_address.address_line2:
-            shipping_address_str += f"{shipping_address.address_line2}, "
-        shipping_address_str += f"{shipping_address.city}, {shipping_address.postal_code}, {shipping_address.country}"
-    elif order_data.shipping_address_id:
-        # Получаем существующий адрес доставки
-        shipping_address = await session.get(ShippingAddressModel, order_data.shipping_address_id)
-        if not shipping_address or shipping_address.user_id != user_id:
-            logger.error(f"Адрес доставки с ID {order_data.shipping_address_id} не найден или не принадлежит пользователю {user_id}")
-            raise ValueError(f"Адрес доставки с ID {order_data.shipping_address_id} не найден или не принадлежит пользователю")
-        
-        # Формируем строку с адресом
-        shipping_address_str = f"{shipping_address.full_name}, {shipping_address.address_line1}, "
-        if shipping_address.address_line2:
-            shipping_address_str += f"{shipping_address.address_line2}, "
-        shipping_address_str += f"{shipping_address.city}, {shipping_address.postal_code}, {shipping_address.country}"
-    
-    # Создаем заказ
+    # Создаем заказ с новыми полями
     order = OrderModel(
         user_id=user_id,
         status_id=default_status.id,
         total_price=total_price,  # Временное значение, будет обновлено
-        shipping_address=shipping_address_str,
-        contact_phone=order_data.contact_phone,
-        contact_email=order_data.contact_email,
-        notes=order_data.notes,
-        is_paid=False,
-        payment_method=order_data.payment_method.value
+        full_name=order_data.full_name,
+        email=order_data.email,
+        phone=order_data.phone,
+        region=order_data.region,
+        city=order_data.city,
+        street=order_data.street,
+        comment=order_data.comment,
+        is_paid=False
     )
     session.add(order)
     await session.flush()
     
     # Создаем элементы заказа
-    for item_data in order_data.items:
-        # TODO: Получение информации о товаре из сервиса продуктов
-        # Временные данные для примера
-        product_name = f"Товар {item_data.product_id}"
-        product_price = 1000  # Цена товара в копейках
+    for item in order_data.items:
+        product_id = item.product_id
+        quantity = item.quantity
         
-        item = OrderItemModel(
+        # Получаем информацию о товаре
+        product_info = products_info.get(product_id)
+        if not product_info:
+            logger.warning(f"Не удалось получить информацию о товаре {product_id}")
+            continue
+        
+        # Создаем элемент заказа
+        order_item = OrderItemModel(
             order_id=order.id,
-            product_id=item_data.product_id,
-            product_name=product_name,
-            product_price=product_price,
-            quantity=item_data.quantity,
-            total_price=product_price * item_data.quantity
+            product_id=product_id,
+            product_name=product_info["name"],
+            product_price=product_info["price"],
+            quantity=quantity,
+            total_price=product_info["price"] * quantity
         )
-        session.add(item)
-        total_price += item.total_price
+        session.add(order_item)
+        
+        # Обновляем количество товара на складе
+        success = await product_api.update_stock(product_id, -quantity, token)
+        if not success:
+            logger.warning(f"Не удалось обновить количество товара {product_id}")
+        
+        # Добавляем к общей стоимости заказа
+        total_price += product_info["price"] * quantity
     
     # Обновляем общую стоимость заказа
     order.total_price = total_price
@@ -209,33 +203,37 @@ async def update_order(
     if not order:
         return None
     
+    # Обновляем статус заказа
+    if order_data.status_id is not None:
+        # Проверяем существование статуса
+        status = await session.get(OrderStatusModel, order_data.status_id)
+        if not status:
+            logger.error(f"Статус с ID {order_data.status_id} не найден")
+            raise ValueError(f"Статус с ID {order_data.status_id} не найден")
+        
+        order.status_id = order_data.status_id
+    
     # Обновляем данные заказа
-    if order_data.shipping_address_id is not None:
-        # Проверяем существование адреса и принадлежность пользователю
-        shipping_address = await session.get(ShippingAddressModel, order_data.shipping_address_id)
-        if not shipping_address or (user_id is not None and shipping_address.user_id != user_id):
-            logger.error(f"Адрес доставки с ID {order_data.shipping_address_id} не найден или не принадлежит пользователю {user_id}")
-            raise ValueError(f"Адрес доставки с ID {order_data.shipping_address_id} не найден или не принадлежит пользователю")
-        
-        # Формируем строку с адресом
-        shipping_address_str = f"{shipping_address.full_name}, {shipping_address.address_line1}, "
-        if shipping_address.address_line2:
-            shipping_address_str += f"{shipping_address.address_line2}, "
-        shipping_address_str += f"{shipping_address.city}, {shipping_address.postal_code}, {shipping_address.country}"
-        
-        order.shipping_address = shipping_address_str
+    if order_data.full_name is not None:
+        order.full_name = order_data.full_name
     
-    if order_data.payment_method is not None:
-        order.payment_method = order_data.payment_method.value
+    if order_data.email is not None:
+        order.email = order_data.email
     
-    if order_data.contact_phone is not None:
-        order.contact_phone = order_data.contact_phone
+    if order_data.phone is not None:
+        order.phone = order_data.phone
     
-    if order_data.contact_email is not None:
-        order.contact_email = order_data.contact_email
+    if order_data.region is not None:
+        order.region = order_data.region
     
-    if order_data.notes is not None:
-        order.notes = order_data.notes
+    if order_data.city is not None:
+        order.city = order_data.city
+    
+    if order_data.street is not None:
+        order.street = order_data.street
+    
+    if order_data.comment is not None:
+        order.comment = order_data.comment
     
     if order_data.is_paid is not None:
         order.is_paid = order_data.is_paid
@@ -407,15 +405,8 @@ async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
     orders_by_status_result = await session.execute(orders_by_status_query)
     orders_by_status = {row[0]: row[1] for row in orders_by_status_result}
     
-    # Количество заказов по способам оплаты
-    orders_by_payment_method_query = select(
-        OrderModel.payment_method,
-        func.count(OrderModel.id)
-    ).group_by(
-        OrderModel.payment_method
-    )
-    orders_by_payment_method_result = await session.execute(orders_by_payment_method_query)
-    orders_by_payment_method = {row[0]: row[1] for row in orders_by_payment_method_result}
+    # Так как payment_method удалено, возвращаем пустой словарь
+    orders_by_payment_method = {}
     
     return OrderStatistics(
         total_orders=total_orders,

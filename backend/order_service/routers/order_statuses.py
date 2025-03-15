@@ -30,7 +30,7 @@ async def list_order_statuses(
         # Получаем все статусы заказов
         statuses = await OrderStatusModel.get_all(session)
         
-        return [OrderStatusResponse.from_orm(status) for status in statuses]
+        return [OrderStatusResponse.model_validate(status) for status in statuses]
     except Exception as e:
         logger.error(f"Ошибка при получении списка статусов заказов: {str(e)}")
         raise HTTPException(
@@ -58,7 +58,7 @@ async def get_order_status(
                 detail=f"Статус заказа с ID {status_id} не найден",
             )
         
-        return OrderStatusResponse.from_orm(order_status)
+        return OrderStatusResponse.model_validate(order_status)
     except HTTPException:
         raise
     except Exception as e:
@@ -104,7 +104,7 @@ async def create_order_status(
         await session.commit()
         await session.refresh(order_status)
         
-        return OrderStatusResponse.from_orm(order_status)
+        return OrderStatusResponse.model_validate(order_status)
     except HTTPException:
         raise
     except Exception as e:
@@ -171,7 +171,7 @@ async def update_order_status(
         await session.commit()
         await session.refresh(order_status)
         
-        return OrderStatusResponse.from_orm(order_status)
+        return OrderStatusResponse.model_validate(order_status)
     except HTTPException:
         raise
     except Exception as e:

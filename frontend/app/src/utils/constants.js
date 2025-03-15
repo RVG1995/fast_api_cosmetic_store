@@ -2,15 +2,16 @@
  * Файл с константами для приложения
  */
 
-// API URLs для различных микросервисов
+// API URLs для различных сервисов
 export const API_URLS = {
-  AUTH: 'http://localhost:8000',       // Сервис аутентификации
-  PRODUCT: 'http://localhost:8001',    // Сервис продуктов
-  CART: 'http://localhost:8002',       // Сервис корзины
-  CART_SERVICE: 'http://localhost:8002', // Альтернативное имя для сервиса корзины (используется в новых компонентах)
-  USER: 'http://localhost:8003',       // Сервис пользователей (если будет)
-  CONTENT: 'http://localhost:8004',    // Сервис контента (если будет)
-  NOTIFICATION: 'http://localhost:8005' // Сервис уведомлений (если будет)
+  AUTH_SERVICE: process.env.REACT_APP_AUTH_SERVICE_URL || 'http://localhost:8000',
+  PRODUCT_SERVICE: process.env.REACT_APP_PRODUCT_SERVICE_URL || 'http://localhost:8001',
+  CART_SERVICE: process.env.REACT_APP_CART_SERVICE_URL || 'http://localhost:8002',
+  ORDER_SERVICE: process.env.REACT_APP_ORDER_SERVICE_URL || 'http://localhost:8003',
+  PAYMENT_SERVICE: process.env.REACT_APP_PAYMENT_SERVICE_URL || 'http://localhost:8004',
+  USER: 'http://localhost:8004',       // Сервис пользователей (если будет)
+  CONTENT: 'http://localhost:8005',    // Сервис контента (если будет)
+  NOTIFICATION: 'http://localhost:8006' // Сервис уведомлений (если будет)
 };
 
 // Маршруты

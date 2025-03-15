@@ -1,0 +1,155 @@
+.order-detail-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.back-button {
+  margin-bottom: 1.5rem;
+}
+
+.order-main-card,
+.order-history-card,
+.order-shipping-card,
+.order-actions-card {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.order-title {
+  font-weight: 600;
+  color: #333;
+  font-size: 1.5rem;
+}
+
+.order-status-badge {
+  padding: 0.5rem 0.75rem;
+  border-radius: 50px;
+  font-weight: 500;
+  font-size: 0.8rem;
+}
+
+.order-info-item {
+  margin-bottom: 0.5rem;
+}
+
+.order-info-label {
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.order-info-value {
+  color: #333;
+}
+
+.order-notes {
+  background-color: #f9f9f9;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+}
+
+.order-product-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.order-product-id {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.order-total-price {
+  color: #d94c4c;
+  font-size: 1.1rem;
+}
+
+/* Стили для контактной информации */
+.contact-item {
+  margin-bottom: 0.5rem;
+  display: flex;
+}
+
+.contact-label {
+  font-weight: 600;
+  color: #666;
+  width: 80px;
+}
+
+.contact-value {
+  color: #333;
+}
+
+/* Стили для временной шкалы истории заказа */
+.order-status-timeline {
+  position: relative;
+  padding-left: 40px;
+}
+
+.timeline-item {
+  position: relative;
+  padding-bottom: 1.5rem;
+}
+
+.timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.timeline-item:not(:last-child):before {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: -25px;
+  width: 2px;
+  height: calc(100% - 16px);
+  background-color: #e0e0e0;
+}
+
+.timeline-badge {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  position: absolute;
+  left: -32px;
+  top: 8px;
+}
+
+.timeline-content {
+  background-color: #f9f9f9;
+  padding: 0.75rem;
+  border-radius: 8px;
+}
+
+.timeline-date {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.timeline-title {
+  margin-bottom: 0.5rem;
+}
+
+.timeline-notes {
+  font-size: 0.9rem;
+  color: #666;
+  font-style: italic;
+}
+
+/* Стили для мобильных устройств */
+@media (max-width: 768px) {
+  .order-detail-container {
+    padding: 1rem;
+  }
+  
+  .order-title {
+    font-size: 1.3rem;
+  }
+  
+  .order-status-badge {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.7rem;
+  }
+} 

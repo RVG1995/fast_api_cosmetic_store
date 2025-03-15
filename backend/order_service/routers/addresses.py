@@ -25,7 +25,7 @@ shipping_router = APIRouter(
 
 # Создание роутера для адресов для выставления счетов
 billing_router = APIRouter(
-    prefix="/api/billing-addresses",
+    prefix="/billing-addresses",
     tags=["billing_addresses"],
     responses={404: {"description": "Not found"}},
 )

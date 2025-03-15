@@ -13,13 +13,6 @@ class OrderStatusEnum(str, Enum):
     RETURNED = "returned"
     REFUNDED = "refunded"
 
-class PaymentMethodEnum(str, Enum):
-    CREDIT_CARD = "credit_card"
-    DEBIT_CARD = "debit_card"
-    PAYPAL = "paypal"
-    BANK_TRANSFER = "bank_transfer"
-    CASH_ON_DELIVERY = "cash_on_delivery"
-
 # Базовые модели
 class AddressBase(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
@@ -51,24 +44,15 @@ class OrderItemCreate(OrderItemBase):
 
 class OrderCreate(BaseModel):
     items: List[OrderItemCreate] = Field(..., min_items=1)
-    shipping_address: Optional[ShippingAddressCreate] = None
-    shipping_address_id: Optional[int] = None
-    billing_address: Optional[BillingAddressCreate] = None
-    billing_address_id: Optional[int] = None
-    payment_method: PaymentMethodEnum = PaymentMethodEnum.CASH_ON_DELIVERY
-    contact_phone: Optional[str] = Field(None, min_length=5, max_length=20)
-    contact_email: Optional[EmailStr] = None
-    notes: Optional[str] = None
     
-    @model_validator(mode='after')
-    def validate_addresses(self):
-        shipping_address = self.shipping_address
-        shipping_address_id = self.shipping_address_id
-        
-        if shipping_address is None and shipping_address_id is None:
-            raise ValueError('Необходимо указать адрес доставки или ID существующего адреса')
-        
-        return self
+    # Данные о клиенте и доставке
+    full_name: str = Field(..., min_length=2, max_length=255)
+    email: Optional[EmailStr] = None
+    phone: str = Field(..., min_length=5, max_length=50)
+    region: str = Field(..., min_length=2, max_length=100)
+    city: str = Field(..., min_length=2, max_length=100)
+    street: str = Field(..., min_length=5, max_length=255)
+    comment: Optional[str] = None
 
 class OrderStatusCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=50)
@@ -95,12 +79,17 @@ class AddressUpdate(BaseModel):
     is_default: Optional[bool] = None
 
 class OrderUpdate(BaseModel):
-    shipping_address_id: Optional[int] = None
-    billing_address_id: Optional[int] = None
-    payment_method: Optional[PaymentMethodEnum] = None
-    contact_phone: Optional[str] = Field(None, min_length=5, max_length=20)
-    contact_email: Optional[EmailStr] = None
-    notes: Optional[str] = None
+    status_id: Optional[int] = None
+    
+    # Данные о клиенте и доставке
+    full_name: Optional[str] = Field(None, min_length=2, max_length=255)
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(None, min_length=5, max_length=50)
+    region: Optional[str] = Field(None, min_length=2, max_length=100)
+    city: Optional[str] = Field(None, min_length=2, max_length=100)
+    street: Optional[str] = Field(None, min_length=5, max_length=255)
+    comment: Optional[str] = None
+    
     is_paid: Optional[bool] = None
 
 class OrderStatusUpdate(BaseModel):
@@ -118,7 +107,7 @@ class OrderItemResponse(OrderItemBase):
     product_name: str
     product_price: int
     total_price: int
-    created_at: datetime
+    created_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -160,25 +149,26 @@ class BillingAddressResponse(AddressResponse):
 
 class OrderResponse(BaseModel):
     id: int
-    user_id: int
+    user_id: Optional[int] = None
     status_id: int
     status: OrderStatusResponse
     created_at: datetime
     updated_at: datetime
     total_price: int
-    shipping_address: Optional[str] = None
-    contact_phone: Optional[str] = None
-    contact_email: Optional[EmailStr] = None
-    notes: Optional[str] = None
+    
+    # Данные о клиенте и доставке
+    full_name: str
+    email: Optional[str] = None
+    phone: str
+    region: str
+    city: str
+    street: str
+    comment: Optional[str] = None
+    
     is_paid: bool
-    payment_method: PaymentMethodEnum
     items: List[OrderItemResponse] = []
     
-    @property
-    def order_number(self) -> str:
-        """Получить номер заказа в формате ID + год"""
-        year = self.created_at.year
-        return f"{self.id}-{year}"
+    order_number: str
     
     model_config = ConfigDict(from_attributes=True)
 

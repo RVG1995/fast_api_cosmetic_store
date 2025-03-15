@@ -114,6 +114,20 @@ const AdminDashboard = () => {
           </div>
         </div>
         
+        {/* Управление заказами */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-bag-check-fill admin-card-icon"></i>
+              <h3>Заказы</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Просмотр и управление заказами пользователей. Изменение статусов заказов.</p>
+              <Link to="/admin/orders" className="btn btn-primary">Управление заказами</Link>
+            </div>
+          </div>
+        </div>
+        
         {/* Блок для суперадминов */}
         {isSuperAdmin() && (
           <div className="col-md-4 mb-4">

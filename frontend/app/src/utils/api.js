@@ -17,12 +17,12 @@ const createApiInstance = (baseURL) => {
 };
 
 // Создаем отдельные экземпляры для каждого сервиса
-const authApi = createApiInstance(API_URLS.AUTH);
+const authApi = createApiInstance(API_URLS.AUTH_SERVICE);
 const userApi = createApiInstance(API_URLS.USER);
 const contentApi = createApiInstance(API_URLS.CONTENT);
 const notificationApi = createApiInstance(API_URLS.NOTIFICATION);
-const productApi = createApiInstance(API_URLS.PRODUCT);
-const cartApi = createApiInstance(API_URLS.CART);
+const productApi = createApiInstance(API_URLS.PRODUCT_SERVICE);
+const cartApi = createApiInstance(API_URLS.CART_SERVICE);
 
 // Интерцептор для обработки ошибок и отладки
 const setupInterceptors = (api, serviceName) => {

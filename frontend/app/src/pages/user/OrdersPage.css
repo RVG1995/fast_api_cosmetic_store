@@ -1,0 +1,100 @@
+.orders-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.orders-title {
+  font-weight: 600;
+  color: #333;
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.orders-filter {
+  background-color: #f9f9f9;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.orders-table {
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.orders-table thead {
+  background-color: #f8f9fa;
+}
+
+.orders-table th {
+  font-weight: 600;
+  padding: 1rem;
+  color: #333;
+}
+
+.order-item {
+  transition: background-color 0.2s;
+}
+
+.order-item:hover {
+  background-color: #f8f9fa;
+}
+
+.order-number {
+  font-weight: 600;
+  color: #333;
+}
+
+.order-date {
+  color: #666;
+}
+
+.order-price {
+  font-weight: 600;
+  color: #333;
+}
+
+.order-status-badge {
+  padding: 0.5rem 0.75rem;
+  border-radius: 50px;
+  font-weight: 500;
+  font-size: 0.8rem;
+  display: inline-block;
+}
+
+.orders-table td {
+  padding: 1rem;
+  vertical-align: middle;
+}
+
+/* Стили для пустого состояния */
+.empty-orders {
+  text-align: center;
+  padding: 3rem;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+}
+
+.empty-orders-icon {
+  font-size: 3rem;
+  color: #ccc;
+  margin-bottom: 1rem;
+}
+
+/* Стили для мобильных устройств */
+@media (max-width: 768px) {
+  .orders-container {
+    padding: 1rem;
+  }
+  
+  .orders-table th, 
+  .orders-table td {
+    padding: 0.5rem;
+  }
+  
+  .order-status-badge {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.7rem;
+  }
+} 

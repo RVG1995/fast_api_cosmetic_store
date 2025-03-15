@@ -7,15 +7,19 @@ import os
 from math import ceil
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+from sqlalchemy.exc import SQLAlchemyError
+import sys
 
-from database import get_session, setup_database
+from database import get_session, setup_database, init_db
 from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel
 from auth import User, get_current_user, check_admin_access, check_authenticated
 from product_api import ProductAPI, get_product_api
 from cart_api import CartAPI, get_cart_api
 from email_service import EmailService
-from routers import orders, order_statuses, addresses
 from database import engine
+from routers.orders import router as order_router
+from routers.orders import admin_router as admin_order_router
+from routers.order_statuses import router as order_statuses_router
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -77,10 +81,9 @@ app.add_middleware(
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "static/uploads")
 
 # Подключение роутеров
-app.include_router(orders.router)
-app.include_router(order_statuses.router)
-app.include_router(addresses.shipping_router)
-app.include_router(addresses.billing_router)
+app.include_router(order_router)
+app.include_router(admin_order_router)
+app.include_router(order_statuses_router)
 
 # Маршрут для проверки работоспособности сервиса
 @app.get("/api/health", tags=["health"])

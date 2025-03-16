@@ -74,6 +74,28 @@ async def make_user_admin(
     await session.commit()
     return {"message": f"Пользователю {user.email} предоставлены права администратора"}
 
+@router.patch("/users/{user_id}/remove-admin")
+async def remove_admin_rights(
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: UserModel = Depends(get_super_admin_user)  # Только суперадмин
+):
+    """Отозвать права администратора у пользователя (только для суперадмина)"""
+    user = await UserModel.get_by_id(session, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    
+    # Проверяем, что пользователь не является суперадмином
+    if user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Невозможно отозвать права администратора у суперадминистратора"
+        )
+    
+    user.is_admin = False
+    await session.commit()
+    return {"message": f"У пользователя {user.email} отозваны права администратора"}
+
 @router.delete("/users/{user_id}")
 async def delete_user(
     user_id: int,

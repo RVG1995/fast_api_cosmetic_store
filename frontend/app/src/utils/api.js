@@ -166,23 +166,28 @@ export const adminAPI = {
       });
       const productsCount = productsResponse.data.total || 0;
       
-      // Получаем количество заказов
+      // Получаем количество заказов и статистику по заказам
       const ordersApi = createApiInstance(API_URLS.ORDER_SERVICE);
       setupInterceptors(ordersApi, 'Orders');
+      
+      // Получаем общую статистику заказов
+      const orderStatsResponse = await ordersApi.get('/admin/orders/statistics');
+      const orderStats = orderStatsResponse.data || {};
+      
+      // Получаем количество заказов
       const ordersResponse = await ordersApi.get('/admin/orders', {
         params: { page: 1, size: 1 }
       });
       const ordersCount = ordersResponse.data.total || 0;
       
-      // В реальном приложении здесь был бы запрос для получения количества запросов,
-      // но для демонстрации будем использовать случайное число
-      const requestsCount = Math.floor(Math.random() * 500) + 100;
+      // Общая сумма заказов
+      const totalOrdersRevenue = orderStats.total_revenue || 0;
       
       return {
         usersCount,
         productsCount,
         ordersCount,
-        requestsCount
+        totalOrdersRevenue
       };
     } catch (error) {
       console.error('Ошибка при получении статистики для админ-панели:', error);
@@ -191,7 +196,7 @@ export const adminAPI = {
         usersCount: 0,
         productsCount: 0,
         ordersCount: 0,
-        requestsCount: 0
+        totalOrdersRevenue: 0
       };
     }
   }

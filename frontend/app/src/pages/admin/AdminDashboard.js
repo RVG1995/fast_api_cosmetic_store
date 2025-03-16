@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminAPI } from '../../utils/api';
+import { formatPrice } from '../../utils/helpers';
 import '../../styles/AdminDashboard.css';
 
 const AdminDashboard = () => {
@@ -10,7 +11,7 @@ const AdminDashboard = () => {
     usersCount: 0,
     productsCount: 0,
     ordersCount: 0,
-    requestsCount: 0
+    totalOrdersRevenue: 0
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -206,8 +207,8 @@ const AdminDashboard = () => {
                     <div className="stat-label">Заказов</div>
                   </div>
                   <div className="col-md-3 stat-item">
-                    <div className="stat-value">{stats.requestsCount}</div>
-                    <div className="stat-label">Запросов сегодня</div>
+                    <div className="stat-value">{formatPrice(stats.totalOrdersRevenue)}</div>
+                    <div className="stat-label">Сумма заказов</div>
                   </div>
                 </div>
               )}

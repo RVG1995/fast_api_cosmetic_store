@@ -368,6 +368,24 @@ async def list_all_orders(
             detail="Произошла ошибка при получении списка заказов",
         )
 
+@admin_router.get("/statistics", response_model=OrderStatistics)
+async def get_admin_orders_statistics(
+    session: AsyncSession = Depends(get_db),
+    admin_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    """
+    Получение статистики по всем заказам (только для администраторов)
+    """
+    try:
+        statistics = await get_order_statistics(session)
+        return statistics
+    except Exception as e:
+        logger.error(f"Ошибка при получении статистики заказов: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при получении статистики заказов"
+        )
+
 @admin_router.get("/{order_id}", response_model=OrderDetailResponse)
 async def get_order_admin(
     order_id: int = Path(..., ge=1),

@@ -149,6 +149,7 @@ export const adminAPI = {
   getAllUsers: () => authApi.get('/admin/users'),
   activateUser: (userId) => authApi.patch(`/admin/users/${userId}/activate`),
   makeAdmin: (userId) => authApi.patch(`/admin/users/${userId}/make-admin`),
+  removeAdmin: (userId) => authApi.patch(`/admin/users/${userId}/remove-admin`),
   deleteUser: (userId) => authApi.delete(`/admin/users/${userId}`),
   checkAdminAccess: () => authApi.get('/admin/check-access'),
   checkSuperAdminAccess: () => authApi.get('/admin/check-super-access'),

@@ -51,6 +51,24 @@ const AdminUsers = () => {
     }
   };
 
+  const handleRemoveAdmin = async (userId) => {
+    if (!window.confirm('Вы уверены, что хотите отозвать права администратора у этого пользователя?')) {
+      return;
+    }
+    
+    try {
+      await adminAPI.removeAdmin(userId);
+      
+      // Обновляем пользователя в списке
+      setUsers(users.map(user => 
+        user.id === userId ? { ...user, is_admin: false } : user
+      ));
+    } catch (err) {
+      setError('Ошибка при отзыве прав администратора');
+      console.error(err);
+    }
+  };
+
   const handleDelete = async (userId) => {
     if (!window.confirm('Вы уверены, что хотите удалить этого пользователя?')) {
       return;
@@ -132,6 +150,15 @@ const AdminUsers = () => {
                             onClick={() => handleMakeAdmin(user.id)}
                           >
                             Сделать админом
+                          </button>
+                        )}
+                        
+                        {isSuperAdmin() && user.is_admin && !user.is_super_admin && (
+                          <button 
+                            className="btn btn-outline-warning"
+                            onClick={() => handleRemoveAdmin(user.id)}
+                          >
+                            Убрать права админа
                           </button>
                         )}
                         

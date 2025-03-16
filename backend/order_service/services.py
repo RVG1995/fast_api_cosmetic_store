@@ -9,6 +9,10 @@ from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHist
 from schemas import OrderCreate, OrderUpdate, OrderStatusHistoryCreate, OrderFilterParams, OrderStatistics
 from dependencies import check_products_availability, get_products_info
 from product_api import ProductAPI, get_product_api
+from cache import (
+    invalidate_order_cache, invalidate_statistics_cache, invalidate_order_statuses_cache,
+    cache_order, get_cached_order, cache_order_statistics, invalidate_cache, CacheKeys
+)
 
 # Настройка логирования
 logger = logging.getLogger("order_service")
@@ -119,6 +123,13 @@ async def create_order(
     )
     
     await session.flush()
+    
+    # После успешного создания заказа, не забываем инвалидировать кэш статистики
+    await invalidate_statistics_cache()
+    # Инвалидируем кэш списков заказов
+    await invalidate_cache(f"{CacheKeys.ORDERS_LIST}*")
+    logger.info(f"Кэш статистики и списков заказов инвалидирован после создания нового заказа")
+    
     return order
 
 async def get_order_by_id(session: AsyncSession, order_id: int, user_id: Optional[int] = None) -> Optional[OrderModel]:
@@ -220,16 +231,16 @@ async def update_order(
     user_id: Optional[int] = None
 ) -> Optional[OrderModel]:
     """
-    Обновление данных заказа
+    Обновление информации о заказе
     
     Args:
         session: Сессия базы данных
         order_id: ID заказа
         order_data: Данные для обновления
-        user_id: ID пользователя (для проверки доступа)
+        user_id: ID пользователя (для проверки доступа, если указан)
         
     Returns:
-        Обновленный заказ или None, если заказ не найден или пользователь не имеет доступа
+        Обновленный заказ или None, если заказ не найден
     """
     # Получаем заказ
     order = await get_order_by_id(session, order_id, user_id)
@@ -274,6 +285,13 @@ async def update_order(
     order.updated_at = datetime.utcnow()
     await session.flush()
     
+    # Инвалидируем кэш после обновления заказа
+    await invalidate_order_cache(order_id)
+    # Если изменился статус, то инвалидируем кэш статистики
+    if order_data.status_id is not None:
+        await invalidate_statistics_cache()
+    logger.info(f"Кэш заказа {order_id} инвалидирован после обновления")
+    
     return order
 
 async def change_order_status(
@@ -289,12 +307,12 @@ async def change_order_status(
     Args:
         session: Сессия базы данных
         order_id: ID заказа
-        status_data: Данные о новом статусе
+        status_data: Данные для изменения статуса
         user_id: ID пользователя, изменяющего статус
-        is_admin: Является ли пользователь администратором
+        is_admin: Флаг, указывающий, является ли пользователь администратором
         
     Returns:
-        Обновленный заказ или None, если заказ не найден или пользователь не имеет доступа
+        Заказ с обновленным статусом или None, если заказ не найден
     """
     # Получаем заказ
     order = await get_order_by_id(session, order_id)
@@ -333,6 +351,12 @@ async def change_order_status(
     )
     
     await session.flush()
+    
+    # Инвалидируем кэш после изменения статуса заказа
+    await invalidate_order_cache(order_id)
+    await invalidate_statistics_cache()
+    logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после изменения статуса")
+    
     return order
 
 async def cancel_order(
@@ -349,11 +373,11 @@ async def cancel_order(
         session: Сессия базы данных
         order_id: ID заказа
         user_id: ID пользователя, отменяющего заказ
-        is_admin: Является ли пользователь администратором
+        is_admin: Флаг, указывающий, является ли пользователь администратором
         cancel_reason: Причина отмены
         
     Returns:
-        Обновленный заказ или None, если заказ не найден или пользователь не имеет доступа
+        Отмененный заказ или None, если заказ не найден
     """
     # Получаем заказ
     order = await get_order_by_id(session, order_id)
@@ -400,6 +424,12 @@ async def cancel_order(
     )
     
     await session.flush()
+    
+    # Инвалидируем кэш после отмены заказа
+    await invalidate_order_cache(order_id)
+    await invalidate_statistics_cache()
+    logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после отмены заказа")
+    
     return order
 
 async def get_order_statistics(session: AsyncSession) -> OrderStatistics:

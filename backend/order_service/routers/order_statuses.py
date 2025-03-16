@@ -8,6 +8,10 @@ from database import get_db
 from models import OrderStatusModel
 from schemas import OrderStatusCreate, OrderStatusUpdate, OrderStatusResponse
 from dependencies import get_admin_user, get_current_user
+from cache import (
+    get_cached_order_statuses, cache_order_statuses, 
+    invalidate_order_statuses_cache
+)
 
 # Настройка логирования
 logger = logging.getLogger("order_status_router")
@@ -27,10 +31,23 @@ async def list_order_statuses(
     Получение списка всех статусов заказов.
     """
     try:
-        # Получаем все статусы заказов
+        # Пытаемся получить данные из кэша
+        cached_statuses = await get_cached_order_statuses()
+        if cached_statuses:
+            logger.info("Данные о статусах заказов получены из кэша")
+            return cached_statuses
+        
+        # Если данных нет в кэше, получаем из БД
         statuses = await OrderStatusModel.get_all(session)
         
-        return [OrderStatusResponse.model_validate(status) for status in statuses]
+        # Преобразуем модели в схемы
+        status_responses = [OrderStatusResponse.model_validate(status) for status in statuses]
+        
+        # Кэшируем результат
+        await cache_order_statuses(status_responses)
+        logger.info("Данные о статусах заказов добавлены в кэш")
+        
+        return status_responses
     except Exception as e:
         logger.error(f"Ошибка при получении списка статусов заказов: {str(e)}")
         raise HTTPException(
@@ -104,6 +121,10 @@ async def create_order_status(
         await session.commit()
         await session.refresh(order_status)
         
+        # Инвалидируем кэш статусов заказов
+        await invalidate_order_statuses_cache()
+        logger.info(f"Кэш статусов заказов инвалидирован после создания нового статуса: {status_data.name}")
+        
         return OrderStatusResponse.model_validate(order_status)
     except HTTPException:
         raise
@@ -171,6 +192,10 @@ async def update_order_status(
         await session.commit()
         await session.refresh(order_status)
         
+        # Инвалидируем кэш статусов заказов
+        await invalidate_order_statuses_cache()
+        logger.info(f"Кэш статусов заказов инвалидирован после обновления статуса с ID: {status_id}")
+        
         return OrderStatusResponse.model_validate(order_status)
     except HTTPException:
         raise
@@ -214,6 +239,10 @@ async def delete_order_status(
         # Удаляем статус заказа
         await session.delete(order_status)
         await session.commit()
+        
+        # Инвалидируем кэш статусов заказов
+        await invalidate_order_statuses_cache()
+        logger.info(f"Кэш статусов заказов инвалидирован после удаления статуса с ID: {status_id}")
         
         return None
     except HTTPException:

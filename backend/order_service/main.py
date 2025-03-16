@@ -20,6 +20,7 @@ from database import engine
 from routers.orders import router as order_router
 from routers.orders import admin_router as admin_order_router
 from routers.order_statuses import router as order_statuses_router
+from cache import close_redis
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -47,6 +48,10 @@ async def lifespan(app: FastAPI):
     
     # Код, выполняемый при остановке приложения
     logger.info("Завершение работы сервиса заказов...")
+    
+    # Закрытие соединений с Redis
+    await close_redis()
+    logger.info("Соединение с Redis закрыто")
     
     # Закрытие соединений с базой данных
     await engine.dispose()

@@ -20,6 +20,12 @@ from dependencies import (
     get_current_user, get_admin_user, get_order_filter_params,
     check_products_availability, get_products_info, clear_user_cart
 )
+from cache import (
+    get_cached_order, cache_order, invalidate_order_cache,
+    get_cached_user_orders, cache_user_orders,
+    get_cached_order_statistics, cache_order_statistics, invalidate_statistics_cache,
+    get_cached_orders_list, cache_orders_list
+)
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -155,7 +161,16 @@ async def list_my_orders(
             user_id=user_id
         )
         
-        # Получаем заказы
+        # Создаем ключ для кэша на основе параметров фильтрации
+        cache_key = f"p{page}_s{size}_st{status_id or 'all'}"
+        
+        # Пытаемся получить данные из кэша
+        cached_orders = await get_cached_user_orders(user_id, cache_key)
+        if cached_orders:
+            logger.info(f"Данные о заказах пользователя {user_id} получены из кэша")
+            return cached_orders
+        
+        # Если данных нет в кэше, получаем из БД
         orders, total = await get_orders(
             session=session,
             filters=filters,
@@ -163,13 +178,19 @@ async def list_my_orders(
         )
         
         # Формируем ответ с преобразованием моделей в схемы
-        return PaginatedResponse(
+        response = PaginatedResponse(
             items=[OrderResponse.model_validate(order) for order in orders],
             total=total,
             page=filters.page,
             size=filters.size,
             pages=0  # Будет вычислено в валидаторе
         )
+        
+        # Кэшируем результат
+        await cache_user_orders(user_id, cache_key, response)
+        logger.info(f"Данные о заказах пользователя {user_id} добавлены в кэш")
+        
+        return response
     except Exception as e:
         logger.error(f"Ошибка при получении списка заказов пользователя: {str(e)}")
         raise HTTPException(
@@ -193,7 +214,19 @@ async def get_user_statistics(
         )
     
     try:
+        # Пытаемся получить данные из кэша
+        cached_statistics = await get_cached_order_statistics(user_id)
+        if cached_statistics:
+            logger.info(f"Статистика заказов пользователя {user_id} получена из кэша")
+            return cached_statistics
+        
+        # Если данных нет в кэше, получаем из БД
         statistics = await get_user_order_statistics(session, user_id)
+        
+        # Кэшируем результат
+        await cache_order_statistics(statistics, user_id)
+        logger.info(f"Статистика заказов пользователя {user_id} добавлена в кэш")
+        
         return statistics
     except Exception as e:
         logger.error(f"Ошибка при получении статистики заказов пользователя: {str(e)}")
@@ -232,6 +265,20 @@ async def get_order(
         else:
             # Получаем ID пользователя из токена для обычных пользователей
             user_id = current_user["user_id"]
+        
+        # Пытаемся получить данные из кэша, если запрос не от сервиса
+        # Для запросов от сервисов всегда получаем свежие данные
+        if not current_user.get("is_service"):
+            cached_order = await get_cached_order(order_id)
+            if cached_order:
+                # Проверка доступа пользователя к заказу
+                if user_id and cached_order.user_id != user_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"У вас нет доступа к заказу с ID {order_id}",
+                    )
+                logger.info(f"Данные о заказе {order_id} получены из кэша")
+                return cached_order
             
         # Получаем заказ
         order = await get_order_by_id(
@@ -247,7 +294,14 @@ async def get_order(
             )
         
         # Преобразуем модель в схему
-        return OrderDetailResponse.model_validate(order)
+        order_response = OrderDetailResponse.model_validate(order)
+        
+        # Кэшируем результат, если запрос не от сервиса
+        if not current_user.get("is_service"):
+            await cache_order(order_id, order_response)
+            logger.info(f"Данные о заказе {order_id} добавлены в кэш")
+        
+        return order_response
     except HTTPException:
         raise
     except Exception as e:
@@ -304,6 +358,12 @@ async def cancel_order_endpoint(
         # Вручную запрашиваем заказ со всеми связанными данными
         loaded_order = await get_order_by_id(session, order.id)
         
+        # Инвалидируем кэш заказа
+        await invalidate_order_cache(order_id)
+        # Инвалидируем кэш статистики
+        await invalidate_statistics_cache()
+        logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после отмены заказа")
+        
         # Преобразуем модель в схему
         return OrderResponse.model_validate(loaded_order)
     except ValueError as e:
@@ -347,6 +407,15 @@ async def list_all_orders(
                    f"status_id={filters.status_id}, user_id={filters.user_id}, id={filters.id}, "
                    f"date_from={filters.date_from}, date_to={filters.date_to}")
         
+        # Создаем ключ для кэша на основе параметров фильтрации
+        cache_key = f"p{filters.page}_s{filters.size}_st{filters.status_id or 'all'}_u{filters.user_id or 'all'}_id{filters.id or 'all'}_df{filters.date_from or 'all'}_dt{filters.date_to or 'all'}_ob{filters.order_by or 'default'}_od{filters.order_dir or 'default'}"
+        
+        # Пытаемся получить данные из кэша
+        cached_orders = await get_cached_orders_list(cache_key)
+        if cached_orders:
+            logger.info(f"Данные о всех заказах получены из кэша")
+            return cached_orders
+        
         # Получаем заказы
         orders, total = await get_orders(
             session=session,
@@ -354,13 +423,19 @@ async def list_all_orders(
         )
         
         # Формируем ответ с преобразованием моделей в схемы
-        return PaginatedResponse(
+        response = PaginatedResponse(
             items=[OrderResponse.model_validate(order) for order in orders],
             total=total,
             page=filters.page,
             size=filters.size,
             pages=0  # Будет вычислено в валидаторе
         )
+        
+        # Кэшируем результат
+        await cache_orders_list(cache_key, response)
+        logger.info(f"Данные о всех заказах добавлены в кэш")
+        
+        return response
     except Exception as e:
         logger.error(f"Ошибка при получении списка заказов: {str(e)}")
         raise HTTPException(
@@ -377,7 +452,19 @@ async def get_admin_orders_statistics(
     Получение статистики по всем заказам (только для администраторов)
     """
     try:
+        # Пытаемся получить данные из кэша
+        cached_statistics = await get_cached_order_statistics()
+        if cached_statistics:
+            logger.info("Статистика всех заказов получена из кэша")
+            return cached_statistics
+        
+        # Если данных нет в кэше, получаем из БД
         statistics = await get_order_statistics(session)
+        
+        # Кэшируем результат
+        await cache_order_statistics(statistics)
+        logger.info("Статистика всех заказов добавлена в кэш")
+        
         return statistics
     except Exception as e:
         logger.error(f"Ошибка при получении статистики заказов: {str(e)}")
@@ -400,6 +487,12 @@ async def get_order_admin(
     try:
         logger.info(f"Запрос заказа администратором. ID заказа: {order_id}, ID пользователя: {current_user.get('user_id')}")
         
+        # Пытаемся получить данные из кэша
+        cached_order = await get_cached_order(order_id)
+        if cached_order:
+            logger.info(f"Данные о заказе {order_id} получены из кэша")
+            return cached_order
+        
         # Получаем заказ
         order = await get_order_by_id(
             session=session,
@@ -416,7 +509,13 @@ async def get_order_admin(
         logger.info(f"Заказ с ID {order_id} успешно найден для администратора")
         
         # Преобразуем модель в схему
-        return OrderDetailResponse.model_validate(order)
+        order_response = OrderDetailResponse.model_validate(order)
+        
+        # Кэшируем результат
+        await cache_order(order_id, order_response)
+        logger.info(f"Данные о заказе {order_id} добавлены в кэш")
+        
+        return order_response
     except HTTPException:
         raise
     except Exception as e:
@@ -471,6 +570,13 @@ async def update_order_admin(
         
         # Вручную запрашиваем заказ со всеми связанными данными
         loaded_order = await get_order_by_id(session, order.id)
+        
+        # Инвалидируем кэш заказа
+        await invalidate_order_cache(order_id)
+        # Инвалидируем кэш статистики, если изменился статус
+        if order_data.status_id is not None:
+            await invalidate_statistics_cache()
+        logger.info(f"Кэш заказа {order_id} инвалидирован после обновления заказа")
         
         # Преобразуем модель в схему
         return OrderResponse.model_validate(loaded_order)
@@ -559,6 +665,12 @@ async def update_order_status(
         
         # Фиксируем изменения в базе данных
         await session.commit()
+        
+        # Инвалидируем кэш заказа
+        await invalidate_order_cache(order_id)
+        # Инвалидируем кэш статистики
+        await invalidate_statistics_cache()
+        logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после изменения статуса с '{old_status_name}' на '{new_status_name}'")
         
         # Отправляем уведомление об изменении статуса
         from app.services.order_service import update_order_status

@@ -188,6 +188,55 @@ export const OrderProvider = ({ children }) => {
     }
   }, [token, ORDER_SERVICE_URL, getConfig, setCurrentOrder]);
 
+  // Получение статистики заказов пользователя
+  const getUserOrderStatistics = useCallback(async () => {
+    console.log('Вызов getUserOrderStatistics');
+    const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+    
+    if (!actualToken) {
+      console.error('Попытка получить статистику заказов без токена авторизации');
+      setError('Для просмотра статистики необходима авторизация');
+      return null;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    const url = `${ORDER_SERVICE_URL}/orders/statistics`;
+    console.log('URL запроса статистики заказов:', url);
+    
+    try {
+      const config = getConfig();
+      console.log('Заголовки запроса:', {
+        Authorization: config?.headers?.Authorization ? 'Bearer xxx...' : 'Отсутствует',
+        ContentType: config?.headers?.['Content-Type']
+      });
+      
+      const response = await axios.get(url, config);
+      console.log('Ответ от сервера getUserOrderStatistics:', response.status, response.data);
+      
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка при получении статистики заказов:', error);
+      
+      if (error.response) {
+        if (error.response.status === 401) {
+          setError('Для просмотра статистики необходима авторизация');
+        } else {
+          setError(`Ошибка сервера: ${error.response.data.detail || 'Неизвестная ошибка'}`);
+        }
+      } else if (error.request) {
+        setError('Не удалось получить ответ от сервера. Проверьте подключение к интернету');
+      } else {
+        setError(`Ошибка запроса: ${error.message}`);
+      }
+      
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [token, ORDER_SERVICE_URL, getConfig]);
+
   // Создание нового заказа
   const createOrder = useCallback(async (orderData) => {
     setLoading(true);
@@ -761,7 +810,8 @@ export const OrderProvider = ({ children }) => {
     createOrder,
     getUserOrders,
     getAllOrders,
-    getAdminOrderById
+    getAdminOrderById,
+    getUserOrderStatistics
   };
 
   return (

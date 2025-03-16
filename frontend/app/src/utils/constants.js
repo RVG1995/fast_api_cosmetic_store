@@ -21,6 +21,7 @@ export const ROUTES = {
   REGISTER: '/register',
   ACTIVATE: '/activate',
   USER: '/user',
+  USER_CHANGE_PASSWORD: '/user/change-password',
   ADMIN: '/admin',
   ADMIN_USERS: '/admin/users',
   ADMIN_PERMISSIONS: '/admin/permissions',

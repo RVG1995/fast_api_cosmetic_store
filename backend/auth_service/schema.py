@@ -45,3 +45,31 @@ class TokenShema(BaseModel):
 
 class TokenDataShema(BaseModel):
     email: Optional[str] = None
+
+class PasswordChangeSchema(BaseModel):
+    """Схема для смены пароля пользователя"""
+    current_password: str = Field(..., min_length=1, description="Текущий пароль")
+    new_password: str = Field(..., min_length=8, max_length=100, description="Новый пароль")
+    confirm_password: str = Field(..., min_length=8, max_length=100, description="Подтверждение нового пароля")
+    
+    @model_validator(mode="after")
+    def check_passwords_match(cls, model: "PasswordChangeSchema") -> "PasswordChangeSchema":
+        """Проверяет, что новый пароль и подтверждение пароля совпадают"""
+        if model.new_password != model.confirm_password:
+            raise ValueError("Новый пароль и подтверждение не совпадают")
+        
+        # Проверка, что новый пароль не совпадает со старым
+        if model.new_password == model.current_password:
+            raise ValueError("Новый пароль должен отличаться от текущего")
+            
+        return model
+    
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        """Проверяет сложность пароля"""
+        if not re.search(r"\d", value):
+            raise ValueError("Пароль должен содержать хотя бы одну цифру")
+        if not re.search(r"[A-Za-z]", value):
+            raise ValueError("Пароль должен содержать хотя бы одну букву")
+        return value

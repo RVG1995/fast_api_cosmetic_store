@@ -2,6 +2,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import RegistrationPage from './pages/auth/RegistrationPage';
 import UserInfoPage from './pages/user/UserInfoPage';
+import ChangePasswordPage from './pages/user/ChangePasswordPage'; // Импортируем страницу смены пароля
 import Layout from './components/layout/Layout';
 import { AuthProvider } from "./context/AuthContext"; // Импортируем провайдер
 import { CategoryProvider } from "./context/CategoryContext"; // Импортируем провайдер категорий
@@ -104,6 +105,14 @@ function App() {
                   element={
                     <PrivateRoute>
                       <UserInfoPage />
+                    </PrivateRoute>
+                  } 
+                />
+                <Route 
+                  path="user/change-password" 
+                  element={
+                    <PrivateRoute>
+                      <ChangePasswordPage />
                     </PrivateRoute>
                   } 
                 />

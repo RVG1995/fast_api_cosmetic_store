@@ -14,7 +14,7 @@ from schemas import (
 )
 from services import (
     create_order, get_order_by_id, get_orders, update_order, 
-    change_order_status, cancel_order, get_order_statistics
+    change_order_status, cancel_order, get_order_statistics, get_user_order_statistics
 )
 from dependencies import (
     get_current_user, get_admin_user, get_order_filter_params,
@@ -175,6 +175,31 @@ async def list_my_orders(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при получении списка заказов",
+        )
+
+@router.get("/statistics", response_model=OrderStatistics)
+async def get_user_statistics(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Получение статистики по заказам текущего пользователя
+    """
+    user_id = current_user.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Для получения статистики необходима авторизация"
+        )
+    
+    try:
+        statistics = await get_user_order_statistics(session, user_id)
+        return statistics
+    except Exception as e:
+        logger.error(f"Ошибка при получении статистики заказов пользователя: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при получении статистики заказов"
         )
 
 @router.get("/{order_id}", response_model=OrderDetailResponse)

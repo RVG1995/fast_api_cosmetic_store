@@ -1,12 +1,38 @@
 // src/pages/user/UserInfoPage.jsx
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { useOrders } from "../../context/OrderContext";
 import { Link } from "react-router-dom";
 // Добавим собственные стили
 import "../../styles/UserInfoPage.css";
 
 function UserInfoPage() {
   const { user } = useAuth();
+  const { getUserOrderStatistics, loading } = useOrders();
+  const [statistics, setStatistics] = useState({
+    total_orders: 0,
+    total_revenue: 0,
+    average_order_value: 0,
+    orders_by_status: {}
+  });
+  const [error, setError] = useState(null);
+
+  // Загрузка статистики при монтировании компонента
+  useEffect(() => {
+    const fetchStatistics = async () => {
+      try {
+        const data = await getUserOrderStatistics();
+        if (data) {
+          setStatistics(data);
+        }
+      } catch (err) {
+        console.error("Ошибка при загрузке статистики:", err);
+        setError("Не удалось загрузить статистику заказов");
+      }
+    };
+
+    fetchStatistics();
+  }, [getUserOrderStatistics]);
 
   return (
     <div className="py-5 bg-light">
@@ -45,9 +71,9 @@ function UserInfoPage() {
 
                 <div className="row mt-4">
                   <div className="col-md-6 mb-3">
-                    <button className="btn btn-primary w-100 py-2 rounded shadow-sm">
+                    <Link to="/user/change-password" className="btn btn-primary w-100 py-2 rounded shadow-sm">
                       Изменить пароль
-                    </button>
+                    </Link>
                   </div>
                   <div className="col-md-6 mb-3">
                     <button className="btn btn-light w-100 py-2 rounded shadow-sm">
@@ -69,59 +95,67 @@ function UserInfoPage() {
               
               {/* Тело карточки */}
               <div className="card-body bg-white p-4">
-                <div className="row g-4 mb-4">
-                  <div className="col-md-4 col-sm-4">
-                    <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
-                      <p className="fs-2 fw-bold text-primary mb-0">0</p>
-                      <p className="text-secondary">Заказов</p>
+                {loading ? (
+                  <div className="text-center py-4">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Загрузка...</span>
                     </div>
+                    <p className="mt-2">Загрузка статистики...</p>
                   </div>
-                  <div className="col-md-4 col-sm-4">
-                    <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
-                      <p className="fs-2 fw-bold text-success mb-0">0₽</p>
-                      <p className="text-secondary">Покупок</p>
-                    </div>
-                  </div>
-                  <div className="col-md-4 col-sm-4">
-                    <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
-                      <p className="fs-2 fw-bold text-custom-purple mb-0">0</p>
-                      <p className="text-secondary">Отзывов</p>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Список последних заказов */}
-                <div className="mt-4">
-                  <h3 className="fs-5 mb-3">Последние заказы</h3>
-                  
-                  <div className="orders-list">
-                    {/* Пустой список заказов */}
-                    <div className="text-center py-4 bg-light rounded border mb-3">
-                      <i className="bi bi-bag text-muted fs-1"></i>
-                      <p className="text-muted mt-2">У вас пока нет заказов</p>
-                    </div>
-                    
-                    {/* Отображение будет, когда появятся заказы
-                    <div className="order-item p-3 bg-light rounded border mb-2">
-                      <div className="d-flex justify-content-between align-items-center">
-                        <div>
-                          <p className="mb-0 fw-bold">Заказ #12345</p>
-                          <small className="text-muted">2023-05-15</small>
+                ) : error ? (
+                  <div className="alert alert-danger">{error}</div>
+                ) : (
+                  <>
+                    <div className="row g-4 mb-4">
+                      <div className="col-md-4 col-sm-4">
+                        <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
+                          <p className="fs-2 fw-bold text-primary mb-0">{statistics.total_orders}</p>
+                          <p className="text-secondary">Заказов</p>
                         </div>
-                        <span className="badge bg-success">Доставлен</span>
                       </div>
-                      <div className="mt-2">
-                        <small className="text-primary">3 товара на сумму 5,600₽</small>
+                      <div className="col-md-4 col-sm-4">
+                        <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
+                          <p className="fs-2 fw-bold text-success mb-0">{statistics.total_revenue}₽</p>
+                          <p className="text-secondary">Покупок</p>
+                        </div>
+                      </div>
+                      <div className="col-md-4 col-sm-4">
+                        <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
+                          <p className="fs-2 fw-bold text-custom-purple mb-0">{Math.round(statistics.average_order_value)}</p>
+                          <p className="text-secondary">Средний чек</p>
+                        </div>
                       </div>
                     </div>
-                    */}
                     
-                    <Link to="/orders" className="btn btn-primary w-100 mt-3">
-                      <i className="bi bi-list-ul me-2"></i>
-                      Все заказы
-                    </Link>
-                  </div>
-                </div>
+                    {/* Список последних заказов */}
+                    <div className="mt-4">
+                      <h3 className="fs-5 mb-3">Последние заказы</h3>
+                      
+                      <div className="orders-list">
+                        {statistics.total_orders === 0 ? (
+                          <div className="text-center py-4 bg-light rounded border mb-3">
+                            <i className="bi bi-bag text-muted fs-1"></i>
+                            <p className="text-muted mt-2">У вас пока нет заказов</p>
+                          </div>
+                        ) : (
+                          <div className="order-status-summary mb-3">
+                            {Object.entries(statistics.orders_by_status).map(([status, count]) => (
+                              <div key={status} className="d-flex justify-content-between align-items-center mb-2">
+                                <span>{status}</span>
+                                <span className="badge bg-primary">{count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        
+                        <Link to="/orders" className="btn btn-primary w-100 mt-3">
+                          <i className="bi bi-list-ul me-2"></i>
+                          Все заказы
+                        </Link>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

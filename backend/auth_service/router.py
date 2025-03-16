@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import  get_session
 from models import UserModel
 import jwt
-from schema import TokenShema, UserCreateShema, UserReadShema
+from schema import TokenShema, UserCreateShema, UserReadShema, PasswordChangeSchema
 from datetime import datetime, timedelta, timezone
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import secrets
@@ -296,3 +296,32 @@ async def activate_user(token: str, session: SessionDep, response: Response):
             "email": user.email
         }
     }
+
+@router.post("/change-password", status_code=status.HTTP_200_OK, summary="Смена пароля")
+async def change_password(
+    password_data: PasswordChangeSchema,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    Смена пароля пользователя.
+    
+    - **current_password**: Текущий пароль
+    - **new_password**: Новый пароль
+    """
+    # Проверяем текущий пароль
+    if not await verify_password(password_data.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неверный текущий пароль"
+        )
+    
+    # Хешируем новый пароль
+    hashed_password = await get_password_hash(password_data.new_password)
+    
+    # Обновляем пароль пользователя
+    current_user.hashed_password = hashed_password
+    session.add(current_user)
+    await session.commit()
+    
+    return {"status": "success", "message": "Пароль успешно изменен"}

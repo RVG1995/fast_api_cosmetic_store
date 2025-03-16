@@ -447,4 +447,54 @@ async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
         average_order_value=average_order_value,
         orders_by_status=orders_by_status,
         orders_by_payment_method=orders_by_payment_method
+    )
+
+async def get_user_order_statistics(session: AsyncSession, user_id: int) -> OrderStatistics:
+    """
+    Получение статистики по заказам конкретного пользователя
+    
+    Args:
+        session: Сессия базы данных
+        user_id: ID пользователя
+        
+    Returns:
+        Статистика по заказам пользователя
+    """
+    # Общее количество заказов пользователя
+    total_orders_query = select(func.count(OrderModel.id)).where(OrderModel.user_id == user_id)
+    total_orders_result = await session.execute(total_orders_query)
+    total_orders = total_orders_result.scalar() or 0
+    
+    # Общая сумма заказов пользователя
+    total_revenue_query = select(func.sum(OrderModel.total_price)).where(OrderModel.user_id == user_id)
+    total_revenue_result = await session.execute(total_revenue_query)
+    total_revenue = total_revenue_result.scalar() or 0
+    
+    # Средняя стоимость заказа
+    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
+    
+    # Количество заказов по статусам
+    orders_by_status_query = select(
+        OrderStatusModel.name,
+        func.count(OrderModel.id)
+    ).join(
+        OrderModel,
+        OrderStatusModel.id == OrderModel.status_id
+    ).where(
+        OrderModel.user_id == user_id
+    ).group_by(
+        OrderStatusModel.name
+    )
+    orders_by_status_result = await session.execute(orders_by_status_query)
+    orders_by_status = {row[0]: row[1] for row in orders_by_status_result}
+    
+    # Так как payment_method удалено, возвращаем пустой словарь
+    orders_by_payment_method = {}
+    
+    return OrderStatistics(
+        total_orders=total_orders,
+        total_revenue=total_revenue,
+        average_order_value=average_order_value,
+        orders_by_status=orders_by_status,
+        orders_by_payment_method=orders_by_payment_method
     ) 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useOrders } from '../../context/OrderContext';
 import { useAuth } from '../../context/AuthContext';
@@ -129,7 +129,7 @@ const OrderDetailPage = () => {
   }, [order]);
   
   // Обработчик отмены заказа
-  const handleCancelOrder = async () => {
+  const handleCancelOrder = useCallback(async () => {
     console.log('=== НАЧАЛО ФУНКЦИИ handleCancelOrder ===');
     console.log('ID заказа:', orderId);
     console.log('Причина отмены:', cancelReason);
@@ -148,6 +148,13 @@ const OrderDetailPage = () => {
         setOrder(result);
         setShowCancelModal(false);
         console.log('Закрываем модальное окно');
+        
+        // После успешной отмены запрашиваем актуальные данные заказа
+        const updatedOrder = await getOrderById(orderId);
+        if (updatedOrder) {
+          setOrder(updatedOrder);
+          console.log('Данные заказа обновлены после отмены');
+        }
       } else {
         console.error('Функция cancelOrder вернула null');
         setCancelError('Не удалось отменить заказ. Сервер вернул неверные данные.');
@@ -164,7 +171,13 @@ const OrderDetailPage = () => {
       setCancelLoading(false);
       console.log('=== ЗАВЕРШЕНИЕ ФУНКЦИИ handleCancelOrder ===');
     }
-  };
+  }, [orderId, cancelOrder, getOrderById, cancelReason, setCancelLoading, setCancelError, setShowCancelModal, setOrder]);
+  
+  // Вычисляем, можно ли отменить заказ
+  const canCancelOrder = useMemo(() => {
+    if (!order || !order.status) return false;
+    return order.status.allow_cancel && !order.status.is_final;
+  }, [order]);
   
   // Отображение загрузки
   if (loading && !order) {
@@ -290,12 +303,13 @@ const OrderDetailPage = () => {
               </Table>
               
               {/* Кнопка отмены заказа */}
-              {order.status && order.status.allow_cancel && !order.status.is_final && (
+              {canCancelOrder && (
                 <div className="mt-4 text-end">
                   <Button 
                     variant="danger" 
                     onClick={() => setShowCancelModal(true)}
                   >
+                    <i className="bi bi-x-circle me-2"></i>
                     Отменить заказ
                   </Button>
                 </div>

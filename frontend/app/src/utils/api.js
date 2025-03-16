@@ -135,6 +135,7 @@ export const authAPI = {
     }
     return response;
   }),
+  changePassword: (passwordData) => authApi.post('/auth/change-password', passwordData),
 };
 
 // API для работы с пользователями

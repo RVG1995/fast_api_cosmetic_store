@@ -66,6 +66,46 @@ async def create_superadmin() -> None:
     except Exception as e:
         print(f"Ошибка при создании суперпользователя: {e}")
 
+async def create_default_user() -> None:
+    """Создает обычного пользователя, если он не существует"""
+    try:
+        # Получаем данные из .env
+        user_email = os.getenv("DEFAULT_USER_EMAIL")
+        user_password = os.getenv("DEFAULT_USER_PASSWORD")
+        first_name = os.getenv("DEFAULT_USER_FIRST_NAME", "Default")
+        last_name = os.getenv("DEFAULT_USER_LAST_NAME", "User")
+        
+        if not user_email or not user_password:
+            print("DEFAULT_USER_EMAIL или DEFAULT_USER_PASSWORD не указаны в .env файле")
+            return
+        
+        # Используем уже существующую сессию new_session
+        async with new_session() as session:
+            # Проверяем, существует ли уже пользователь с заданным email
+            existing_user = await UserModel.get_by_email(session, user_email)
+            
+            if existing_user:
+                print(f"Пользователь с email {user_email} уже существует")
+                return
+                
+            # Создаем обычного пользователя
+            hashed_password = await get_password_hash(user_password)
+            
+            default_user = UserModel(
+                email=user_email,
+                hashed_password=hashed_password,
+                first_name=first_name,
+                last_name=last_name,
+                is_active=True,
+                is_admin=False,
+                is_super_admin=False
+            )
+            
+            session.add(default_user)
+            await session.commit()
+            print(f"Пользователь создан с email: {user_email}")
+    except Exception as e:
+        print(f"Ошибка при создании пользователя: {e}")
 
 async def setup_database():
     """

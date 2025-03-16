@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from database import setup_database, engine,create_superadmin
+from database import setup_database, engine, create_superadmin, create_default_user
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 async def lifespan(app: FastAPI):
     await setup_database()
     await create_superadmin()
+    await create_default_user()
     yield 
     await engine.dispose()
 

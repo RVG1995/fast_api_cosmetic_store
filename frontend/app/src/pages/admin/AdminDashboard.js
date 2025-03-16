@@ -1,10 +1,38 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { adminAPI } from '../../utils/api';
 import '../../styles/AdminDashboard.css';
 
 const AdminDashboard = () => {
   const { user, isSuperAdmin } = useAuth();
+  const [stats, setStats] = useState({
+    usersCount: 0,
+    productsCount: 0,
+    ordersCount: 0,
+    requestsCount: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Загрузка статистики при монтировании компонента
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        setLoading(true);
+        const statsData = await adminAPI.getDashboardStats();
+        setStats(statsData);
+        setError(null);
+      } catch (err) {
+        console.error('Ошибка при загрузке статистики:', err);
+        setError('Не удалось загрузить статистику. Пожалуйста, попробуйте позже.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []);
 
   return (
     <div className="admin-dashboard">
@@ -145,8 +173,8 @@ const AdminDashboard = () => {
         )}
       </div>
       
-      <div className="row">
-        {/* Статистика */}
+      <div className="row mb-4">
+        {/* Блок для статистики системы */}
         <div className="col-12">
           <div className="admin-card">
             <div className="admin-card-header">
@@ -154,24 +182,35 @@ const AdminDashboard = () => {
               <h3>Статистика системы</h3>
             </div>
             <div className="admin-card-body">
-              <div className="row stats">
-                <div className="col-md-3 stat-item">
-                  <div className="stat-value">125</div>
-                  <div className="stat-label">Пользователей</div>
+              {loading ? (
+                <div className="text-center py-3">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Загрузка...</span>
+                  </div>
+                  <p className="mt-2">Загрузка статистики...</p>
                 </div>
-                <div className="col-md-3 stat-item">
-                  <div className="stat-value">48</div>
-                  <div className="stat-label">Товаров</div>
+              ) : error ? (
+                <div className="alert alert-danger">{error}</div>
+              ) : (
+                <div className="row stats">
+                  <div className="col-md-3 stat-item">
+                    <div className="stat-value">{stats.usersCount}</div>
+                    <div className="stat-label">Пользователей</div>
+                  </div>
+                  <div className="col-md-3 stat-item">
+                    <div className="stat-value">{stats.productsCount}</div>
+                    <div className="stat-label">Товаров</div>
+                  </div>
+                  <div className="col-md-3 stat-item">
+                    <div className="stat-value">{stats.ordersCount}</div>
+                    <div className="stat-label">Заказов</div>
+                  </div>
+                  <div className="col-md-3 stat-item">
+                    <div className="stat-value">{stats.requestsCount}</div>
+                    <div className="stat-label">Запросов сегодня</div>
+                  </div>
                 </div>
-                <div className="col-md-3 stat-item">
-                  <div className="stat-value">12</div>
-                  <div className="stat-label">Категорий</div>
-                </div>
-                <div className="col-md-3 stat-item">
-                  <div className="stat-value">230</div>
-                  <div className="stat-label">Запросов сегодня</div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

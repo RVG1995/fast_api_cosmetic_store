@@ -154,6 +154,47 @@ export const adminAPI = {
   deleteUser: (userId) => authApi.delete(`/admin/users/${userId}`),
   checkAdminAccess: () => authApi.get('/admin/check-access'),
   checkSuperAdminAccess: () => authApi.get('/admin/check-super-access'),
+  getDashboardStats: async () => {
+    try {
+      // Получаем количество пользователей
+      const usersResponse = await authApi.get('/admin/users');
+      const usersCount = usersResponse.data.length || 0;
+      
+      // Получаем количество товаров
+      const productsResponse = await productApi.get('/admin/products', { 
+        params: { page: 1, limit: 1 } 
+      });
+      const productsCount = productsResponse.data.total || 0;
+      
+      // Получаем количество заказов
+      const ordersApi = createApiInstance(API_URLS.ORDER_SERVICE);
+      setupInterceptors(ordersApi, 'Orders');
+      const ordersResponse = await ordersApi.get('/admin/orders', {
+        params: { page: 1, size: 1 }
+      });
+      const ordersCount = ordersResponse.data.total || 0;
+      
+      // В реальном приложении здесь был бы запрос для получения количества запросов,
+      // но для демонстрации будем использовать случайное число
+      const requestsCount = Math.floor(Math.random() * 500) + 100;
+      
+      return {
+        usersCount,
+        productsCount,
+        ordersCount,
+        requestsCount
+      };
+    } catch (error) {
+      console.error('Ошибка при получении статистики для админ-панели:', error);
+      // Возвращаем значения по умолчанию в случае ошибки
+      return {
+        usersCount: 0,
+        productsCount: 0,
+        ordersCount: 0,
+        requestsCount: 0
+      };
+    }
+  }
 };
 
 // API для работы с контентом

@@ -288,7 +288,7 @@ export const productAPI = {
     
     console.log('Итоговые параметры запроса:', params);
     
-    return productApi.get('/admin/products', { params }).then(response => {
+    return productApi.get('products/admin', { params }).then(response => {
       console.log('API getAdminProducts ответ успешно получен');
       console.log('Параметры запроса были:', { page, pageSize, category_id, subcategory_id, brand_id, country_id, sort });
       console.log('Данные ответа (первые 2 товара):', response.data?.items?.slice(0, 2).map(item => ({

@@ -18,21 +18,27 @@ current_dir = pathlib.Path(__file__).parent.absolute()
 env_file = current_dir / ".env"
 parent_env_file = current_dir.parent / ".env"
 
-# Проверяем и загружаем .env файлы
+# Загружаем переменные окружения
 if env_file.exists():
-    logger.info(f"Загружаем .env из {env_file}")
     load_dotenv(dotenv_path=env_file)
+    logger.info(f"Переменные окружения загружены из {env_file}")
 elif parent_env_file.exists():
-    logger.info(f"Загружаем .env из {parent_env_file}")
     load_dotenv(dotenv_path=parent_env_file)
-else:
-    logger.warning("Файл .env не найден!")
+    logger.info(f"Переменные окружения загружены из {parent_env_file}")
+
+# URL сервиса продуктов
+PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
+logger.info(f"URL сервиса продуктов: {PRODUCT_SERVICE_URL}")
+
+# Секретный ключ для доступа к API продуктов
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
+logger.info(f"Ключ сервиса: '{INTERNAL_SERVICE_KEY}'")
 
 class ProductAPI:
     """Класс для взаимодействия с API сервиса продуктов"""
     
     def __init__(self):
-        self.base_url = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
+        self.base_url = PRODUCT_SERVICE_URL
         self.cache_ttl = int(os.getenv("PRODUCT_CACHE_TTL", "300"))  # TTL кэша в секундах (5 минут по умолчанию)
         self.max_retries = int(os.getenv("API_MAX_RETRIES", "3"))  # Максимальное число повторных попыток
         self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -229,9 +235,15 @@ class ProductAPI:
                 logger.info(f"Попытка пакетного запроса для {len(to_fetch_ids)} продуктов")
                 
                 async with httpx.AsyncClient() as client:
+                    # Добавляем заголовок Service-Key для авторизации
+                    headers = {
+                        "service-key": INTERNAL_SERVICE_KEY
+                    }
+                    
                     response = await client.post(
                         batch_url, 
                         json={"product_ids": to_fetch_ids}, 
+                        headers=headers,
                         timeout=15.0
                     )
                     

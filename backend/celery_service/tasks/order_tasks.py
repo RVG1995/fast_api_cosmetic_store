@@ -23,14 +23,15 @@ ORDER_SERVICE_URL = os.getenv('ORDER_SERVICE_URL', 'http://localhost:8003')
 # Сервисный API-ключ для внутренней авторизации между микросервисами
 SERVICE_API_KEY = os.getenv('SERVICE_API_KEY', 'service_secret_key_for_internal_use')
 
-# Получаем настройки SMTP из переменных окружения
-MAIL_USERNAME = os.getenv('MAIL_USERNAME', '')
-MAIL_PASSWORD = os.getenv('MAIL_PASSWORD', '')
-MAIL_FROM = os.getenv('MAIL_FROM', 'test@example.com')
-MAIL_PORT = int(os.getenv('MAIL_PORT', 465))
-MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
-MAIL_STARTTLS = os.getenv('MAIL_STARTTLS', 'False').lower() == 'true'
-MAIL_SSL_TLS = os.getenv('MAIL_SSL_TLS', 'True').lower() == 'true'
+# Получаем конфигурацию почтового сервера из переменных окружения
+MAIL_USERNAME = os.getenv("MAIL_USERNAME")
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
+MAIL_FROM = os.getenv("MAIL_FROM")
+MAIL_PORT = int(os.getenv("MAIL_PORT", 465))
+MAIL_SERVER = os.getenv("MAIL_SERVER")
+MAIL_STARTTLS = os.getenv("MAIL_STARTTLS", "False").lower() == "true"
+MAIL_SSL_TLS = os.getenv("MAIL_SSL_TLS", "True").lower() == "true"
+MAIL_TIMEOUT = int(os.getenv("MAIL_TIMEOUT", 30))  # Таймаут по умолчанию 30 секунд
 
 @app.task(name='order.process_abandoned_orders', bind=True, queue='order')
 def process_abandoned_orders(self, hours=24):
@@ -99,23 +100,49 @@ def send_order_confirmation(self, order_id, email):
             smtp_client = aiosmtplib.SMTP(
                 hostname=MAIL_SERVER, 
                 port=MAIL_PORT,
-                use_tls=MAIL_SSL_TLS
+                use_tls=MAIL_SSL_TLS,
+                timeout=MAIL_TIMEOUT  # Используем таймаут из переменных окружения
             )
                 
             try:
+                logger.info(f"Подключение к SMTP серверу {MAIL_SERVER}:{MAIL_PORT}, SSL/TLS: {MAIL_SSL_TLS}")
                 await smtp_client.connect()
+                
                 # Если нужен STARTTLS (обычно для порта 587)
                 if MAIL_STARTTLS:
+                    logger.info("Запуск STARTTLS")
                     await smtp_client.starttls()
                 
                 if MAIL_USERNAME and MAIL_PASSWORD:
+                    logger.info(f"Авторизация пользователя {MAIL_USERNAME}")
                     await smtp_client.login(MAIL_USERNAME, MAIL_PASSWORD)
                     
+                logger.info(f"Отправка email на {message['To']}")
                 await smtp_client.send_message(message)
+                logger.info("Email успешно отправлен")
+            except aiosmtplib.errors.SMTPConnectTimeoutError:
+                logger.error(f"Таймаут подключения к SMTP серверу {MAIL_SERVER}:{MAIL_PORT}")
+                raise
+            except aiosmtplib.errors.SMTPAuthenticationError:
+                logger.error(f"Ошибка аутентификации на SMTP сервере для пользователя {MAIL_USERNAME}")
+                raise
+            except Exception as e:
+                logger.error(f"Ошибка при отправке email: {str(e)}, {type(e)}")
+                raise
             finally:
-                await smtp_client.quit()
+                try:
+                    if hasattr(smtp_client, "is_connected") and smtp_client.is_connected:
+                        await smtp_client.quit()
+                except Exception as quit_error:
+                    logger.warning(f"Ошибка при закрытии SMTP соединения: {str(quit_error)}")
         
-        loop.run_until_complete(send_mail())
+        try:
+            loop.run_until_complete(send_mail())
+        except Exception as loop_error:
+            logger.error(f"Ошибка при выполнении цикла событий: {str(loop_error)}")
+            raise
+        finally:
+            loop.close()
         
         return {
             "status": "success", 
@@ -207,23 +234,49 @@ def send_status_update_email(self, order_id, new_status, email):
             smtp_client = aiosmtplib.SMTP(
                 hostname=MAIL_SERVER, 
                 port=MAIL_PORT,
-                use_tls=MAIL_SSL_TLS
+                use_tls=MAIL_SSL_TLS,
+                timeout=MAIL_TIMEOUT  # Используем таймаут из переменных окружения
             )
                 
             try:
+                logger.info(f"Подключение к SMTP серверу {MAIL_SERVER}:{MAIL_PORT}, SSL/TLS: {MAIL_SSL_TLS}")
                 await smtp_client.connect()
+                
                 # Если нужен STARTTLS (обычно для порта 587)
                 if MAIL_STARTTLS:
+                    logger.info("Запуск STARTTLS")
                     await smtp_client.starttls()
                 
                 if MAIL_USERNAME and MAIL_PASSWORD:
+                    logger.info(f"Авторизация пользователя {MAIL_USERNAME}")
                     await smtp_client.login(MAIL_USERNAME, MAIL_PASSWORD)
                     
+                logger.info(f"Отправка email на {message['To']}")
                 await smtp_client.send_message(message)
+                logger.info("Email успешно отправлен")
+            except aiosmtplib.errors.SMTPConnectTimeoutError:
+                logger.error(f"Таймаут подключения к SMTP серверу {MAIL_SERVER}:{MAIL_PORT}")
+                raise
+            except aiosmtplib.errors.SMTPAuthenticationError:
+                logger.error(f"Ошибка аутентификации на SMTP сервере для пользователя {MAIL_USERNAME}")
+                raise
+            except Exception as e:
+                logger.error(f"Ошибка при отправке email: {str(e)}, {type(e)}")
+                raise
             finally:
-                await smtp_client.quit()
+                try:
+                    if hasattr(smtp_client, "is_connected") and smtp_client.is_connected:
+                        await smtp_client.quit()
+                except Exception as quit_error:
+                    logger.warning(f"Ошибка при закрытии SMTP соединения: {str(quit_error)}")
         
-        loop.run_until_complete(send_mail())
+        try:
+            loop.run_until_complete(send_mail())
+        except Exception as loop_error:
+            logger.error(f"Ошибка при выполнении цикла событий: {str(loop_error)}")
+            raise
+        finally:
+            loop.close()
         
         return {
             "status": "success", 

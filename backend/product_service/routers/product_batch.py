@@ -4,6 +4,7 @@ from sqlalchemy import select
 from typing import List, Dict, Any, Optional, Annotated
 import os
 import logging
+import fastapi
 
 from models import ProductModel
 from database import get_session
@@ -27,22 +28,43 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 async def get_products_batch(
     session: SessionDep,
     product_ids: List[int] = Body(..., embed=True, description="Список ID продуктов"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    service_key: Optional[str] = Header(None, alias="service-key", description="Секретный ключ для доступа к API (альтернатива авторизации)")
 ):
     """
     Получить информацию о нескольких продуктах по их ID.
     Возвращает список объектов продуктов для всех найденных ID.
-    Требуются права администратора.
+    Требуются права администратора или валидный ключ сервиса.
     """
     logger.info(f"Пакетный запрос информации о продуктах: {product_ids}")
+    logger.info(f"Заголовок service-key: '{service_key}'")
+    logger.info(f"Все заголовки запроса: {request.headers}")
     
-    # Проверка прав администратора
-    if not current_user:
+    # Проверка авторизации: или авторизованный пользователь с правами администратора или валидный ключ сервиса
+    INTERNAL_SERVICE_KEY = "test"  # Жестко задаем значение для тестирования
+    logger.info(f"Ожидаемый ключ сервиса: '{INTERNAL_SERVICE_KEY}'")
+    
+    authorized = False
+    
+    # Проверка через ключ сервиса с маленькой буквы
+    if service_key and service_key.strip('"') == INTERNAL_SERVICE_KEY:
+        logger.info("Авторизация через ключ сервиса (service-key) успешна")
+        authorized = True
+    # Проверка через ключ сервиса с большой буквы (из заголовков)
+    elif request.headers.get("Service-Key", "").strip('"') == INTERNAL_SERVICE_KEY:
+        logger.info("Авторизация через ключ сервиса (Service-Key) успешна")
+        authorized = True
+    # Проверка через пользователя
+    elif current_user:
+        if getattr(current_user, 'is_admin', False) or getattr(current_user, 'is_super_admin', False):
+            logger.info(f"Авторизация через пользователя {current_user.id} успешна")
+            authorized = True
+        else:
+            logger.warning(f"Пользователь {current_user.id} пытался получить пакетный доступ к продуктам без прав администратора")
+    
+    if not authorized:
+        logger.error("Не авторизован: ни через ключ сервиса, ни через пользователя")
         raise HTTPException(status_code=401, detail="Требуется авторизация")
-    
-    if not getattr(current_user, 'is_admin', False) and not getattr(current_user, 'is_super_admin', False):
-        logger.warning(f"Пользователь {current_user.id} пытался получить пакетный доступ к продуктам без прав администратора")
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
     
     if not product_ids:
         return []
@@ -71,7 +93,7 @@ async def get_products_batch(
 async def get_products_public_batch(
     session: SessionDep,
     product_ids: List[int] = Body(..., embed=True, description="Список ID продуктов"),
-    service_key: str = Header(..., alias="Service-Key", description="Секретный ключ для доступа к API")
+    service_key: str = Header(..., alias="service-key", description="Секретный ключ для доступа к API")
 ):
     """
     Публичный API для получения информации о нескольких продуктах по их ID.
@@ -165,7 +187,7 @@ async def update_product_public_stock(
     product_id: int,
     session: SessionDep,
     data: dict = Body(..., description="Данные для обновления остатка"),
-    service_key: str = Header(..., alias="Service-Key", description="Секретный ключ для доступа к API")
+    service_key: str = Header(..., alias="service-key", description="Секретный ключ для доступа к API")
 ):
     """
     Публичный API для обновления количества товара на складе.

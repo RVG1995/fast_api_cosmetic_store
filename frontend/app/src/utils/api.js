@@ -161,7 +161,7 @@ export const adminAPI = {
       const usersCount = usersResponse.data.length || 0;
       
       // Получаем количество товаров
-      const productsResponse = await productApi.get('/admin/products', { 
+      const productsResponse = await productApi.get('products/admin', { 
         params: { page: 1, limit: 1 } 
       });
       const productsCount = productsResponse.data.total || 0;

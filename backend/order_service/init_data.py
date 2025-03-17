@@ -74,45 +74,28 @@ DEFAULT_ORDER_STATUSES = [
 
 async def init_order_statuses():
     """
-    Инициализация статусов заказа в базе данных
+    Инициализация статусов заказа в базе данных.
+    Добавляет только отсутствующие статусы, не затрагивая существующие.
     """
     async with async_session() as session:
-        # Проверяем, есть ли уже статусы в базе
+        # Проверяем существующие статусы
         query = select(OrderStatusModel)
         result = await session.execute(query)
         existing_statuses = result.scalars().all()
         
-        if existing_statuses:
-            logger.info(f"В базе данных уже есть {len(existing_statuses)} статусов заказа")
-            return
+        # Создаем словарь существующих статусов по имени
+        existing_status_names = {status.name for status in existing_statuses}
         
-        # Создаем статусы заказа
+        # Добавляем только отсутствующие статусы
+        statuses_to_add = []
         for status_data in DEFAULT_ORDER_STATUSES:
-            status = OrderStatusModel(**status_data)
-            session.add(status)
+            if status_data["name"] not in existing_status_names:
+                status = OrderStatusModel(**status_data)
+                statuses_to_add.append(status)
         
-        await session.commit()
-        logger.info(f"Добавлено {len(DEFAULT_ORDER_STATUSES)} статусов заказа")
-
-async def main():
-    # Создаем таблицы, если их нет
-    async with engine.begin() as conn:
-        try:
-            # Удаляем существующие таблицы
-            await conn.run_sync(Base.metadata.drop_all)
-            logger.info("Существующие таблицы удалены")
-            
-            # Создаем таблицы заново
-            await conn.run_sync(Base.metadata.create_all)
-            logger.info("Таблицы базы данных созданы")
-        except Exception as e:
-            logger.error(f"Ошибка при создании таблиц: {str(e)}")
-    
-    # Инициализируем данные
-    await init_order_statuses()
-    
-    # Закрываем соединение с базой данных
-    await engine.dispose()
-
-if __name__ == "__main__":
-    asyncio.run(main()) 
+        if statuses_to_add:
+            session.add_all(statuses_to_add)
+            await session.commit()
+            logger.info(f"Добавлено {len(statuses_to_add)} новых статусов заказа")
+        else:
+            logger.info("Все статусы заказа уже существуют в базе данных")

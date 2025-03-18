@@ -34,6 +34,9 @@ else:
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")  # Значение по умолчанию для тестирования
 ALGORITHM = "HS256"
 
+# Сервисный API-ключ
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "service_secret_key_for_internal_use")
+
 logger.info(f"Загружена конфигурация JWT. SECRET_KEY: {SECRET_KEY[:5]}...")
 
 # Схема авторизации через OAuth2
@@ -163,8 +166,7 @@ async def get_current_admin_user(
         Optional[User]: Пользователь с админ-правами, или None для сервисного ключа
     """
     # Проверка сервисного ключа для межсервисного взаимодействия
-    internal_service_key = os.getenv("INTERNAL_SERVICE_KEY", "test")
-    if service_key and service_key == internal_service_key:
+    if service_key and service_key == INTERNAL_SERVICE_KEY:
         logger.info("Запрос авторизован через сервисный ключ")
         # Для сервисного запроса возвращаем None (означает, что авторизация прошла через ключ)
         return None

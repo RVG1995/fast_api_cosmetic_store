@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+import httpx
 
 # Добавляем родительскую директорию в sys.path, если её ещё нет
 current_dir = Path(__file__).parent.absolute()
@@ -14,6 +15,8 @@ from celery_app import app
 
 logger = logging.getLogger(__name__)
 CART_SERVICE_URL = os.getenv('CART_SERVICE_URL', 'http://cart_service:8000')
+# Сервисный API-ключ для внутренней авторизации между микросервисами
+INTERNAL_SERVICE_KEY = os.getenv('INTERNAL_SERVICE_KEY', 'service_secret_key_for_internal_use')
 
 @app.task(name='cart.cleanup_old_anonymous_carts', bind=True, queue='cart')
 def cleanup_old_anonymous_carts(self, days=1):
@@ -28,20 +31,31 @@ def cleanup_old_anonymous_carts(self, days=1):
     """
     logger.info(f"Запуск очистки анонимных корзин старше {days} дней")
     try:
-        # В реальной реализации здесь должен быть HTTP-запрос к cart_service
-        # для выполнения очистки или прямое обращение к базе данных
+        # Выполняем HTTP-запрос к cart_service для удаления устаревших корзин
+        headers = {
+            "Content-Type": "application/json",
+            "service-key": INTERNAL_SERVICE_KEY
+        }
         
-        # Пример реализации:
-        # response = httpx.post(
-        #     f"{CART_SERVICE_URL}/api/carts/cleanup",
-        #     json={"days": days}
-        # )
-        # if response.status_code == 200:
-        #     result = response.json()
-        #     return {"status": "success", "deleted_count": result.get("deleted_count", 0)}
+        logger.info(f"Отправка запроса на {CART_SERVICE_URL}/cart/cleanup с days={days}")
+        response = httpx.post(
+            f"{CART_SERVICE_URL}/cart/cleanup",
+            json={"days": days},
+            headers=headers
+        )
         
-        # Временная заглушка
-        return {"status": "success", "message": f"Очистка корзин старше {days} дней выполнена", "deleted_count": 0}
+        if response.status_code == 200:
+            result = response.json()
+            deleted_count = result.get("deleted_count", 0)
+            logger.info(f"Успешно удалено {deleted_count} устаревших анонимных корзин")
+            return {
+                "status": "success", 
+                "message": f"Очистка корзин старше {days} дней выполнена", 
+                "deleted_count": deleted_count
+            }
+        else:
+            logger.error(f"Ошибка при вызове API удаления корзин: {response.status_code} - {response.text}")
+            raise Exception(f"API error: {response.status_code} - {response.text}")
     
     except Exception as e:
         logger.error(f"Ошибка при очистке анонимных корзин: {str(e)}")

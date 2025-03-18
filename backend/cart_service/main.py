@@ -18,9 +18,8 @@ from typing import Optional, List, Dict, Any, Annotated
 import logging
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
-from tasks import cleanup_old_anonymous_carts
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -817,47 +816,68 @@ async def merge_carts(
     }
 
 @app.post("/cart/cleanup", response_model=CleanupResponseSchema, tags=["Администрирование"])
-async def cleanup_anonymous_carts(days: int = 1, current_user: User = Depends(get_current_user)):
+async def cleanup_anonymous_carts(
+    days: int = 1, 
+    current_user: Optional[User] = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_session)
+):
     """
-    Запускает ручную очистку устаревших анонимных корзин.
+    Очищает устаревшие анонимные корзины.
     
     Args:
         days: Количество дней с момента последнего обновления, после которого корзина считается устаревшей
-        current_user: Текущий пользователь (должен иметь права администратора)
+        current_user: Текущий пользователь (должен иметь права администратора) или None если используется Service-Key
     """
     # Проверка, что пользователь авторизован и имеет права администратора
-    if not current_user:
-        logger.warning("Попытка доступа к функции очистки без авторизации")
-        raise HTTPException(
-            status_code=401,
-            detail="Для выполнения этой операции требуется авторизация",
-        )
-    
-    if not getattr(current_user, 'is_admin', False) and not getattr(current_user, 'is_super_admin', False):
+    if current_user and not getattr(current_user, 'is_admin', False) and not getattr(current_user, 'is_super_admin', False):
         logger.warning(f"Пользователь {current_user.id} не имеет прав администратора")
         raise HTTPException(
             status_code=403,
             detail="Для выполнения этой операции требуются права администратора",
         )
     
-    logger.info(f"Запуск ручной очистки анонимных корзин старше {days} дней пользователем {current_user.id}")
+    user_info = f"пользователем {current_user.id}" if current_user else "через сервисный ключ"
+    logger.info(f"Запуск очистки анонимных корзин старше {days} дней {user_info}")
     
-    # Запускаем задачу Celery асинхронно
-    task = cleanup_old_anonymous_carts.delay(days)
-    
-    # Получаем результат (для синхронной обработки)
-    # Примечание: в продакшене возможно стоит вернуть только task.id и статус, а не ждать завершения
     try:
-        result = task.get(timeout=30)  # Ждем результат не более 30 секунд
-        logger.info(f"Задача очистки выполнена, удалено корзин: {result}")
+        # Определяем дату, после которой корзины считаются устаревшими
+        cutoff_date = datetime.now() - timedelta(days=days)
+        
+        # Выбираем анонимные корзины (с session_id, но без user_id), 
+        # которые не обновлялись более указанного времени
+        query = select(CartModel).filter(
+            CartModel.user_id == None,  # Только анонимные корзины
+            CartModel.session_id != None,  # С указанным session_id
+            CartModel.updated_at < cutoff_date  # Не обновлялись в указанный период
+        )
+        
+        result = await db.execute(query)
+        carts_to_delete = result.scalars().all()
+        
+        if not carts_to_delete:
+            logger.info("Не найдено устаревших анонимных корзин для удаления")
+            return {
+                "success": True,
+                "deleted_count": 0,
+                "message": "Не найдено устаревших анонимных корзин для удаления"
+            }
+        
+        deleted_count = 0
+        for cart in carts_to_delete:
+            logger.info(f"Удаление корзины ID {cart.id}, session_id: {cart.session_id}, последнее обновление: {cart.updated_at}")
+            await db.delete(cart)
+            deleted_count += 1
+        
+        await db.commit()
+        logger.info(f"Удалено устаревших анонимных корзин: {deleted_count}")
         
         return {
             "success": True,
-            "deleted_count": result,
-            "message": f"Успешно удалено {result} устаревших анонимных корзин"
+            "deleted_count": deleted_count,
+            "message": f"Успешно удалено {deleted_count} устаревших анонимных корзин"
         }
     except Exception as e:
-        logger.error(f"Ошибка при выполнении задачи очистки: {str(e)}")
+        logger.error(f"Ошибка при очистке анонимных корзин: {str(e)}")
         return {
             "success": False,
             "deleted_count": 0,

@@ -173,11 +173,14 @@ if [ -d "$BACKEND_DIR/celery_service" ]; then
         start_service "celery_worker" "$BACKEND_DIR/celery_service" "./run_dev.sh worker"
         sleep 3  # Ждем, чтобы worker успел запуститься
         
+        # Запуск Celery beat для планировщика задач
+        start_service "celery_beat" "$BACKEND_DIR/celery_service" "./run_dev.sh beat"
+        
         # Запуск Flower для мониторинга
         start_service "celery_flower" "$BACKEND_DIR/celery_service" "./run_dev.sh flower"
         sleep 2
         
-        print_message "${GREEN}[INFO]${NC} Celery worker и Flower запущены. Мониторинг доступен по адресу: http://localhost:5555"
+        print_message "${GREEN}[INFO]${NC} Celery worker, beat и Flower запущены. Мониторинг доступен по адресу: http://localhost:5555"
     else
         print_message "${YELLOW}[WARNING]${NC} Скрипт run_dev.sh не найден. Celery не будет запущен."
     fi

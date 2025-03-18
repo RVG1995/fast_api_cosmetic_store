@@ -142,4 +142,51 @@ async def get_current_user(
         return User(id=int(user_id), is_admin=is_admin, is_super_admin=is_super_admin, is_active=is_active)
     except jwt.PyJWTError as e:
         logger.warning(f"Ошибка проверки JWT: {str(e)}")
-        return None 
+        return None
+
+async def get_current_admin_user(
+    token: Annotated[Optional[str], Depends(get_token_from_cookie_or_header)],
+    service_key: Optional[str] = Header(None, alias="service-key")
+) -> Optional[User]:
+    """
+    Проверяет, что текущий пользователь является администратором,
+    или что запрос содержит правильный сервисный ключ.
+    
+    Если пользователь не аутентифицирован и сервисный ключ неверный, 
+    выбрасывает исключение 401 Unauthorized.
+    
+    Args:
+        token: JWT токен
+        service_key: Секретный ключ для межсервисного взаимодействия
+        
+    Returns:
+        Optional[User]: Пользователь с админ-правами, или None для сервисного ключа
+    """
+    # Проверка сервисного ключа для межсервисного взаимодействия
+    internal_service_key = os.getenv("INTERNAL_SERVICE_KEY", "test")
+    if service_key and service_key == internal_service_key:
+        logger.info("Запрос авторизован через сервисный ключ")
+        # Для сервисного запроса возвращаем None (означает, что авторизация прошла через ключ)
+        return None
+    
+    # Если нет сервисного ключа, проверяем наличие пользователя с правами админа
+    user = await get_current_user(token)
+    
+    if not user:
+        logger.warning("Отсутствует авторизованный пользователь и сервисный ключ")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Требуется авторизация или сервисный ключ",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    # Проверяем, что пользователь имеет права администратора
+    if not (user.is_admin or user.is_super_admin):
+        logger.warning(f"Пользователь {user.id} не имеет прав администратора")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав для выполнения операции"
+        )
+    
+    logger.info(f"Администратор {user.id} успешно авторизован")
+    return user 

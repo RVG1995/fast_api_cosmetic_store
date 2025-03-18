@@ -127,4 +127,9 @@ async def get_cached_order_statuses() -> Optional[Any]:
 
 async def invalidate_order_statuses_cache() -> None:
     """Инвалидация кэша статусов заказов"""
-    await invalidate_cache(f"{CacheKeys.ORDER_STATUSES}*") 
+    await invalidate_cache(f"{CacheKeys.ORDER_STATUSES}*")
+
+async def invalidate_user_orders_cache(user_id: int) -> None:
+    """Инвалидация кэша заказов пользователя"""
+    await invalidate_cache(f"{CacheKeys.USER_ORDERS}{user_id}:*")
+    logger.info(f"Инвалидирован кэш заказов пользователя {user_id}") 

@@ -122,20 +122,36 @@ const CheckoutPage = () => {
       
       if (result) {
         console.log("Заказ успешно создан с ID:", result.id);
+        // Создаем номер заказа в формате "ID-ГОД" из даты создания заказа
+        let orderYear;
+        if (result.created_at) {
+          // Используем год из даты создания заказа
+          orderYear = new Date(result.created_at).getFullYear();
+        } else {
+          // Если дата создания недоступна, используем текущий год
+          orderYear = new Date().getFullYear();
+        }
+        const formattedOrderNumber = `${result.id}-${orderYear}`;
         setOrderSuccess(true);
-        setOrderNumber(result.id);
-        clearCart(); // Очищаем корзину после успешного заказа
+        setOrderNumber(formattedOrderNumber);
         
-        // Через 5 секунд перенаправляем на страницу заказов
-        setTimeout(() => {
+        // Откладываем очистку корзины и редирект на 15 секунд
+        const redirectTimer = setTimeout(() => {
+          clearCart(); // Очищаем корзину непосредственно перед редиректом
           navigate('/orders');
-        }, 5000);
+        }, 15000);
+        
+        // Сохраняем ID таймера для возможности его отмены при ручном переходе
+        setRedirectTimer(redirectTimer);
       }
     } catch (err) {
       console.error("Ошибка создания заказа:", err);
       // Лог ошибки уже выполняется в контексте заказов
     }
   };
+  
+  // Добавляем состояние для хранения ID таймера
+  const [redirectTimer, setRedirectTimer] = useState(null);
   
   // Если заказ успешно создан, показываем сообщение об успехе
   if (orderSuccess) {
@@ -147,10 +163,17 @@ const CheckoutPage = () => {
             <h2>Заказ успешно оформлен!</h2>
             <p>Ваш номер заказа: <strong>{orderNumber}</strong></p>
             <p>Мы отправили подтверждение на вашу электронную почту.</p>
-            <p>Вы будете перенаправлены на страницу заказов через 5 секунд...</p>
+            <p>Вы будете перенаправлены на страницу заказов через 15 секунд...</p>
             <Button 
               variant="primary" 
-              onClick={() => navigate('/orders')}
+              onClick={() => {
+                // Отменяем таймер автоматического редиректа
+                if (redirectTimer) {
+                  clearTimeout(redirectTimer);
+                }
+                clearCart(); // Очищаем корзину перед редиректом
+                navigate('/orders');
+              }}
               className="mt-3"
             >
               Перейти к заказам

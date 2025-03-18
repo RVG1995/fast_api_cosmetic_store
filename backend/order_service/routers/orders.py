@@ -24,7 +24,7 @@ from cache import (
     get_cached_order, cache_order, invalidate_order_cache,
     get_cached_user_orders, cache_user_orders,
     get_cached_order_statistics, cache_order_statistics, invalidate_statistics_cache,
-    get_cached_orders_list, cache_orders_list
+    get_cached_orders_list, cache_orders_list, invalidate_cache, CacheKeys, invalidate_user_orders_cache
 )
 
 # Загрузка переменных окружения
@@ -110,6 +110,10 @@ async def create_new_order(
             logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
             task_id = send_order_confirmation(order.id, order_data.email)
             logger.info(f"Задача подтверждения заказа {order.id} отправлена в Celery, task_id: {task_id}")
+        
+        # Явно инвалидируем кэш заказов перед возвратом ответа
+        await invalidate_order_cache(order.id)
+        logger.info(f"Кэш заказа {order.id} и связанных списков инвалидирован перед возвратом ответа")
         
         # Преобразуем модель в схему
         return OrderResponse.model_validate(loaded_order)

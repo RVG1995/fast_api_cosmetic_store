@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 from contextlib import asynccontextmanager
 from models import CartModel, CartItemModel
 from database import setup_database, get_session, engine
-from auth import get_current_user, get_session_id, User
+from auth import get_current_user, get_session_id, User, get_current_admin_user
 from schema import (
     CartItemAddSchema, CartItemUpdateSchema, CartSchema, 
     CartResponseSchema, ProductInfoSchema, CartSummarySchema,

@@ -253,7 +253,7 @@ async def get_user_cart(user_id: int) -> Dict[str, Any]:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{CART_SERVICE_URL}/api/cart/user/{user_id}",
+                f"{CART_SERVICE_URL}/cart/user/{user_id}",
                 timeout=5.0
             )
             
@@ -288,7 +288,7 @@ async def clear_user_cart(user_id: int) -> bool:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.delete(
-                f"{CART_SERVICE_URL}/api/cart/user/{user_id}",
+                f"{CART_SERVICE_URL}/cart/user/{user_id}",
                 timeout=5.0
             )
             

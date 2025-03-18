@@ -37,9 +37,7 @@ async def get_products_batch(
     Требуются права администратора или валидный ключ сервиса.
     """
     logger.info(f"Пакетный запрос информации о продуктах: {product_ids}")
-    logger.info(f"Заголовок service-key: '{service_key}'")
-    logger.info(f"Все заголовки запроса: {request.headers}")
-    
+    logger.info(f"Заголовок service-key: '{service_key}'")    
     # Проверка авторизации: или авторизованный пользователь с правами администратора или валидный ключ сервиса
     INTERNAL_SERVICE_KEY = "test"  # Жестко задаем значение для тестирования
     logger.info(f"Ожидаемый ключ сервиса: '{INTERNAL_SERVICE_KEY}'")
@@ -49,10 +47,6 @@ async def get_products_batch(
     # Проверка через ключ сервиса с маленькой буквы
     if service_key and service_key.strip('"') == INTERNAL_SERVICE_KEY:
         logger.info("Авторизация через ключ сервиса (service-key) успешна")
-        authorized = True
-    # Проверка через ключ сервиса с большой буквы (из заголовков)
-    elif request.headers.get("Service-Key", "").strip('"') == INTERNAL_SERVICE_KEY:
-        logger.info("Авторизация через ключ сервиса (Service-Key) успешна")
         authorized = True
     # Проверка через пользователя
     elif current_user:

@@ -11,7 +11,7 @@ from dependencies import check_products_availability, get_products_info
 from product_api import ProductAPI, get_product_api
 from cache import (
     invalidate_order_cache, invalidate_statistics_cache, invalidate_order_statuses_cache,
-    cache_order, get_cached_order, cache_order_statistics, invalidate_cache, CacheKeys
+    cache_order, get_cached_order, cache_order_statistics, invalidate_cache, CacheKeys, invalidate_user_orders_cache
 )
 
 # Настройка логирования
@@ -124,11 +124,9 @@ async def create_order(
     
     await session.flush()
     
-    # После успешного создания заказа, не забываем инвалидировать кэш статистики
-    await invalidate_statistics_cache()
-    # Инвалидируем кэш списков заказов
-    await invalidate_cache(f"{CacheKeys.ORDERS_LIST}*")
-    logger.info(f"Кэш статистики и списков заказов инвалидирован после создания нового заказа")
+    # Инвалидируем кэш после создания заказа
+    await invalidate_order_cache(order.id)
+    logger.info(f"Кэш заказа {order.id} и связанных списков инвалидирован после создания")
     
     return order
 

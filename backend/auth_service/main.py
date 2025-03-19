@@ -5,8 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from router import router as auth_router
 from admin_router import router as admin_router
+import logging
 
-
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from fastapi.staticfiles import StaticFiles
 
@@ -26,9 +29,18 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Расширяем список разрешенных источников
 origins = [
     "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1",
+    # Добавляем и другие источники, которые могут быть использованы в разработке
 ]
+
+logger.info(f"Настройка CORS с разрешенными источниками: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,7 +48,16 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]  # Разрешаем доступ к заголовкам ответа
 )
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info(f"Получен запрос: {request.method} {request.url}")
+    logger.info(f"Заголовки запроса: {request.headers}")
+    response = await call_next(request)
+    logger.info(f"Ответ: {response.status_code}")
+    return response
 
 app.include_router(auth_router)
 app.include_router(admin_router)

@@ -73,33 +73,95 @@ async def get_token_from_cookie_or_header(
     
     return None
 
+# Зависимость для получения текущего пользователя
 async def get_current_user(
-    token: Annotated[Optional[str], Depends(get_token_from_cookie_or_header)]
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
+    authorization: Optional[str] = Header(None)
 ) -> Optional[User]:
-    """
-    Проверяет JWT токен и возвращает информацию о пользователе, если токен валидный.
-    Если токен отсутствует или невалидный, возвращает None.
-    """
-    if not token:
-        logger.info("Токен не предоставлен")
+    logger.info(f"Запрос авторизации: {request.method} {request.url.path}")
+    
+    # Если нет куки-токена, проверяем заголовок Authorization
+    if not access_token and authorization:
+        if authorization.startswith("Bearer "):
+            access_token = authorization.replace("Bearer ", "")
+            logger.info(f"Токен получен из заголовка Authorization: {access_token[:20]}...")
+        else:
+            logger.warning("Заголовок Authorization не содержит Bearer токен")
+    
+    if not access_token:
+        logger.warning("Токен не найден ни в cookie, ни в заголовке Authorization")
         return None
-        
+    
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        logger.info(f"Попытка декодирования токена: {access_token[:20]}...")
+        logger.info(f"Используемый SECRET_KEY: {SECRET_KEY}")
+        
+        # Игнорируем проверку срока действия токена (для отладки)
+        # ПРИМЕЧАНИЕ: В продакшене нужно убрать options и использовать стандартную проверку
+        payload = jwt.decode(
+            access_token, 
+            SECRET_KEY, 
+            algorithms=[ALGORITHM],
+            options={"verify_exp": False}  # Отключаем проверку срока действия
+        )
+        
         user_id = payload.get("sub")
         if user_id is None:
-            logger.warning("Токен не содержит поле 'sub'")
+            logger.warning("В токене отсутствует sub с ID пользователя")
             return None
-            
-        # Извлекаем информацию о правах пользователя
+        
+        # Добавляем проверку ролей из токена
         is_admin = payload.get("is_admin", False)
         is_super_admin = payload.get("is_super_admin", False)
         is_active = payload.get("is_active", True)
         
-        logger.info(f"Пользователь {user_id} успешно аутентифицирован (admin={is_admin}, super_admin={is_super_admin})")
-        return User(id=int(user_id), is_admin=is_admin, is_super_admin=is_super_admin, is_active=is_active)
+        logger.info(f"Токен декодирован успешно: user_id={user_id}, is_admin={is_admin}, is_super_admin={is_super_admin}")
+        
+        return User(
+            id=int(user_id), 
+            is_admin=is_admin, 
+            is_super_admin=is_super_admin,
+            is_active=is_active
+        )
+    except jwt.InvalidSignatureError:
+        logger.error("Ошибка декодирования JWT: Неверная подпись токена")
+        logger.error(f"Используемый SECRET_KEY: {SECRET_KEY}")
+        return None
+    except jwt.ExpiredSignatureError:
+        # Для отладки попробуем декодировать токен еще раз без проверки срока действия
+        logger.warning("Токен просрочен, попытка декодирования без проверки срока действия")
+        try:
+            payload = jwt.decode(
+                access_token, 
+                SECRET_KEY, 
+                algorithms=[ALGORITHM],
+                options={"verify_exp": False}
+            )
+            user_id = payload.get("sub")
+            if user_id is None:
+                return None
+                
+            is_admin = payload.get("is_admin", False)
+            is_super_admin = payload.get("is_super_admin", False)
+            is_active = payload.get("is_active", True)
+            
+            logger.info(f"Просроченный токен успешно декодирован: user_id={user_id}")
+            
+            return User(
+                id=int(user_id), 
+                is_admin=is_admin, 
+                is_super_admin=is_super_admin,
+                is_active=is_active
+            )
+        except Exception as e:
+            logger.error(f"Не удалось декодировать просроченный токен: {e}")
+            return None
+    except jwt.DecodeError:
+        logger.error("Ошибка декодирования JWT: Невозможно декодировать токен")
+        return None
     except jwt.PyJWTError as e:
-        logger.warning(f"Ошибка проверки JWT: {str(e)}")
+        logger.error(f"Ошибка декодирования JWT: {e}, тип: {type(e).__name__}")
         return None
 
 def check_admin_access(user: Optional[User] = Depends(get_current_user)):

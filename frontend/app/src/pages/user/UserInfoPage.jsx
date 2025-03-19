@@ -7,8 +7,10 @@ import { Link } from "react-router-dom";
 import "../../styles/UserInfoPage.css";
 
 function UserInfoPage() {
-  const { user } = useAuth();
-  const { getUserOrderStatistics, loading } = useOrders();
+  const { user, getUserProfile } = useAuth();
+  const { getUserOrderStatistics, loading: orderLoading } = useOrders();
+  const [userProfile, setUserProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [statistics, setStatistics] = useState({
     total_orders: 0,
     total_revenue: 0,
@@ -16,6 +18,26 @@ function UserInfoPage() {
     orders_by_status: {}
   });
   const [error, setError] = useState(null);
+
+  // Загрузка профиля пользователя
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      setLoading(true);
+      try {
+        const profileData = await getUserProfile();
+        if (profileData) {
+          setUserProfile(profileData);
+        }
+      } catch (err) {
+        console.error("Ошибка при загрузке профиля пользователя:", err);
+        setError("Не удалось загрузить данные профиля");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserProfile();
+  }, [getUserProfile]);
 
   // Загрузка статистики при монтировании компонента
   useEffect(() => {
@@ -33,6 +55,21 @@ function UserInfoPage() {
 
     fetchStatistics();
   }, [getUserOrderStatistics]);
+
+  // Отображаем загрузку, пока данные профиля не получены
+  if (loading && !userProfile) {
+    return (
+      <div className="container py-5 text-center">
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Загрузка...</span>
+        </div>
+        <p className="mt-2">Загрузка данных профиля...</p>
+      </div>
+    );
+  }
+
+  // Используем данные из профиля, если они доступны, иначе из основного объекта user
+  const displayUser = userProfile || user;
 
   return (
     <div className="py-5 bg-light">
@@ -52,19 +89,19 @@ function UserInfoPage() {
                   <div className="col-md-6 mb-4">
                     <div className="bg-light p-4 rounded shadow-sm h-100 border">
                       <p className="fw-bold text-primary mb-1">Имя</p>
-                      <p className="fs-5 mb-0">{user.first_name}</p>
+                      <p className="fs-5 mb-0">{displayUser.first_name}</p>
                     </div>
                   </div>
                   <div className="col-md-6 mb-4">
                     <div className="bg-light p-4 rounded shadow-sm h-100 border">
                       <p className="fw-bold text-primary mb-1">Фамилия</p>
-                      <p className="fs-5 mb-0">{user.last_name}</p>
+                      <p className="fs-5 mb-0">{displayUser.last_name}</p>
                     </div>
                   </div>
                   <div className="col-12 mb-4">
                     <div className="bg-light p-4 rounded shadow-sm border">
                       <p className="fw-bold text-primary mb-1">Email</p>
-                      <p className="fs-5 mb-0">{user.email}</p>
+                      <p className="fs-5 mb-0">{displayUser.email}</p>
                     </div>
                   </div>
                 </div>
@@ -95,7 +132,7 @@ function UserInfoPage() {
               
               {/* Тело карточки */}
               <div className="card-body bg-white p-4">
-                {loading ? (
+                {orderLoading ? (
                   <div className="text-center py-4">
                     <div className="spinner-border text-primary" role="status">
                       <span className="visually-hidden">Загрузка...</span>

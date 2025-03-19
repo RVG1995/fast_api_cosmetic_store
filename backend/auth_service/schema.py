@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict,EmailStr,Field, model_validator, field_validator
 import re
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
 
 class UserCreateShema(BaseModel):
     first_name: str = Field(...,min_length=2,max_length=50, description="Имя")
@@ -73,3 +74,33 @@ class PasswordChangeSchema(BaseModel):
         if not re.search(r"[A-Za-z]", value):
             raise ValueError("Пароль должен содержать хотя бы одну букву")
         return value
+
+class UserSessionSchema(BaseModel):
+    """Схема для сессии пользователя"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    jti: str
+    user_agent: Optional[str] = None
+    ip_address: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+
+class UserSessionsResponseSchema(BaseModel):
+    """Схема для ответа со списком сессий"""
+    sessions: List[UserSessionSchema]
+
+class UserSessionStatusSchema(BaseModel):
+    """Схема статуса операции с сессией"""
+    status: str
+    message: str
+    revoked_count: Optional[int] = None
+
+class PermissionResponseSchema(BaseModel):
+    """Схема для ответа с проверкой разрешений"""
+    is_authenticated: bool
+    is_active: bool
+    is_admin: bool
+    is_super_admin: bool
+    has_permission: Optional[bool] = None

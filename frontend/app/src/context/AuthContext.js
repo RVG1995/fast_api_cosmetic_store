@@ -28,26 +28,41 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = async () => {
     try {
-      console.log("Checking authentication...");
+      console.log("Проверка аутентификации...");
+      console.log("Текущие куки документа:", document.cookie);
+      
       const res = await authAPI.getCurrentUser();
       console.log("Auth successful:", res.data);
       
-      // Если получили пользователя, но в localStorage нет токена, 
-      // значит он только в куках - сохраним в localStorage для заголовков
-      if (res.data && !localStorage.getItem('access_token') && res.headers?.authorization) {
-        const token = res.headers.authorization.replace('Bearer ', '');
-        localStorage.setItem('access_token', token);
-        console.log('Токен сохранен в localStorage');
-      }
-      
       setUser(res.data);
       setError(null);
+      
+      // Сразу после загрузки базовой информации о пользователе проверяем его разрешения
+      if (res.data && res.data.id) {
+        try {
+          console.log("Загружаем информацию о разрешениях пользователя...");
+          // Запрос для проверки админских прав
+          const permRes = await authAPI.checkPermissions('admin_access');
+          console.log("Результат проверки разрешений:", permRes.data);
+          
+          // Обновляем данные о пользователе с учетом его прав
+          if (permRes.data && (permRes.data.is_admin !== undefined || permRes.data.is_super_admin !== undefined)) {
+            setUser(prevUser => ({
+              ...prevUser,
+              is_admin: permRes.data.is_admin,
+              is_super_admin: permRes.data.is_super_admin
+            }));
+          }
+        } catch (permError) {
+          console.error("Ошибка при проверке разрешений при инициализации:", permError);
+        }
+      }
     } catch (error) {
       console.error("Auth error:", error.response?.data || error.message);
+      console.error("Статус ошибки:", error.response?.status);
+      console.error("Заголовки ответа:", error.response?.headers);
       setUser(null);
       setError(error.response?.data?.detail || error.message);
-      // Если ошибка аутентификации, удаляем токен
-      localStorage.removeItem('access_token');
     } finally {
       setLoading(false);
     }
@@ -68,15 +83,19 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       const response = await authAPI.login(credentials);
-      // Сохраняем токен в localStorage
+      
+      // Сохраняем токен для использования микросервисами через заголовки
       if (response.data.access_token) {
-        localStorage.setItem('access_token', response.data.access_token);
-        console.log('Токен сохранен при входе:', response.data.access_token.substring(0, 20) + '...');
+        console.log('Токен сохранен в localStorage для микросервисов');
       }
-      await checkAuth(); // Обновляем данные пользователя
+      
+      // После успешного логина сразу делаем новый запрос для получения данных пользователя
+      await checkAuth();
       return { success: true };
     } catch (error) {
       console.error("Ошибка при входе:", error);
+      console.error("Статус ошибки:", error.response?.status);
+      console.error("Данные ошибки:", error.response?.data);
       setError(error.response?.data?.detail || error.message);
       return { success: false, error: error.response?.data?.detail || error.message };
     }
@@ -87,23 +106,19 @@ export const AuthProvider = ({ children }) => {
       await authAPI.logout();
       setUser(null);
       setError(null);
-      // Удаляем токен из localStorage
-      localStorage.removeItem('access_token');
-      console.log('Токен удален при выходе');
-      navigate('/login');
+      // Удаляем токен из localStorage при выходе      navigate('/login');
     } catch (error) {
       console.error("Ошибка при выходе:", error);
       setUser(null);
       setError(error.response?.data?.detail || error.message);
-      // Всё равно удаляем токен на случай ошибки
-      localStorage.removeItem('access_token');
+      // Всё равно удаляем токен из localStorage
     }
   };
 
   // Функции для проверки ролей
   const isAdmin = () => {
     try {
-      // Проверяем сначала прямые флаги из JWT-токена в ответе сервера
+      // Проверяем сначала прямые флаги из ответа сервера
       if (user && 'is_admin' in user) {
         console.log('Проверка админа по is_admin:', user.is_admin);
         return Boolean(user.is_admin || user.is_super_admin);
@@ -120,7 +135,7 @@ export const AuthProvider = ({ children }) => {
 
   const isSuperAdmin = () => {
     try {
-      // Прямая проверка флага суперадмина из JWT
+      // Прямая проверка флага суперадмина из ответа сервера
       if (user && 'is_super_admin' in user) {
         console.log('Проверка суперадмина по is_super_admin:', user.is_super_admin);
         return Boolean(user.is_super_admin);
@@ -149,6 +164,45 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Асинхронная проверка прав через специальный эндпоинт
+  const checkPermission = async (permission, resourceType, resourceId) => {
+    try {
+      if (!user) return false;
+      
+      console.log('Вызов checkPermission с параметрами:', { permission, resourceType, resourceId });
+      
+      const res = await authAPI.checkPermissions(permission, resourceType, resourceId);
+      console.log('Результат проверки разрешений:', res.data);
+      
+      // Если получили информацию об админских правах - обновляем состояние пользователя
+      if (res.data?.is_admin !== undefined) {
+        setUser(prevUser => ({
+          ...prevUser,
+          is_admin: res.data.is_admin,
+          is_super_admin: res.data.is_super_admin
+        }));
+      }
+      
+      return res.data?.has_permission === true;
+    } catch (error) {
+      console.error("Ошибка при проверке разрешений:", error);
+      return false;
+    }
+  };
+
+  // Функция получения полного профиля пользователя
+  const getUserProfile = async () => {
+    try {
+      if (!user) return null;
+      
+      const res = await authAPI.getUserProfile();
+      return res.data;
+    } catch (error) {
+      console.error("Ошибка при получении профиля:", error);
+      return null;
+    }
+  };
+
   const contextValue = {
     user, 
     setUser, 
@@ -159,7 +213,9 @@ export const AuthProvider = ({ children }) => {
     isActivated,
     error,
     refreshAuth: checkAuth,
-    login
+    login,
+    checkPermission,
+    getUserProfile
   };
 
   return (

@@ -7,13 +7,14 @@ import { API_URLS, STORAGE_KEYS } from './constants';
  * @returns {AxiosInstance} - Настроенный экземпляр axios
  */
 const createApiInstance = (baseURL) => {
-  return axios.create({
+  const instance = axios.create({
     baseURL,
-    withCredentials: true,
-    // Не устанавливаем Content-Type здесь, чтобы axios мог определить правильный заголовок
-    // в зависимости от типа данных
+    withCredentials: true,  // Важно для автоматической передачи куки
+    xsrfCookieName: false,  // Отключаем XSRF для упрощения
     timeout: 10000 // Таймаут в миллисекундах
   });
+  
+  return instance;
 };
 
 // Создаем отдельные экземпляры для каждого сервиса
@@ -33,14 +34,19 @@ const setupInterceptors = (api, serviceName) => {
         url: config.url, 
         method: config.method,
         data: config.data,
-        headers: config.headers
+        headers: config.headers,
+        withCredentials: config.withCredentials,
+        cookies: document.cookie // Выводим текущие куки
       });
       
-      // Добавляем bearer токен в заголовок Authorization, если он есть в localStorage
+      // Гарантируем передачу куки для каждого запроса
+      config.withCredentials = true;
+      
+      // Добавляем токен из localStorage для микросервисов, если он есть
       const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
       if (token && !config.headers.Authorization) {
         config.headers.Authorization = `Bearer ${token}`;
-        console.log(`[${serviceName} API] Добавлен токен авторизации: ${token.substring(0, 15)}...`);
+        console.log(`[${serviceName} API] Добавлен токен авторизации из localStorage для микросервиса`);
       }
       
       return config;
@@ -60,9 +66,9 @@ const setupInterceptors = (api, serviceName) => {
         data: response.data
       });
       
-      // Проверяем, содержит ли ответ новый токен
+      // Проверяем, содержит ли ответ новый токен и сохраняем его для межсервисной передачи
       if (response.data && response.data.access_token) {
-        console.log(`[${serviceName} API] Получен новый токен в ответе`);
+        console.log(`[${serviceName} API] Получен новый токен в ответе, сохраняем его для микросервисов`);
         localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, response.data.access_token);
       }
       
@@ -79,10 +85,7 @@ const setupInterceptors = (api, serviceName) => {
       // Обработка ошибок авторизации (401)
       if (error.response && error.response.status === 401) {
         console.log('Ошибка авторизации, перенаправление на страницу входа');
-        // Удаляем токен при 401 ошибке
-        localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
-        // При необходимости можно добавить редирект на страницу входа
-        // window.location.href = '/login';
+        // Больше не нужно удалять токен из localStorage
       }
       return Promise.reject(error);
     }
@@ -110,31 +113,34 @@ export const authAPI = {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
       }
-    }).then(response => {
-      // Сохраняем токен в localStorage
-      if (response.data && response.data.access_token) {
-        localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, response.data.access_token);
-        console.log('Токен сохранен в localStorage из login API');
-      }
-      return response;
     });
   },
   register: (userData) => authApi.post('/auth/register', userData),
-  logout: () => authApi.post('/auth/logout').then(response => {
-    // Удаляем токен из localStorage
-    localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
-    console.log('Токен удален из localStorage из logout API');
-    return response;
-  }),
+  logout: () => authApi.post('/auth/logout'),
   getCurrentUser: () => authApi.get('/auth/users/me'),
-  activateUser: (token) => authApi.get(`/auth/activate/${token}`).then(response => {
-    // Сохраняем токен в localStorage при активации
-    if (response.data && response.data.access_token) {
-      localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, response.data.access_token);
-      console.log('Токен сохранен в localStorage из activate API');
-    }
-    return response;
-  }),
+  getUserProfile: () => authApi.get('/auth/users/me/profile'),
+  checkPermissions: (permission, resourceType, resourceId) => {
+    const params = {};
+    if (permission) params.permission = permission;
+    if (resourceType) params.resource_type = resourceType;
+    if (resourceId) params.resource_id = resourceId;
+    
+    console.log('authAPI: Запрос проверки разрешений с параметрами:', params);
+    
+    // Прямой вызов эндпоинта с правильным URL относительно базового URL сервиса
+    return authApi.get('/auth/users/me/permissions', { 
+      params,
+      withCredentials: true,  // Гарантируем отправку куки
+    }).then(response => {
+      console.log('authAPI: Успешный ответ проверки разрешений:', response.data);
+      return response;
+    }).catch(error => {
+      console.error('authAPI: Ошибка проверки разрешений:', error.response?.data || error.message);
+      console.error('authAPI: Статус ошибки:', error.response?.status);
+      throw error;
+    });
+  },
+  activateUser: (token) => authApi.get(`/auth/activate/${token}`),
   changePassword: (passwordData) => authApi.post('/auth/change-password', passwordData),
 };
 

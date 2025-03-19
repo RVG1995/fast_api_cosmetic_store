@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { adminAPI } from '../../utils/api';
 
@@ -6,7 +6,38 @@ const AdminUsers = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { isSuperAdmin } = useAuth();
+  const [permissions, setPermissions] = useState({
+    canMakeAdmin: false,
+    canDeleteUser: false
+  });
+  const { checkPermission } = useAuth();
+  const permissionsChecked = useRef(false);
+
+  useEffect(() => {
+    const fetchPermissions = async () => {
+      // Предотвращаем повторные запросы
+      if (permissionsChecked.current) return;
+      
+      try {
+        const canMakeAdmin = await checkPermission('super_admin_access');
+        const canDeleteUser = await checkPermission('super_admin_access');
+        
+        setPermissions({
+          canMakeAdmin,
+          canDeleteUser
+        });
+        
+        // Отмечаем, что разрешения проверены
+        permissionsChecked.current = true;
+      } catch (err) {
+        console.error('Ошибка при проверке разрешений:', err);
+        // Даже в случае ошибки отмечаем, что проверка выполнена
+        permissionsChecked.current = true;
+      }
+    };
+
+    fetchPermissions();
+  }, []);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -144,7 +175,7 @@ const AdminUsers = () => {
                           </button>
                         )}
                         
-                        {isSuperAdmin() && !user.is_admin && !user.is_super_admin && (
+                        {permissions.canMakeAdmin && !user.is_admin && !user.is_super_admin && (
                           <button 
                             className="btn btn-outline-primary"
                             onClick={() => handleMakeAdmin(user.id)}
@@ -153,7 +184,7 @@ const AdminUsers = () => {
                           </button>
                         )}
                         
-                        {isSuperAdmin() && user.is_admin && !user.is_super_admin && (
+                        {permissions.canMakeAdmin && user.is_admin && !user.is_super_admin && (
                           <button 
                             className="btn btn-outline-warning"
                             onClick={() => handleRemoveAdmin(user.id)}
@@ -162,7 +193,7 @@ const AdminUsers = () => {
                           </button>
                         )}
                         
-                        {isSuperAdmin() && !user.is_super_admin && (
+                        {permissions.canDeleteUser && !user.is_super_admin && (
                           <button 
                             className="btn btn-outline-danger"
                             onClick={() => handleDelete(user.id)}

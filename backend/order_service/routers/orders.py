@@ -5,6 +5,7 @@ import logging
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from datetime import datetime
 
 from database import get_db
 from models import OrderModel, OrderStatusModel, OrderStatusHistoryModel
@@ -20,6 +21,7 @@ from dependencies import (
     get_current_user, get_admin_user, get_order_filter_params,
     check_products_availability, get_products_info, clear_user_cart
 )
+from auth import User
 from cache import (
     get_cached_order, cache_order, invalidate_order_cache,
     get_cached_user_orders, cache_user_orders,

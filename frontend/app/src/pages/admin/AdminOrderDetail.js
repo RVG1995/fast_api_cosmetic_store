@@ -7,7 +7,7 @@ import { formatDateTime } from '../../utils/dateUtils';
 import { formatPrice } from '../../utils/helpers';
 import OrderStatusBadge from '../../components/OrderStatusBadge';
 import axios from 'axios';
-import { STORAGE_KEYS, API_URLS } from '../../utils/constants';
+import { API_URLS } from '../../utils/constants';
 
 const AdminOrderDetail = () => {
   const { orderId } = useParams();
@@ -19,7 +19,7 @@ const AdminOrderDetail = () => {
     loading: contextLoading, 
     error: contextError 
   } = useOrders();
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   
   const [order, setOrder] = useState(null);
   const [statuses, setStatuses] = useState([]);
@@ -37,21 +37,17 @@ const AdminOrderDetail = () => {
       try {
         console.log('=== ДИАГНОСТИКА ЗАГРУЗКИ ЗАКАЗА АДМИНИСТРАТОРОМ ===');
         console.log('ID заказа:', orderId);
-        console.log('Токен в localStorage:', localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN) ? 'Присутствует' : 'Отсутствует');
-        console.log('Токен в контексте:', token ? 'Присутствует' : 'Отсутствует');
         console.log('Пользователь:', user);
         
-        const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-        
-        if (!actualToken) {
-          console.error('Отсутствует токен для запроса заказа администратором');
+        // Проверяем авторизацию пользователя
+        if (!user) {
+          console.error('Пользователь не авторизован');
           setLoadError('Для доступа к информации о заказе необходима авторизация');
           return;
         }
         
         // Проверка прав администратора
-        const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
-        const isAdmin = userData?.is_admin || userData?.is_super_admin;
+        const isAdmin = user?.is_admin || user?.is_super_admin;
         
         if (!isAdmin) {
           console.error('Пользователь не является администратором');
@@ -63,8 +59,8 @@ const AdminOrderDetail = () => {
         console.log('===== НАЧАЛО ЗАПРОСА ЗАКАЗА АДМИНИСТРАТОРОМ =====');
         
         const config = {
+          withCredentials: true,
           headers: {
-            'Authorization': `Bearer ${actualToken}`,
             'Content-Type': 'application/json'
           }
         };
@@ -85,7 +81,7 @@ const AdminOrderDetail = () => {
         const statusesUrl = `${API_URLS.ORDER_SERVICE}/order-statuses`;
         console.log('URL запроса статусов:', statusesUrl);
         
-        const statusesResponse = await axios.get(statusesUrl);
+        const statusesResponse = await axios.get(statusesUrl, { withCredentials: true });
         console.log('Ответ от сервера (статусы):', statusesResponse.status);
         console.log('Данные статусов:', statusesResponse.data);
         
@@ -106,13 +102,13 @@ const AdminOrderDetail = () => {
           console.error('Данные ошибки:', err.response.data);
           
           if (err.response.status === 401) {
-            setLoadError('Для просмотра заказа необходима авторизация');
+            setLoadError('Для доступа к заказу необходима авторизация');
           } else if (err.response.status === 403) {
-            setLoadError('У вас нет прав администратора для просмотра этого заказа');
+            setLoadError('У вас нет прав для просмотра этого заказа');
           } else if (err.response.status === 404) {
             setLoadError('Заказ не найден');
           } else {
-            setLoadError(`Ошибка сервера: ${err.response.data.detail || 'Неизвестная ошибка'}`);
+            setLoadError(`Ошибка сервера: ${err.response?.data?.detail || 'Неизвестная ошибка'}`);
           }
         } else if (err.request) {
           console.error('Запрос был отправлен, но ответ не получен:', err.request);
@@ -120,12 +116,12 @@ const AdminOrderDetail = () => {
         } else {
           setLoadError(`Ошибка при загрузке заказа: ${err.message}`);
         }
+        setLoading(false);
       }
     };
 
-    console.log('AdminOrderDetail: useEffect вызван');
     loadData();
-  }, [orderId]);
+  }, [orderId, user]);
   
   // Если произошла локальная ошибка загрузки
   if (loadError) {

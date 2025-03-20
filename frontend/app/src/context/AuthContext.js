@@ -84,11 +84,6 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await authAPI.login(credentials);
       
-      // Сохраняем токен для использования микросервисами через заголовки
-      if (response.data.access_token) {
-        console.log('Токен сохранен в localStorage для микросервисов');
-      }
-      
       // После успешного логина сразу делаем новый запрос для получения данных пользователя
       await checkAuth();
       return { success: true };
@@ -106,12 +101,11 @@ export const AuthProvider = ({ children }) => {
       await authAPI.logout();
       setUser(null);
       setError(null);
-      // Удаляем токен из localStorage при выходе      navigate('/login');
+      navigate('/login');
     } catch (error) {
       console.error("Ошибка при выходе:", error);
       setUser(null);
       setError(error.response?.data?.detail || error.message);
-      // Всё равно удаляем токен из localStorage
     }
   };
 

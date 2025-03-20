@@ -43,11 +43,7 @@ const setupInterceptors = (api, serviceName) => {
       config.withCredentials = true;
       
       // Добавляем токен из localStorage для микросервисов, если он есть
-      const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-      if (token && !config.headers.Authorization) {
-        config.headers.Authorization = `Bearer ${token}`;
-        console.log(`[${serviceName} API] Добавлен токен авторизации из localStorage для микросервиса`);
-      }
+    
       
       return config;
     },
@@ -69,7 +65,6 @@ const setupInterceptors = (api, serviceName) => {
       // Проверяем, содержит ли ответ новый токен и сохраняем его для межсервисной передачи
       if (response.data && response.data.access_token) {
         console.log(`[${serviceName} API] Получен новый токен в ответе, сохраняем его для микросервисов`);
-        localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, response.data.access_token);
       }
       
       return response;

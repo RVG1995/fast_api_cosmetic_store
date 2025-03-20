@@ -20,13 +20,13 @@ import { formatDateTime } from '../../utils/dateUtils';
 import OrderStatusBadge from '../../components/OrderStatusBadge';
 import './OrderDetailPage.css';
 import axios from 'axios';
-import { STORAGE_KEYS, API_URLS } from '../../utils/constants';
+import { API_URLS } from '../../utils/constants';
 
 const OrderDetailPage = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
   const { getOrderById, cancelOrder, loading, error } = useOrders();
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const [order, setOrder] = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -38,27 +38,20 @@ const OrderDetailPage = () => {
   const loadOrder = async () => {
     console.log('=== ДИАГНОСТИКА ЗАГРУЗКИ ЗАКАЗА ===');
     console.log('ID заказа:', orderId);
-    console.log('Токен в localStorage:', localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN) ? 'Присутствует' : 'Отсутствует');
-    console.log('Токен в контексте:', token ? 'Присутствует' : 'Отсутствует');
     console.log('Пользователь:', user);
     
     try {
-      // НЕ делаем перенаправление здесь, так как это уже обрабатывается в PrivateRoute
-      
-      // Принудительно используем метод запроса с токеном из localStorage
-      console.log('===== НАЧАЛО ЗАПРОСА ЗАКАЗА =====');
-      const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-      
-      if (!actualToken) {
-        console.error('Отсутствует токен для запроса заказа');
+      // Проверяем авторизацию пользователя
+      if (!user) {
+        console.error('Пользователь не авторизован');
         setLoadError('Для просмотра заказа необходима авторизация');
         return;
       }
       
-      // Напрямую вызываем axios вместо getOrderById для диагностики
+      // Используем конфигурацию с куками
       const config = {
+        withCredentials: true,
         headers: {
-          'Authorization': `Bearer ${actualToken}`,
           'Content-Type': 'application/json'
         }
       };

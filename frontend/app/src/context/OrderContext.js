@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
-import { API_URLS, STORAGE_KEYS } from '../utils/constants';
+import { API_URLS } from '../utils/constants';
 
 // URL сервиса заказов
 const ORDER_SERVICE_URL = API_URLS.ORDER_SERVICE;
@@ -19,7 +19,7 @@ export const useOrders = () => {
 
 // Провайдер контекста заказов
 export const OrderProvider = ({ children }) => {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [currentOrder, setCurrentOrder] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -27,52 +27,24 @@ export const OrderProvider = ({ children }) => {
 
   // Функция для получения конфигурации запроса
   const getConfig = useCallback(() => {
-    // Получаем актуальный токен
-    const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-    
-    if (!actualToken) {
-      console.warn('Токен отсутствует. Запрос может быть отклонен.');
-      return {};
-    }
-    
-    // Проверяем, не истек ли токен
-    try {
-      if (actualToken) {
-        const tokenParts = actualToken.split('.');
-        if (tokenParts.length === 3) {
-          const payload = JSON.parse(atob(tokenParts[1]));
-          const expTime = payload.exp * 1000; // переводим в миллисекунды
-          const now = Date.now();
-          
-          if (expTime < now) {
-            console.error('ВНИМАНИЕ: Токен истек!');
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Ошибка при проверке токена:', err);
-    }
-    
+    // Для работы с куками
     return {
+      withCredentials: true, 
       headers: {
-        'Authorization': `Bearer ${actualToken}`,
         'Content-Type': 'application/json'
       }
     };
-  }, [token]);
+  }, []);
 
-  // Проверка наличия токена
-  const hasToken = useCallback(() => {
-    const hasLocalToken = !!localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-    const hasContextToken = !!token;
-    console.log(`Статус токена: localStorage=${hasLocalToken}, context=${hasContextToken}`);
-    return hasContextToken || hasLocalToken;
-  }, [token]);
+  // Проверка авторизации пользователя
+  const isAuthenticated = useCallback(() => {
+    return !!user; // Проверяем наличие пользователя в контексте
+  }, [user]);
 
   // Получение списка заказов пользователя
   const fetchUserOrders = useCallback(async (page = 1, size = 10, statusId = null) => {
-    // Проверяем наличие токена в контексте или localStorage
-    if (!hasToken()) {
+    // Проверяем авторизацию пользователя
+    if (!isAuthenticated()) {
       console.warn("Попытка получить заказы пользователя без авторизации");
       return null;
     }
@@ -118,15 +90,14 @@ export const OrderProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [hasToken, getConfig]);
+  }, [isAuthenticated, getConfig]);
 
   // Получение одного заказа по ID
   const fetchOrder = useCallback(async (orderId) => {
     console.log('Вызов fetchOrder с ID:', orderId);
-    const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
     
-    if (!actualToken) {
-      console.error('Попытка получить заказ без токена авторизации');
+    if (!isAuthenticated()) {
+      console.error('Попытка получить заказ без авторизации');
       setError('Для просмотра заказа необходима авторизация');
       return null;
     }
@@ -137,15 +108,10 @@ export const OrderProvider = ({ children }) => {
     // Маршрут определен в бэкенде как /orders/{order_id}
     const url = `${ORDER_SERVICE_URL}/orders/${orderId}`;
     console.log('URL запроса заказа:', url);
-    console.log('Токен присутствует:', !!actualToken);
     
     try {
       const config = getConfig();
       console.log('Конфигурация запроса:', JSON.stringify(config));
-      console.log('Заголовки запроса:', {
-        Authorization: config?.headers?.Authorization ? 'Bearer xxx...' : 'Отсутствует',
-        ContentType: config?.headers?.['Content-Type']
-      });
       
       const response = await axios.get(url, config);
       console.log('Ответ от сервера fetchOrder:', response.status, response.data);
@@ -186,15 +152,14 @@ export const OrderProvider = ({ children }) => {
       setLoading(false);
       return null;
     }
-  }, [token, ORDER_SERVICE_URL, getConfig, setCurrentOrder]);
+  }, [isAuthenticated, getConfig]);
 
   // Получение статистики заказов пользователя
   const getUserOrderStatistics = useCallback(async () => {
     console.log('Вызов getUserOrderStatistics');
-    const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
     
-    if (!actualToken) {
-      console.error('Попытка получить статистику заказов без токена авторизации');
+    if (!isAuthenticated()) {
+      console.error('Попытка получить статистику заказов без авторизации');
       setError('Для просмотра статистики необходима авторизация');
       return null;
     }
@@ -235,16 +200,17 @@ export const OrderProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, ORDER_SERVICE_URL, getConfig]);
+  }, [isAuthenticated, getConfig]);
 
   // Создание нового заказа
   const createOrder = useCallback(async (orderData) => {
+    console.log('Вызов createOrder с данными:', orderData);
     setLoading(true);
     setError(null);
     
     // Проверяем наличие токена
-    const isAuthenticated = hasToken();
-    console.log("Статус аутентификации при создании заказа:", isAuthenticated ? "Пользователь аутентифицирован" : "Пользователь не аутентифицирован");
+    const userAuthenticated = isAuthenticated();
+    console.log("Статус аутентификации при создании заказа:", userAuthenticated ? "Пользователь аутентифицирован" : "Пользователь не аутентифицирован");
     
     console.log("Исходные данные заказа:", orderData);
     console.log("URL:", `${ORDER_SERVICE_URL}/orders`);
@@ -351,25 +317,14 @@ export const OrderProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [getConfig, hasToken, setError, setLoading]);
+  }, [isAuthenticated, getConfig, setError, setLoading]);
 
   // Отмена заказа
   const cancelOrder = useCallback(async (orderId, reason) => {
     console.log('===== НАЧАЛО ОТМЕНЫ ЗАКАЗА =====');
     console.log('ID заказа:', orderId);
     console.log('Причина отмены:', reason);
-    console.log('Наличие токена:', !!token);
-    
-    if (!token) {
-      console.error('Нет токена авторизации для отмены заказа');
-      const localToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-      if (!localToken) {
-        setError('Для отмены заказа необходима авторизация');
-        console.error('Токен не найден ни в контексте, ни в localStorage');
-        return null;
-      }
-      console.log('Токен найден в localStorage');
-    }
+  
     
     setLoading(true);
     setError(null);
@@ -435,7 +390,7 @@ export const OrderProvider = ({ children }) => {
       setLoading(false);
       console.log('===== ЗАВЕРШЕНИЕ ОТМЕНЫ ЗАКАЗА =====');
     }
-  }, [token, getConfig, currentOrder]);
+  }, [ getConfig, currentOrder]);
 
   // Получение статусов заказов
   const fetchOrderStatuses = useCallback(async () => {
@@ -476,14 +431,14 @@ export const OrderProvider = ({ children }) => {
 
   // Получение заказов пользователя
   const getUserOrders = useCallback(async (params = {}) => {
-    if (!hasToken()) {
+    if (!isAuthenticated()) {
       console.warn("Попытка получить заказы пользователя без авторизации");
       setError("Для просмотра заказов необходима авторизация");
       return { items: [], total: 0, page: 1, limit: 10 };
     }
     
     // Получаем ID пользователя
-    const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
+    const userData = user;
     const userId = userData?.id || null;
     
     if (!userId) {
@@ -534,19 +489,19 @@ export const OrderProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [hasToken, getConfig, user]);
+  }, [isAuthenticated, getConfig, user]);
   
   // Получение всех заказов (для администраторов)
   const getAllOrders = useCallback(async (params = {}) => {
     // Проверяем наличие токена
-    if (!hasToken()) {
+    if (!isAuthenticated()) {
       console.warn("Попытка получить все заказы без авторизации");
       setError("Для доступа к списку заказов необходима авторизация");
       return { items: [], total: 0, page: 1, limit: 10 };
     }
     
     // Проверяем права администратора
-    const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
+    const userData = user ;
     const isAdmin = userData?.is_admin || userData?.is_super_admin;
     
     if (!isAdmin) {
@@ -650,24 +605,16 @@ export const OrderProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [hasToken, getConfig, user]);
+  }, [isAuthenticated, getConfig, user]);
 
   // Обновление статуса заказа (для администраторов)
   const updateOrderStatus = useCallback(async (orderId, statusData) => {
     console.log('Запрос на обновление статуса заказа:', { orderId, statusData });
     
-    if (!token) {
-      console.error('Попытка обновить статус заказа без токена авторизации');
-      const localToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-      
-      if (!localToken) {
-        setError('Для обновления статуса заказа необходима авторизация');
-        return null;
-      }
-    }
+    
     
     // Проверяем права администратора
-    const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
+    const userData = user ;
     const isAdmin = userData?.is_admin || userData?.is_super_admin;
     console.log('Проверка прав администратора:', { isAdmin, userData });
     
@@ -714,21 +661,15 @@ export const OrderProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, user, getConfig]);
+  }, [user, getConfig]);
 
   // Получение одного заказа по ID (для администраторов)
   const getAdminOrderById = useCallback(async (orderId) => {
     console.log('Вызов getAdminOrderById с ID:', orderId);
-    const actualToken = token || localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-    
-    if (!actualToken) {
-      console.error('Попытка получить заказ администратором без токена авторизации');
-      setError('Для доступа к заказу необходима авторизация администратора');
-      return null;
-    }
+  
     
     // Проверка прав администратора
-    const userData = user || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER_DATA) || "{}");
+    const userData = user;
     const isAdmin = userData?.is_admin || userData?.is_super_admin;
     
     if (!isAdmin) {
@@ -743,7 +684,7 @@ export const OrderProvider = ({ children }) => {
     // Маршрут определен в бэкенде как /admin/orders/{order_id}
     const url = `${ORDER_SERVICE_URL}/admin/orders/${orderId}`;
     console.log('Запрос заказа администратором:', url);
-    console.log('Токен присутствует:', !!actualToken);
+    console.log('Токен присутствует:');
     console.log('Пользователь админ:', isAdmin);
     
     try {
@@ -793,7 +734,7 @@ export const OrderProvider = ({ children }) => {
       setLoading(false);
       return null;
     }
-  }, [token, user, ORDER_SERVICE_URL, getConfig, setCurrentOrder]);
+  }, [user, ORDER_SERVICE_URL, getConfig, setCurrentOrder]);
 
   // Значение контекста
   const contextValue = {

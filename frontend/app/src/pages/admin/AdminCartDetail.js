@@ -20,21 +20,12 @@ const AdminCartDetail = () => {
       setLoading(true);
       setError(null);
       try {
-        // Получаем токен из правильного ключа в localStorage
-        const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+        // Удаляем получение токена из localStorage
+        // Теперь используем только куки для аутентификации
         
-        if (!token) {
-          setError('Необходимо авторизоваться для доступа к этой странице');
-          setLoading(false);
-          return;
-        }
-        
-        console.log(`Запрос данных корзины ID: ${cartId} с токеном: ${token.substring(0, 15)}...`);
+        console.log(`Запрос данных корзины ID: ${cartId} с куки-авторизацией`);
         
         const response = await axios.get(`${API_URLS.CART_SERVICE}/admin/carts/${cartId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
           withCredentials: true  // Включаем передачу куки
         });
         

@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any
-from fastapi import Depends, HTTPException, status, Header
+from fastapi import Depends, HTTPException, status, Header,Cookie
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 import os
@@ -28,36 +28,47 @@ PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
 CART_SERVICE_URL = os.getenv("CART_SERVICE_URL", "http://localhost:8002")
 
 # Сервисный API-ключ для внутренней авторизации между микросервисами
-SERVICE_API_KEY = os.getenv("SERVICE_API_KEY", "service_secret_key_for_internal_use")
+INTERNAL_SERVICE_KEY = os.getenv("SERVICE_API_KEY", "service_secret_key_for_internal_use")
 
 # Схема OAuth2 для получения токена
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 # Функция для проверки токена и получения данных пользователя
 async def get_current_user(
-    token: Optional[str] = Depends(oauth2_scheme),
-    authorization: Optional[str] = Header(None),
+    token: str = Cookie(None, alias="access_token"),
+    authorization: str = Depends(oauth2_scheme),
     x_service_name: Optional[str] = Header(None)
-) -> Optional[Dict[str, Any]]:
-    """
-    Проверяет токен и возвращает данные пользователя.
-    Если токен отсутствует, возвращает None для поддержки анонимных пользователей.
-    Поддерживает сервисную авторизацию для внутренних запросов между микросервисами.
+)-> Optional[Dict[str, Any]]:
+    logger.info(f"Получен токен из куки: {token}")
+    logger.info(f"Получен токен из заголовка: {authorization}")
+
+    actual_token = None
     
-    Args:
-        token: Токен доступа из OAuth2
-        authorization: Заголовок Authorization
-        x_service_name: Название сервиса для внутренних запросов
-        
-    Returns:
-        Данные пользователя или None, если токен отсутствует
-    """
-    # Если токен не получен через OAuth2, пробуем получить из заголовка Authorization
-    if not token and authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ")[1]
+    # Если токен есть в куках, используем его
+    if token:
+        actual_token = token
+        logger.info(f"Используем токен из куки: {token[:20]}...")
+    # Если в куках нет, но есть в заголовке, используем его
+    elif authorization:
+        if authorization.startswith('Bearer '):
+            actual_token = authorization[7:]
+        else:
+            actual_token = authorization
+        logger.info(f"Используем токен из заголовка Authorization: {actual_token[:20]}...")
     
-    # Проверяем сервисный API-ключ для внутренних запросов
-    if token == SERVICE_API_KEY and x_service_name:
+    if actual_token is None:
+        logger.error("Токен не найден ни в куках, ни в заголовке")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Токен не найден в cookies или заголовке Authorization"
+        )
+    
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Невозможно проверить учетные данные",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if token == INTERNAL_SERVICE_KEY and x_service_name:
         logger.info(f"Внутренний запрос от сервиса {x_service_name} авторизован")
         # Возвращаем специальные данные для внутреннего сервиса с повышенными правами
         return {

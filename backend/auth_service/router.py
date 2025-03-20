@@ -45,18 +45,32 @@ async def create_access_token(data: dict, expires_delta: Optional[timedelta] = N
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt, jti  # Возвращаем и токен, и его jti
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
 async def get_current_user(
     session: SessionDep, 
     token: str = Cookie(None, alias="access_token"),
     authorization: str = Depends(oauth2_scheme)
 ) -> UserModel:
-    # Пробуем получить токен сначала из куки, потом из заголовка
-    if token is None and authorization:
-        token = authorization
+    logger.info(f"Получен токен из куки: {token}")
+    logger.info(f"Получен токен из заголовка: {authorization}")
+
+    actual_token = None
     
-    if token is None:
+    # Если токен есть в куках, используем его
+    if token:
+        actual_token = token
+        logger.info(f"Используем токен из куки: {token[:20]}...")
+    # Если в куках нет, но есть в заголовке, используем его
+    elif authorization:
+        if authorization.startswith('Bearer '):
+            actual_token = authorization[7:]
+        else:
+            actual_token = authorization
+        logger.info(f"Используем токен из заголовка Authorization: {actual_token[:20]}...")
+    
+    if actual_token is None:
+        logger.error("Токен не найден ни в куках, ни в заголовке")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Токен не найден в cookies или заголовке Authorization"
@@ -69,16 +83,19 @@ async def get_current_user(
     )
     
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        logger.info(f"Декодируем токен: {actual_token[:20]}...")
+        payload = jwt.decode(actual_token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
+            logger.error("В токене отсутствует поле sub")
             raise credentials_exception
-    except jwt.PyJWTError:
+    except jwt.PyJWTError as e:
+        logger.error(f"Ошибка декодирования токена: {str(e)}")
         raise credentials_exception
     
-    # Используем новый метод модели
     user = await UserModel.get_by_id(session, int(user_id))
     if user is None:
+        logger.error(f"Пользователь с ID {user_id} не найден")
         raise credentials_exception
         
     return user
@@ -243,8 +260,8 @@ async def login(
         value=access_token,
         httponly=True,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        samesite="strict",  # Усиливаем защиту от CSRF
-        secure=secure  # True в production, False в development
+        samesite="Lax",  # Меняем на Lax для кросс-доменных запросов
+        secure=False,
     )
     
     return {"access_token": access_token, "token_type": "bearer"}
@@ -533,13 +550,11 @@ async def log_user_session(session: AsyncSession, user_id: int, jti: str, user_a
         # Не выбрасываем исключение, чтобы не прерывать процесс логина
 
 async def update_last_login(session: AsyncSession, user_id: int):
-    """
-    Обновляет дату последнего входа пользователя.
-    """
     try:
         user = await UserModel.get_by_id(session, user_id)
         if user:
-            user.last_login = datetime.now(timezone.utc)
+            # Убираем timezone для совместимости с БД
+            user.last_login = datetime.now().replace(tzinfo=None)
             await session.commit()
             logger.info(f"Обновлена дата последнего входа для пользователя {user_id}")
     except Exception as e:

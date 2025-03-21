@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { formatPrice } from '../../utils/helpers';
 import { API_URLS } from '../../utils/constants';
@@ -11,6 +11,7 @@ const CartIcon = () => {
   const [isRemoving, setIsRemoving] = useState({}); // состояние для отслеживания удаления товаров
   const dropdownRef = useRef(null);
   const mouseTimeoutRef = useRef(null);
+  const navigate = useNavigate();
   
   // При монтировании компонента обновляем данные корзины
   useEffect(() => {
@@ -101,6 +102,11 @@ const CartIcon = () => {
     return imageUrl;
   };
 
+  // Обработчик клика по иконке корзины
+  const handleCartIconClick = () => {
+    navigate('/cart');
+  };
+
   return (
     <div 
       className="cart-icon-container" 
@@ -110,7 +116,7 @@ const CartIcon = () => {
     >
       <button 
         className="btn btn-outline-light position-relative"
-        onClick={() => setIsOpen(!isOpen)} // Оставляем возможность открывать/закрывать по клику
+        onClick={handleCartIconClick}
         aria-expanded={isOpen}
         title="Корзина"
       >

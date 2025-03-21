@@ -63,7 +63,9 @@ class CartModel(Base):
         limit: int = 10,
         sort_by: str = "updated_at",
         sort_order: str = "desc",
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        filter: Optional[str] = None,
+        search: Optional[str] = None
     ) -> Tuple[List["CartModel"], int]:
         """
         Получить список корзин пользователей (не анонимных) с пагинацией
@@ -75,6 +77,8 @@ class CartModel(Base):
             sort_by: Поле для сортировки (id, user_id, created_at, updated_at)
             sort_order: Порядок сортировки (asc, desc)
             user_id: Опциональный фильтр по ID пользователя
+            filter: Опциональный фильтр (with_items/empty)
+            search: Опциональный поиск по ID корзины или ID пользователя
             
         Returns:
             Кортеж (список корзин, общее количество)
@@ -90,6 +94,26 @@ class CartModel(Base):
             # Если указан фильтр по user_id, добавляем его
             if user_id is not None:
                 query = query.filter(cls.user_id == user_id)
+            
+            # Применяем фильтр
+            if filter == "with_items":
+                # Фильтрация корзин с товарами
+                subquery = select(CartItemModel.cart_id).distinct()
+                query = query.filter(cls.id.in_(subquery))
+            elif filter == "empty":
+                # Фильтрация пустых корзин
+                subquery = select(CartItemModel.cart_id).distinct()
+                query = query.filter(cls.id.not_in(subquery))
+            
+            # Добавляем поиск, если указан
+            if search:
+                # Поиск по ID корзины (преобразуем строку в число)
+                try:
+                    search_id = int(search)
+                    query = query.filter(cls.id == search_id)
+                except ValueError:
+                    # Если не получается преобразовать в число, игнорируем поиск
+                    pass
             
             # Добавляем сортировку
             if sort_by == "id":

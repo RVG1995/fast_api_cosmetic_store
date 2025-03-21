@@ -1,5 +1,6 @@
+import os
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,7 +9,19 @@ from schema import AdminUserReadShema
 from router import get_current_user
 from database import get_session
 
+# Получаем сервисный ключ из переменных окружения
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
+
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+async def verify_service_key(service_key: str = Header(None, alias="X-Service-Key")):
+    """Проверяет сервисный ключ для межсервисного взаимодействия"""
+    if not service_key or service_key != INTERNAL_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Отсутствует или неверный сервисный ключ"
+        )
+    return True
 
 async def get_admin_user(
     current_user: UserModel = Depends(get_current_user),
@@ -124,3 +137,16 @@ async def check_super_admin_access(
 ):
     """Эндпоинт для проверки прав суперадминистратора"""
     return {"status": "success", "message": "У вас есть права суперадминистратора"}
+
+@router.get("/users/{user_id}", response_model=AdminUserReadShema)
+async def get_user_by_id(
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+    is_service: bool = Depends(verify_service_key)
+):
+    """Получить информацию о конкретном пользователе по ID (для межсервисных запросов)"""
+    user = await UserModel.get_by_id(session, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    
+    return user

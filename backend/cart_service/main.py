@@ -20,6 +20,7 @@ import uuid
 import os
 from datetime import datetime, timedelta
 import asyncio
+import httpx
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -894,13 +895,48 @@ async def cleanup_anonymous_carts(
             "message": f"Ошибка при выполнении очистки: {str(e)}"
         }
 
+async def get_user_info(user_id: int) -> Dict[str, Any]:
+    """
+    Получает информацию о пользователе из сервиса авторизации
+    """
+    try:
+        auth_service_url = os.environ.get("AUTH_SERVICE_URL", "http://localhost:8000")
+        service_key = os.environ.get("INTERNAL_SERVICE_KEY", "test")
+        
+        logger.info(f"Запрос информации о пользователе {user_id} по URL: {auth_service_url}/admin/users/{user_id}")
+        
+        headers = {
+            "X-Service-Key": service_key
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{auth_service_url}/admin/users/{user_id}",
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                user_data = response.json()
+                # Проверяем наличие полей first_name и last_name в ответе
+                if "first_name" not in user_data or "last_name" not in user_data:
+                    logger.warning(f"В ответе от сервиса авторизации отсутствуют поля first_name или last_name: {user_data}")
+                return user_data
+            
+            logger.warning(f"Не удалось получить информацию о пользователе {user_id}: код {response.status_code}, ответ: {response.text}")
+            return {}
+    except Exception as e:
+        logger.error(f"Ошибка при запросе информации о пользователе {user_id}: {str(e)}")
+        return {}
+
 @app.get("/admin/carts", response_model=PaginatedUserCartsResponse, tags=["Администрирование"])
 async def get_user_carts(
     page: int = Query(1, description="Номер страницы", ge=1),
     limit: int = Query(10, description="Количество записей на странице", ge=1, le=100),
-    sort_by: str = Query("updated_at", description="Поле для сортировки", regex="^(id|user_id|created_at|updated_at)$"),
+    sort_by: str = Query("updated_at", description="Поле для сортировки", regex="^(id|user_id|created_at|updated_at|items_count|total_price)$"),
     sort_order: str = Query("desc", description="Порядок сортировки", regex="^(asc|desc)$"),
     user_id: Optional[int] = Query(None, description="Фильтр по ID пользователя"),
+    filter: Optional[str] = Query(None, description="Фильтр (with_items/empty)"),
+    search: Optional[str] = Query(None, description="Поисковый запрос по ID корзины"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
@@ -918,7 +954,7 @@ async def get_user_carts(
         logger.warning(f"Пользователь {current_user.id} пытался получить доступ к корзинам без прав администратора")
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     
-    logger.info(f"Получение списка корзин пользователей, страница {page}, лимит {limit}")
+    logger.info(f"Получение списка корзин пользователей, страница {page}, лимит {limit}, поиск: {search}, фильтр: {filter}")
     
     try:
         # Получаем корзины пользователей с пагинацией
@@ -928,7 +964,9 @@ async def get_user_carts(
             limit=limit,
             sort_by=sort_by,
             sort_order=sort_order,
-            user_id=user_id  # Передаем фильтр в метод модели
+            user_id=user_id,
+            filter=filter,
+            search=search
         )
         
         # Получаем информацию о товарах для всех корзин
@@ -946,6 +984,12 @@ async def get_user_carts(
             cart_total_items = 0
             cart_total_price = 0
             cart_items = []
+            
+            # Получаем информацию о пользователе
+            user_info = await get_user_info(cart.user_id) if cart.user_id else {}
+            first_name = user_info.get('first_name', '')
+            last_name = user_info.get('last_name', '')
+            user_name = f"{first_name} {last_name}".strip()
             
             for item in cart.items:
                 # Получаем информацию о продукте
@@ -973,6 +1017,7 @@ async def get_user_carts(
             user_cart = UserCartSchema(
                 id=cart.id,
                 user_id=cart.user_id,
+                user_name=user_name or f"Пользователь {cart.user_id}",
                 created_at=cart.created_at,
                 updated_at=cart.updated_at,
                 items=cart_items,
@@ -981,6 +1026,12 @@ async def get_user_carts(
             )
             
             result_items.append(user_cart)
+        
+        # Дополнительная сортировка на уровне приложения, если требуется
+        if sort_by == 'items_count':
+            result_items.sort(key=lambda x: x.total_items, reverse=(sort_order == 'desc'))
+        elif sort_by == 'total_price':
+            result_items.sort(key=lambda x: x.total_price, reverse=(sort_order == 'desc'))
         
         # Рассчитываем общее количество страниц
         total_pages = (total_count + limit - 1) // limit  # Округление вверх

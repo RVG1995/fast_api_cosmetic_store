@@ -11,7 +11,7 @@ const AdminCarts = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterOption, setFilterOption] = useState('all');
-  const [sortOption, setSortOption] = useState('newest');
+  const [sortOption, setSortOption] = useState('updated_at:desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const pageSize = 10;
@@ -27,8 +27,15 @@ const AdminCarts = () => {
         page: currentPage,
         page_size: pageSize,
         filter: filterOption !== 'all' ? filterOption : undefined,
-        sort: sortOption
+        search: searchTerm,
       };
+      
+      // Добавляем параметры сортировки
+      if (sortOption) {
+        const [sortBy, sortOrder] = sortOption.split(':');
+        params.sort_by = sortBy;
+        params.sort_order = sortOrder;
+      }
       
       console.log('Отправка запроса к API корзин с куки-авторизацией');
       
@@ -63,12 +70,7 @@ const AdminCarts = () => {
   useEffect(() => {
     fetchCarts();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, filterOption, sortOption]);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    fetchCarts();
-  };
+  }, [currentPage, filterOption, sortOption, searchTerm]);
 
   const handleFilterChange = (e) => {
     setFilterOption(e.target.value);
@@ -84,13 +86,41 @@ const AdminCarts = () => {
     setCurrentPage(page);
   };
 
-  const filteredCarts = searchTerm
-    ? carts.filter(cart => 
-        cart.id.toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (cart.user_id && cart.user_id.toString().toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (cart.user_email && cart.user_email.toLowerCase().includes(searchTerm.toLowerCase()))
-      )
-    : carts;
+  const resetFilters = async () => {
+    setFilterOption('all');
+    setSortOption('updated_at:desc');
+    setCurrentPage(1);
+    
+    // Создаем новые параметры без фильтрации, но сохраняем поисковый запрос
+    const params = {
+      page: 1,
+      page_size: pageSize,
+      sort_by: 'updated_at',
+      sort_order: 'desc',
+      search: searchTerm // Сохраняем текущий поисковый запрос
+    };
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await axios.get(`${API_URLS.CART_SERVICE}/admin/carts`, {
+        params,
+        withCredentials: true
+      });
+      
+      setCarts(response.data.items || []);
+      setTotalPages(Math.ceil((response.data.total || 0) / pageSize));
+      setLoading(false);
+    } catch (err) {
+      console.error('Error fetching carts after reset:', err);
+      setError('Не удалось сбросить фильтры. Попробуйте позже.');
+      setLoading(false);
+    }
+  };
+
+  // Убираем клиентскую фильтрацию, так как фильтрация происходит на сервере
+  const filteredCarts = carts;
 
   return (
     <Container className="py-4">
@@ -98,17 +128,17 @@ const AdminCarts = () => {
       
       <Row className="mb-4">
         <Col md={6}>
-          <Form onSubmit={handleSearch}>
-            <InputGroup>
-              <Form.Control
-                type="text"
-                placeholder="Поиск по ID корзины или пользователя"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              <Button variant="primary" type="submit">Поиск</Button>
-            </InputGroup>
-          </Form>
+          <InputGroup>
+            <Form.Control
+              type="text"
+              placeholder="Поиск по ID корзины"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Сбрасываем на первую страницу при поиске
+              }}
+            />
+          </InputGroup>
         </Col>
         <Col md={3}>
           <Form.Select 
@@ -119,8 +149,6 @@ const AdminCarts = () => {
             <option value="all">Все корзины</option>
             <option value="with_items">С товарами</option>
             <option value="empty">Пустые корзины</option>
-            <option value="with_user">Авторизованные пользователи</option>
-            <option value="anonymous">Анонимные корзины</option>
           </Form.Select>
         </Col>
         <Col md={3}>
@@ -129,13 +157,21 @@ const AdminCarts = () => {
             onChange={handleSortChange}
             aria-label="Сортировка корзин"
           >
-            <option value="newest">Сначала новые</option>
-            <option value="oldest">Сначала старые</option>
-            <option value="items_count_desc">По количеству товаров (убыв.)</option>
-            <option value="items_count_asc">По количеству товаров (возр.)</option>
-            <option value="total_price_desc">По стоимости (убыв.)</option>
-            <option value="total_price_asc">По стоимости (возр.)</option>
+            <option value="updated_at:desc">Сначала новые</option>
+            <option value="updated_at:asc">Сначала старые</option>
+            <option value="items_count:desc">По количеству товаров (убыв.)</option>
+            <option value="items_count:asc">По количеству товаров (возр.)</option>
+            <option value="total_price:desc">По стоимости (убыв.)</option>
+            <option value="total_price:asc">По стоимости (возр.)</option>
           </Form.Select>
+        </Col>
+      </Row>
+      
+      <Row className="mb-4">
+        <Col className="d-flex justify-content-end">
+          <Button variant="outline-secondary" onClick={resetFilters}>
+            Сбросить все фильтры
+          </Button>
         </Col>
       </Row>
 
@@ -171,7 +207,7 @@ const AdminCarts = () => {
                   <td>
                     {cart.user_id ? (
                       <Link to={`/admin/users/${cart.user_id}`}>
-                        {cart.user_email || cart.user_id}
+                        {cart.user_name || cart.user_id}
                       </Link>
                     ) : (
                       <Badge bg="secondary">Анонимный</Badge>

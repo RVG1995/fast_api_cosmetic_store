@@ -106,6 +106,7 @@ class UserCartSchema(BaseModel):
     """Схема для корзины пользователя в админ-панели"""
     id: int
     user_id: int
+    user_name: str = ""
     created_at: datetime
     updated_at: datetime
     items: List[UserCartItemSchema] = []

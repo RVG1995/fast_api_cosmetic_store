@@ -53,6 +53,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Настройка CORS
 origins = [
     "http://localhost:3000",  # адрес вашего фронтенда
+    "http://127.0.0.1:3000",  # дополнительный адрес для тестирования
     # можно добавить другие источники, если нужно
 ]
 

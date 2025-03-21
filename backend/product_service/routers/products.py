@@ -14,7 +14,7 @@ import os
 import logging
 from sqlalchemy import func
 import json
-from typing import List, Optional, Union, Annotated, Any
+from typing import List, Optional, Union, Annotated, Any, Dict
 from fastapi.staticfiles import StaticFiles
 # Импортируем функции для работы с кэшем
 from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, CACHE_TTL, close_redis_connection
@@ -27,6 +27,13 @@ logger = logging.getLogger("product_service")
 router = APIRouter(
     prefix="/products",
     tags=["products"],
+    responses={404: {"description": "Not found"}},
+)
+
+# Создание роутера для админ-панели
+admin_router = APIRouter(
+    prefix="/admin/products",
+    tags=["admin_products"],
     responses={404: {"description": "Not found"}},
 )
 
@@ -555,3 +562,47 @@ async def delete_product(
     
     # Возвращаем None для статуса 204 No Content
     return None
+
+@router.post("/check-availability", response_model=Dict[str, bool])
+async def check_products_availability(
+    product_ids: List[int] = Body(..., embed=True),
+    session: AsyncSession = Depends(get_session),
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+):
+    """
+    Проверяет доступность товаров для заказа.
+    
+    - **product_ids**: Список ID товаров для проверки
+    
+    Возвращает словарь, где ключи - это ID товаров, а значения - флаги доступности (True/False)
+    """
+    try:
+        logger.info(f"Проверка доступности товаров: {product_ids}")
+        result = {}
+        
+        # Получаем товары из базы данных
+        query = select(ProductModel).where(
+            ProductModel.id.in_(product_ids)
+        )
+        products = await session.execute(query)
+        products = products.scalars().all()
+        
+        # Для каждого ID из запроса проверяем, найден ли товар и доступен ли он
+        for product_id in product_ids:
+            product = next((p for p in products if p.id == product_id), None)
+            
+            # Товар доступен, если он существует и есть в наличии
+            # Проверяем только stock > 0, так как поля is_active может не быть
+            is_available = product is not None and product.stock > 0
+            
+            # Преобразуем product_id в строку для корректной сериализации в JSON
+            result[str(product_id)] = is_available
+            logger.info(f"Товар {product_id}: {'доступен' if is_available else 'недоступен'}")
+        
+        return result
+    except Exception as e:
+        logger.error(f"Ошибка при проверке доступности товаров: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Произошла ошибка при проверке доступности товаров: {str(e)}"
+        )

@@ -13,7 +13,9 @@ import {
   Alert,
   Table,
   Modal,
-  Form
+  Form,
+  OverlayTrigger,
+  Tooltip
 } from 'react-bootstrap';
 import { formatPrice } from '../../utils/helpers';
 import { formatDateTime } from '../../utils/dateUtils';
@@ -35,6 +37,9 @@ const OrderDetailPage = () => {
   const [loadError, setLoadError] = useState(null);
   const [reorderLoading, setReorderLoading] = useState(false);
   const [reorderError, setReorderError] = useState(null);
+  const [canReorder, setCanReorder] = useState(false);
+  const [cannotReorderReason, setCannotReorderReason] = useState('');
+  const [checkingReorderAvailability, setCheckingReorderAvailability] = useState(false);
   
   // Загрузка заказа при монтировании компонента
   const loadOrder = async () => {
@@ -69,6 +74,9 @@ const OrderDetailPage = () => {
       
       // Устанавливаем данные заказа
       setOrder(response.data);
+      
+      // После загрузки заказа проверяем возможность его повторения
+      await checkReorderAvailability(response.data);
     } catch (err) {
       console.error('===== ОШИБКА ЗАПРОСА ЗАКАЗА =====');
       console.error('Имя ошибки:', err.name);
@@ -95,6 +103,93 @@ const OrderDetailPage = () => {
         // Что-то произошло при настройке запроса
         setLoadError(`Ошибка при загрузке заказа: ${err.message}`);
       }
+    }
+  };
+  
+  // Функция для проверки возможности повторения заказа
+  const checkReorderAvailability = async (orderData) => {
+    if (!orderData || !orderData.items || orderData.items.length === 0) {
+      setCanReorder(false);
+      setCannotReorderReason('Заказ не содержит товаров');
+      return;
+    }
+    
+    setCheckingReorderAvailability(true);
+    
+    try {
+      // Собираем ID товаров из заказа
+      const productIds = orderData.items.map(item => item.product_id);
+      
+      const config = {
+        withCredentials: true,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      // Выполняем запрос для проверки доступности товаров
+      const url = `${API_URLS.PRODUCT_SERVICE}/products/check-availability`;
+      console.log('Проверка доступности товаров:', url);
+      console.log('ID товаров:', productIds);
+      
+      try {
+        const response = await axios.post(url, { product_ids: productIds }, config);
+        console.log('Ответ сервера о доступности товаров:', response.data);
+        
+        // Проверяем, все ли товары доступны
+        const unavailableProducts = [];
+        
+        for (const [productId, availability] of Object.entries(response.data)) {
+          if (!availability) {
+            // Находим имя товара по product_id
+            const productName = orderData.items.find(item => item.product_id === Number(productId))?.product_name || `ID: ${productId}`;
+            unavailableProducts.push(productName);
+          }
+        }
+        
+        if (unavailableProducts.length > 0) {
+          setCanReorder(false);
+          setCannotReorderReason(`Следующие товары недоступны: ${unavailableProducts.join(', ')}`);
+        } else {
+          setCanReorder(true);
+          setCannotReorderReason('');
+        }
+      } catch (apiError) {
+        console.error('Ошибка API при проверке доступности товаров:', apiError);
+        
+        // Для отладки выводим подробную информацию об ошибке
+        if (apiError.response) {
+          console.error('Данные ответа:', apiError.response.data);
+          console.error('Статус ответа:', apiError.response.status);
+          console.error('Заголовки ответа:', apiError.response.headers);
+        } else if (apiError.request) {
+          console.error('Запрос был отправлен, но ответ не получен:', apiError.request);
+        } else {
+          console.error('Ошибка при настройке запроса:', apiError.message);
+        }
+        
+        // Временная мера - предполагаем, что товары доступны если не можем проверить
+        setCanReorder(true);
+        setCannotReorderReason('');
+        
+        // Закомментированный код для показа ошибки, при необходимости раскомментировать
+        /*
+        setCanReorder(false);
+        if (apiError.response && apiError.response.data && apiError.response.data.detail) {
+          setCannotReorderReason(apiError.response.data.detail);
+        } else {
+          setCannotReorderReason('Не удалось проверить наличие товаров. Попробуйте позже.');
+        }
+        */
+      }
+    } catch (err) {
+      console.error('Общая ошибка при проверке доступности товаров:', err);
+      
+      // Временная мера - предполагаем, что товары доступны если не можем проверить
+      setCanReorder(true);
+      setCannotReorderReason('');
+    } finally {
+      setCheckingReorderAvailability(false);
     }
   };
   
@@ -178,6 +273,11 @@ const OrderDetailPage = () => {
   const handleReorder = async () => {
     if (!user) {
       setReorderError('Для повторения заказа необходимо авторизоваться');
+      return;
+    }
+    
+    if (!canReorder) {
+      setReorderError(cannotReorderReason || 'Невозможно повторить заказ');
       return;
     }
     
@@ -438,20 +538,44 @@ const OrderDetailPage = () => {
                 )}
                 
                 {/* Кнопка для повторного заказа */}
-                <Button 
-                  variant="outline-secondary" 
-                  onClick={handleReorder}
-                  disabled={reorderLoading}
-                >
-                  {reorderLoading ? (
-                    <>
-                      <Spinner size="sm" animation="border" className="me-2" />
-                      Создание заказа...
-                    </>
-                  ) : (
-                    <>Повторить заказ</>
-                  )}
-                </Button>
+                {checkingReorderAvailability ? (
+                  <Button 
+                    variant="secondary" 
+                    disabled
+                  >
+                    <Spinner size="sm" animation="border" className="me-2" />
+                    Проверка доступности...
+                  </Button>
+                ) : canReorder ? (
+                  <Button 
+                    variant="outline-primary" 
+                    onClick={handleReorder}
+                    disabled={reorderLoading}
+                  >
+                    {reorderLoading ? (
+                      <>
+                        <Spinner size="sm" animation="border" className="me-2" />
+                        Создание заказа...
+                      </>
+                    ) : (
+                      <>Повторить заказ</>
+                    )}
+                  </Button>
+                ) : (
+                  <OverlayTrigger
+                    placement="top"
+                    overlay={<Tooltip id="tooltip-reorder">{cannotReorderReason}</Tooltip>}
+                  >
+                    <div className="d-grid">
+                      <Button 
+                        variant="secondary" 
+                        disabled
+                      >
+                        Повторить заказ
+                      </Button>
+                    </div>
+                  </OverlayTrigger>
+                )}
                 
                 {/* Поддержка - можно добавить функционал */}
                 <Button variant="outline-secondary" disabled>

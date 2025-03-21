@@ -239,7 +239,7 @@ async def get_cart(
         cart = await get_cart_with_items(db, user, session_id)
         
         if not cart:
-            # Создаем новую корзину
+            # Создаем новую корзину только если пользователь не авторизован или авторизован, но у него нет корзины
             logger.info(f"Создание новой корзины: user_id={user.id if user else None}, session_id={None if user else session_id}")
             new_cart = CartModel(
                 user_id=user.id if user else None,
@@ -264,9 +264,8 @@ async def get_cart(
             logger.info(f"Новая корзина создана: id={cart.id if cart else 'unknown'}")
         
         # Устанавливаем или обновляем cookie с session_id, если пользователь не авторизован
-        if not user:
-            # Всегда обновляем куку для анонимных пользователей с каждым запросом корзины
-            # для поддержания "свежести" куки
+        if not user and session_id:
+            # Обновляем куку только для анонимных пользователей
             response.set_cookie(
                 key="cart_session_id", 
                 value=session_id, 
@@ -392,6 +391,8 @@ async def add_item_to_cart(
         db.add(new_item)
         logger.info(f"Добавлен новый товар в корзину: cart_id={cart.id}, product_id={item.product_id}, quantity={item.quantity}")
     
+    # Принудительно обновляем timestamp корзины
+    cart.updated_at = datetime.now()
     await db.commit()
     
     # Получаем обновленную корзину с явной загрузкой элементов
@@ -460,6 +461,10 @@ async def update_cart_item(
     
     # Обновляем количество
     cart_item.quantity = item_data.quantity
+    
+    # Принудительно обновляем timestamp корзины
+    cart.updated_at = datetime.now()
+    
     await db.commit()
     
     # Получаем обновленную корзину с явной загрузкой элементов
@@ -519,6 +524,10 @@ async def remove_cart_item(
         
         # Удаляем элемент
         await db.delete(cart_item)
+        
+        # Принудительно обновляем timestamp корзины
+        cart.updated_at = datetime.now()
+        
         await db.commit()
         logger.info(f"Товар удален из корзины: item_id={item_id}, product_id={product_id}, cart_id={cart.id}")
         
@@ -652,6 +661,9 @@ async def clear_cart(
     if items:
         for item in items:
             await db.delete(item)
+        
+        # Принудительно обновляем timestamp корзины
+        cart.updated_at = datetime.now()
         
         await db.commit()
     

@@ -33,6 +33,8 @@ const OrderDetailPage = () => {
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError, setCancelError] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [reorderLoading, setReorderLoading] = useState(false);
+  const [reorderError, setReorderError] = useState(null);
   
   // Загрузка заказа при монтировании компонента
   const loadOrder = async () => {
@@ -171,6 +173,45 @@ const OrderDetailPage = () => {
     if (!order || !order.status) return false;
     return order.status.allow_cancel && !order.status.is_final;
   }, [order]);
+  
+  // Обработчик повторения заказа
+  const handleReorder = async () => {
+    if (!user) {
+      setReorderError('Для повторения заказа необходимо авторизоваться');
+      return;
+    }
+    
+    setReorderLoading(true);
+    setReorderError(null);
+    
+    try {
+      const config = {
+        withCredentials: true,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const url = `${API_URLS.ORDER_SERVICE}/orders/${orderId}/reorder`;
+      console.log('URL запроса повторения заказа:', url);
+      
+      const response = await axios.post(url, {}, config);
+      console.log('Ответ от сервера:', response.data);
+      
+      if (response.data.success) {
+        alert(response.data.message || 'Заказ успешно повторен');
+        // Перенаправляем пользователя на страницу нового заказа
+        navigate(`/orders/${response.data.order_id}`);
+      } else {
+        setReorderError(response.data.message || 'Не удалось повторить заказ');
+      }
+    } catch (err) {
+      console.error('Ошибка при повторении заказа:', err);
+      setReorderError(err.response?.data?.detail || 'Произошла ошибка при повторении заказа');
+    } finally {
+      setReorderLoading(false);
+    }
+  };
   
   // Отображение загрузки
   if (loading && !order) {
@@ -390,9 +431,26 @@ const OrderDetailPage = () => {
                   Вернуться к заказам
                 </Link>
                 
-                {/* Кнопка для повторного заказа - можно добавить функционал */}
-                <Button variant="outline-secondary" disabled>
-                  Повторить заказ
+                {reorderError && (
+                  <Alert variant="danger" className="mt-2 mb-2">
+                    {reorderError}
+                  </Alert>
+                )}
+                
+                {/* Кнопка для повторного заказа */}
+                <Button 
+                  variant="outline-secondary" 
+                  onClick={handleReorder}
+                  disabled={reorderLoading}
+                >
+                  {reorderLoading ? (
+                    <>
+                      <Spinner size="sm" animation="border" className="me-2" />
+                      Создание заказа...
+                    </>
+                  ) : (
+                    <>Повторить заказ</>
+                  )}
                 </Button>
                 
                 {/* Поддержка - можно добавить функционал */}

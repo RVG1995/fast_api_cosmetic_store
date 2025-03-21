@@ -387,6 +387,127 @@ async def cancel_order_endpoint(
             detail="Произошла ошибка при отмене заказа",
         )
 
+@router.post("/{order_id}/reorder", status_code=status.HTTP_201_CREATED)
+async def reorder_endpoint(
+    order_id: int = Path(..., ge=1),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Повторение заказа - создание нового заказа с теми же товарами.
+    
+    - **order_id**: ID заказа для повторения
+    """
+    try:
+        # Проверяем авторизацию пользователя
+        if not current_user or not current_user.get("user_id"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Для повторения заказа необходимо авторизоваться"
+            )
+        
+        user_id = current_user.get("user_id")
+        token = current_user.get("token")
+        
+        # Получаем исходный заказ по ID
+        original_order = await get_order_by_id(session, order_id)
+        if not original_order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Заказ с ID {order_id} не найден"
+            )
+        
+        # Проверяем, принадлежит ли заказ текущему пользователю
+        if original_order.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="У вас нет прав для повторения этого заказа"
+            )
+        
+        # Получаем список товаров из заказа
+        items = []
+        product_ids = []
+        for item in original_order.items:
+            items.append({
+                "product_id": item.product_id,
+                "quantity": item.quantity
+            })
+            product_ids.append(item.product_id)
+        
+        # Проверяем доступность товаров
+        availability = await check_products_availability(product_ids, token)
+        
+        # Проверяем, все ли товары доступны
+        unavailable_products = [pid for pid, available in availability.items() if not available]
+        if unavailable_products:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Товары с ID {unavailable_products} больше недоступны для заказа"
+            )
+        
+        # Получаем информацию о товарах
+        products_info = await get_products_info(product_ids, token)
+        
+        # Создаем новые данные для заказа на основе старого
+        from schemas import OrderCreate, OrderItemCreate
+        
+        # Преобразуем товары в формат для создания заказа
+        order_items = []
+        for item in original_order.items:
+            order_items.append(OrderItemCreate(
+                product_id=item.product_id,
+                quantity=item.quantity
+            ))
+        
+        new_order_data = OrderCreate(
+            full_name=original_order.full_name,
+            email=original_order.email,
+            phone=original_order.phone,
+            region=original_order.region,
+            city=original_order.city,
+            street=original_order.street,
+            comment=f"Повторный заказ на основе заказа #{original_order.id}",
+            items=order_items
+        )
+        
+        # Создаем новый заказ
+        new_order = await create_order(
+            session=session,
+            user_id=user_id,
+            order_data=new_order_data,
+            product_service_url=PRODUCT_SERVICE_URL,
+            token=token
+        )
+        
+        # Коммитим сессию
+        await session.commit()
+        
+        # Получаем созданный заказ
+        created_order = await get_order_by_id(session, new_order.id)
+        
+        # Возвращаем информацию о созданном заказе
+        response_data = OrderResponse.model_validate(created_order)
+        return {
+            "success": True,
+            "message": "Заказ успешно повторен",
+            "order": response_data,
+            "order_id": new_order.id
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Ошибка при повторении заказа: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Непредвиденная ошибка при повторении заказа: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Произошла ошибка при повторении заказа"
+        )
+
 # Административные маршруты
 @admin_router.get("", response_model=PaginatedResponse)
 async def list_all_orders(

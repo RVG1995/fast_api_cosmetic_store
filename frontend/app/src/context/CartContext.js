@@ -221,24 +221,21 @@ export const CartProvider = ({ children }) => {
 
   // Объединяем корзины при авторизации пользователя
   useEffect(() => {
-    // Для избежания запроса при первой загрузке
-    const handleUserChange = async () => {
-      if (user) {
-        try {
-          await mergeCarts();
-        } catch (err) {
+    // Объединяем корзины сразу при изменении пользователя
+    if (user) {
+      console.log('Пользователь изменился, объединяем корзины');
+      mergeCarts()
+        .then(() => {
+          // После объединения корзин перезагружаем корзину
+          fetchCart();
+          // Оповещаем всех, что корзина обновилась после объединения
+          window.dispatchEvent(new CustomEvent('cart:merged'));
+        })
+        .catch(err => {
           console.error('Не удалось объединить корзины', err);
-        }
-      }
-    };
-    
-    // Выполняем с задержкой, чтобы дать время на обработку авторизации
-    const timer = setTimeout(() => {
-      handleUserChange();
-    }, 300);
-    
-    return () => clearTimeout(timer);
-  }, [user, mergeCarts]);
+        });
+    }
+  }, [user, mergeCarts, fetchCart]);
 
   // Значение контекста
   const value = {

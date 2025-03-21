@@ -22,10 +22,18 @@ const CartIcon = () => {
       fetchCart();
     };
     
+    // Слушаем событие объединения корзин
+    const handleCartMerged = () => {
+      console.log('Событие объединения корзин получено, обновляем данные');
+      fetchCart();
+    };
+    
     window.addEventListener('cart:updated', handleCartUpdated);
+    window.addEventListener('cart:merged', handleCartMerged);
     
     return () => {
       window.removeEventListener('cart:updated', handleCartUpdated);
+      window.removeEventListener('cart:merged', handleCartMerged);
     };
   }, [fetchCart]);
 

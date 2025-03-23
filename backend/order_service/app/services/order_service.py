@@ -1,88 +1,131 @@
 import logging
-from ..utils.celery_utils import send_celery_task
+from ..utils.rabbit_utils import get_connection, close_connection
+import json
+import aio_pika
 
 logger = logging.getLogger(__name__)
 
-def send_order_confirmation(order_id, email):
-    """
-    Отправляет email с подтверждением заказа через Celery.
-    
-    Args:
-        order_id (int): ID заказа
-        email (str): Email пользователя
-    
-    Returns:
-        str или None: ID задачи Celery или None в случае ошибки
-    """
-    logger.info(f"Отправка подтверждения заказа {order_id} на email {email}")
-    
-    # Отправляем задачу в Celery через утилиту
-    task_id = send_celery_task(
-        'order.send_order_confirmation',
-        args=[order_id, email]
-    )
-    
-    if task_id:
-        logger.info(f"Задача отправки подтверждения заказа {order_id} поставлена в очередь, task_id: {task_id}")
-    else:
-        logger.error(f"Не удалось отправить задачу подтверждения заказа {order_id} в Celery")
-    
-    return task_id
 
-def update_order_status(order_id, new_status, old_status=None, email=None, notify=True):
+def create_order_email_content(order_data, new_status_name=None):
+    if new_status_name:
+        message_body = {
+            "order_number": order_data.order_number,
+            "full_name": order_data.full_name,
+            "created_at": order_data.created_at.isoformat() if order_data.created_at else None,
+            "status": new_status_name,
+            "total_price": order_data.total_price,
+            "is_paid": order_data.is_paid,
+            "email": order_data.email,
+            "phone": order_data.phone,
+            "region": order_data.region,
+            "city": order_data.city,
+            "street": order_data.street,
+            "items": [
+                    {
+                        "product_name": item.product_name,
+                        "quantity": item.quantity,
+                        "product_price": item.product_price,
+                        "total_price": item.total_price
+                    } for item in order_data.items
+                ] if order_data.items else []
+        }
+    else:
+        message_body = {
+            "order_number": order_data.order_number,
+            "full_name": order_data.full_name,
+            "created_at": order_data.created_at.isoformat() if order_data.created_at else None,
+            "status": order_data.status.name if order_data.status else "Неизвестно",
+            "total_price": order_data.total_price,
+            "is_paid": order_data.is_paid,
+            "email": order_data.email,
+            "phone": order_data.phone,
+            "region": order_data.region,
+            "city": order_data.city,
+            "street": order_data.street,
+            "items": [
+                    {
+                        "product_name": item.product_name,
+                        "quantity": item.quantity,
+                        "product_price": item.product_price,
+                        "total_price": item.total_price
+                    } for item in order_data.items
+                ] if order_data.items else []
+        }
+    return message_body
+
+
+async def send_email_message(
+    order_data
+):
     """
-    Асинхронно обновляет статус заказа и отправляет уведомление, если нужно.
+    Отправляет сообщение с данными для email в очередь
     
     Args:
-        order_id (int): ID заказа
-        new_status (str): Новый статус заказа
-        old_status (str, optional): Предыдущий статус заказа
-        email (str, optional): Email пользователя
-        notify (bool): Отправлять ли уведомление о смене статуса
-    
-    Returns:
-        str или None: ID задачи Celery или None в случае ошибки
+        email: Email получателя
+        order_id: Номер заказа
+        products: Список продуктов в заказе
     """
-    logger.info(f"Обновление статуса заказа {order_id} с '{old_status}' на '{new_status}'")
+    connection = await get_connection()
     
-    if notify and email:
-        # Отправляем задачу на уведомление о смене статуса через Celery
-        task_id = send_celery_task(
-            'order.send_status_update',
-            args=[order_id, new_status, email]
+    try:
+        # Создаем канал
+        channel = await connection.channel()
+        
+        # Объявляем очередь
+        queue = await channel.declare_queue(
+            "email_message",
+            durable=True
         )
-        
-        if task_id:
-            logger.info(f"Задача отправки уведомления о смене статуса заказа {order_id} поставлена в очередь, task_id: {task_id}")
-        else:
-            logger.error(f"Не удалось отправить задачу уведомления о смене статуса заказа {order_id} в Celery")
-        
-        return task_id
-    else:
-        logger.info(f"Уведомление о смене статуса заказа {order_id} отключено или email не указан")
-        return None
 
-def process_abandoned_orders(hours=24):
+        message_body = create_order_email_content(order_data)        
+        # Отправляем сообщение
+        await channel.default_exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(message_body).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+            ),
+            routing_key=queue.name
+        )
+        logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+    finally:
+        # Закрываем соединение в любом случае
+        await close_connection(connection)
+
+
+async def update_order_status(
+    order_data, new_status_name
+):
     """
-    Запускает обработку заброшенных заказов (не оплаченных в течение определенного времени).
+    Отправляет сообщение об изменении статуса заказа с данными для email в очередь
     
     Args:
-        hours (int): Количество часов, после которых неоплаченный заказ считается заброшенным
-    
-    Returns:
-        str или None: ID задачи Celery или None в случае ошибки
+        email: Email получателя
+        order_id: Номер заказа
+        products: Список продуктов в заказе
     """
-    logger.info(f"Запуск обработки заброшенных заказов старше {hours} часов")
+    connection = await get_connection()
     
-    # Отправляем задачу в Celery через утилиту
-    task_id = send_celery_task(
-        'order.process_abandoned_orders',
-        args=[hours]
-    )
-    
-    if task_id:
-        logger.info(f"Задача обработки заброшенных заказов поставлена в очередь, task_id: {task_id}")
-    else:
-        logger.error(f"Не удалось отправить задачу обработки заброшенных заказов в Celery")
-    
-    return task_id 
+    try:
+        # Создаем канал
+        channel = await connection.channel()
+        
+        # Объявляем очередь
+        queue = await channel.declare_queue(
+            "update_message",
+            durable=True
+        )
+        # Создаем сообщение
+        message_body = create_order_email_content(order_data, new_status_name)  
+        
+        # Отправляем сообщение
+        await channel.default_exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(message_body).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+            ),
+            routing_key=queue.name
+        )
+        logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+    finally:
+        # Закрываем соединение в любом случае
+        await close_connection(connection)

@@ -67,6 +67,7 @@ backend/cart_service/celerybeat-schedule
 backend/cart_service/celerybeat-schedule.db
 backend/cart_service/celerybeat.pid
 backend/cart_service/__pycache__/
+backend/api_gateway/
 **/__pycache__/
 **/*.pyc
 **/*.pyo

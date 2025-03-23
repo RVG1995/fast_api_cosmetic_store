@@ -190,6 +190,23 @@ fi
 
 echo ""
 
+# Запуск RabbitMQ consumer для email
+print_message "${BLUE}=== ЗАПУСК RABBITMQ EMAIL CONSUMER ===${NC}"
+
+if [ -d "$BACKEND_DIR/rabbit/email_consumer" ]; then
+    print_message "Директория RabbitMQ Email Consumer найдена: $BACKEND_DIR/rabbit/email_consumer"
+    
+    # Запуск Email Consumer
+    start_service "email_consumer" "$BACKEND_DIR/rabbit/email_consumer" "python consumer.py"
+    sleep 2
+    
+    print_message "${GREEN}[INFO]${NC} RabbitMQ Email Consumer запущен. Обработка сообщений из очередей началась."
+else
+    print_message "${YELLOW}[WARNING]${NC} Директория email_consumer не найдена. Email Consumer не будет запущен."
+fi
+
+echo ""
+
 # Запуск бэкенд-сервисов
 print_message "${BLUE}=== ЗАПУСК БЭКЕНД-СЕРВИСОВ ===${NC}"
 

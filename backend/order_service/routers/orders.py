@@ -107,11 +107,11 @@ async def create_new_order(
         loaded_order = await get_order_by_id(session, order.id)
         
         # Отправляем подтверждение заказа на email
-        from app.services.order_service import send_order_confirmation
+        from app.services.order_service import send_email_message
         if order_data.email:
             logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
-            task_id = send_order_confirmation(order.id, order_data.email)
-            logger.info(f"Задача подтверждения заказа {order.id} отправлена в Celery, task_id: {task_id}")
+            task_id = await send_email_message(loaded_order)
+            logger.info(f"Задача подтверждения заказа {order.id} отправлена в RabbitMQ, task_id: {task_id}")
         
         # Явно инвалидируем кэш заказов перед возвратом ответа
         await invalidate_order_cache(order.id)
@@ -753,8 +753,8 @@ async def update_order_status(
         comment = status_data.get("comment")
         
         # Проверяем, что статус существует
-        status = await session.get(OrderStatusModel, status_id)
-        if not status:
+        status_name = await session.get(OrderStatusModel, status_id)
+        if not status_name:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Статус с ID {status_id} не найден",
@@ -800,20 +800,15 @@ async def update_order_status(
         logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после изменения статуса с '{old_status_name}' на '{new_status_name}'")
         
         # Отправляем уведомление об изменении статуса
-        from app.services.order_service import update_order_status
-        if order.email:
-            logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
-            task_id = update_order_status(
-                order_id=order_id,
-                new_status=new_status_name,
-                old_status=old_status_name,
-                email=order.email,
-                notify=True
-            )
-            logger.info(f"Задача уведомления об изменении статуса заказа {order_id} отправлена в Celery, task_id: {task_id}")
-        
+        from app.services.order_service import update_order_status        
         # Обновляем заказ в сессии
         updated_order = await get_order_by_id(session, order_id)
+
+        if order.email:
+            await update_order_status(updated_order, new_status_name)
+            logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
+        
+
         
         return OrderResponse.model_validate(updated_order)
     except HTTPException:

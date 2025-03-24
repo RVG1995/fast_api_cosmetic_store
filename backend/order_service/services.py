@@ -219,7 +219,8 @@ async def get_orders(
             date_from=filters.date_from,
             date_to=filters.date_to,
             order_by=filters.order_by,
-            order_dir=filters.order_dir
+            order_dir=filters.order_dir,
+            username=filters.username
         )
 
 async def update_order(

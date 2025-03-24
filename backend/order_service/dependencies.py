@@ -138,6 +138,7 @@ def get_order_filter_params(
     size: int = 10,
     status_id: Optional[int] = None,
     user_id: Optional[int] = None,
+    username: Optional[str] = None,
     id: Optional[int] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
@@ -152,6 +153,7 @@ def get_order_filter_params(
         size: Размер страницы
         status_id: ID статуса заказа
         user_id: ID пользователя
+        username: Имя пользователя для поиска
         id: ID заказа
         date_from: Дата начала периода (YYYY-MM-DD)
         date_to: Дата окончания периода (YYYY-MM-DD)
@@ -166,6 +168,7 @@ def get_order_filter_params(
         size=size,
         status_id=status_id,
         user_id=user_id,
+        username=username,
         id=id,
         date_from=date_from,
         date_to=date_to,

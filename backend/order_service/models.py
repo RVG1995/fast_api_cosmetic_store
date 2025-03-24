@@ -175,14 +175,15 @@ class OrderModel(Base):
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         order_by: str = "created_at",
-        order_dir: str = "desc"
+        order_dir: str = "desc",
+        username: Optional[str] = None
     ) -> Tuple[List["OrderModel"], int]:
         """Получить все заказы с пагинацией и фильтрацией"""
         try:
             # Логируем входящие параметры фильтрации
             logger = logging.getLogger("order_model")
             logger.info(f"Запрос всех заказов с параметрами: page={page}, limit={limit}, status_id={status_id}, "
-                       f"user_id={user_id}, id={id}, date_from={date_from}, date_to={date_to}")
+                       f"user_id={user_id}, id={id}, date_from={date_from}, date_to={date_to}, username={username}")
             
             # Формируем базовый запрос
             query = select(cls)
@@ -196,6 +197,15 @@ class OrderModel(Base):
                 filters.append(cls.user_id == user_id)
             if id is not None:
                 filters.append(cls.id == id)
+            
+            # Добавляем фильтрацию по имени пользователя
+            if username is not None and username.strip():
+                # Используем оператор ILIKE для регистронезависимого поиска по части имени
+                # Обратите внимание, что % нужно добавить и в начало, и в конец для поиска по подстроке
+                filters.append(cls.full_name.ilike(f'%{username}%'))
+                logger.info(f"Применяется фильтр по имени пользователя: full_name ILIKE %{username}%")
+                # Добавляем отладочную информацию
+                logger.debug(f"Текущие фильтры: {filters}")
             
             # Добавляем фильтрацию по датам
             if date_from is not None:

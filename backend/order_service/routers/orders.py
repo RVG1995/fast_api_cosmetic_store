@@ -532,10 +532,10 @@ async def list_all_orders(
         # Логируем запрос с параметрами фильтрации
         logger.info(f"Запрос списка всех заказов с параметрами: page={filters.page}, size={filters.size}, "
                    f"status_id={filters.status_id}, user_id={filters.user_id}, id={filters.id}, "
-                   f"date_from={filters.date_from}, date_to={filters.date_to}")
+                   f"date_from={filters.date_from}, date_to={filters.date_to}, username={filters.username}")
         
         # Создаем ключ для кэша на основе параметров фильтрации
-        cache_key = f"p{filters.page}_s{filters.size}_st{filters.status_id or 'all'}_u{filters.user_id or 'all'}_id{filters.id or 'all'}_df{filters.date_from or 'all'}_dt{filters.date_to or 'all'}_ob{filters.order_by or 'default'}_od{filters.order_dir or 'default'}"
+        cache_key = f"p{filters.page}_s{filters.size}_st{filters.status_id or 'all'}_u{filters.user_id or 'all'}_id{filters.id or 'all'}_df{filters.date_from or 'all'}_dt{filters.date_to or 'all'}_un{filters.username or 'all'}_ob{filters.order_by or 'default'}_od{filters.order_dir or 'default'}"
         
         # Пытаемся получить данные из кэша
         cached_orders = await get_cached_orders_list(cache_key)
@@ -560,7 +560,7 @@ async def list_all_orders(
         
         # Кэшируем результат
         await cache_orders_list(cache_key, response)
-        logger.info(f"Данные о всех заказах добавлены в кэш")
+        logger.info(f"Данные о всех заказах добавлены в кэш с ключом: {cache_key}")
         
         return response
     except Exception as e:

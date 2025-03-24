@@ -232,6 +232,7 @@ class OrderFilterParams(BaseModel):
     size: int = Field(10, ge=1, le=100)
     status_id: Optional[int] = None
     user_id: Optional[int] = None
+    username: Optional[str] = None
     id: Optional[int] = None
     date_from: Optional[str] = None  # Дата начала периода в формате YYYY-MM-DD
     date_to: Optional[str] = None    # Дата окончания периода в формате YYYY-MM-DD

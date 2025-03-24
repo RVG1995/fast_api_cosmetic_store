@@ -25,6 +25,8 @@ import AdminCarts from './pages/admin/AdminCarts'; // Импортируем н�
 import AdminCartDetail from './pages/admin/AdminCartDetail'; // Импортируем страницу с деталями корзины
 import AdminOrders from './pages/admin/AdminOrders'; // Импортируем страницу заказов в админке
 import AdminOrderDetail from './pages/admin/AdminOrderDetail'; // Импортируем страницу с деталями заказа
+import AdminOrderStatuses from './pages/admin/AdminOrderStatuses'; // Импортируем страницу управления статусами заказов
+import AdminPaymentStatuses from './pages/admin/AdminPaymentStatuses'; // Импортируем страницу управления статусами оплаты
 import HomePage from './pages/HomePage';
 import ProductsPage from './pages/ProductsPage';
 import ProductDetailPage from './pages/ProductDetailPage';
@@ -214,6 +216,22 @@ function App() {
                   element={
                     <AdminRoute>
                       <AdminOrderDetail />
+                    </AdminRoute>
+                  } 
+                />
+                <Route 
+                  path="admin/order-statuses" 
+                  element={
+                    <AdminRoute>
+                      <AdminOrderStatuses />
+                    </AdminRoute>
+                  } 
+                />
+                <Route 
+                  path="admin/payment-statuses" 
+                  element={
+                    <AdminRoute>
+                      <AdminPaymentStatuses />
                     </AdminRoute>
                   } 
                 />

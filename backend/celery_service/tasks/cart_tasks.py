@@ -60,30 +60,3 @@ def cleanup_old_anonymous_carts(self, days=1):
     except Exception as e:
         logger.error(f"Ошибка при очистке анонимных корзин: {str(e)}")
         self.retry(exc=e, countdown=60 * 5, max_retries=3)  # Повторная попытка через 5 минут, максимум 3 попытки
-        
-        
-@app.task(name='cart.merge_carts', bind=True, queue='cart')
-def merge_carts(self, anonymous_cart_id, user_cart_id):
-    """
-    Задача для объединения анонимной корзины с корзиной пользователя после авторизации.
-    
-    Args:
-        anonymous_cart_id (str): ID анонимной корзины
-        user_cart_id (str): ID корзины пользователя
-        
-    Returns:
-        dict: Информация о результате операции
-    """
-    logger.info(f"Запуск слияния корзин: анонимная {anonymous_cart_id} с пользовательской {user_cart_id}")
-    try:
-        # Здесь должен быть HTTP-запрос к cart_service или прямое обращение к БД
-        
-        # Временная заглушка
-        return {
-            "status": "success", 
-            "message": f"Корзины {anonymous_cart_id} и {user_cart_id} успешно объединены"
-        }
-    
-    except Exception as e:
-        logger.error(f"Ошибка при объединении корзин: {str(e)}")
-        self.retry(exc=e, countdown=30, max_retries=3) 

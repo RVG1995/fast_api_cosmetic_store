@@ -56,19 +56,17 @@ async def get_current_user(
             actual_token = authorization
         logger.info(f"Используем токен из заголовка Authorization: {actual_token[:20]}...")
     
+    # Если токен не найден, возвращаем None для анонимного доступа
     if actual_token is None:
-        logger.error("Токен не найден ни в куках, ни в заголовке")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Токен не найден в cookies или заголовке Authorization"
-        )
+        logger.info("Токен не найден, продолжаем с анонимным доступом")
+        return None
     
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Невозможно проверить учетные данные",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if token == INTERNAL_SERVICE_KEY and x_service_name:
+    if actual_token == INTERNAL_SERVICE_KEY and x_service_name:
         logger.info(f"Внутренний запрос от сервиса {x_service_name} авторизован")
         # Возвращаем специальные данные для внутреннего сервиса с повышенными правами
         return {
@@ -77,18 +75,13 @@ async def get_current_user(
             "is_super_admin": True,
             "is_service": True,
             "service_name": x_service_name,
-            "token": token
+            "token": actual_token
         }
-    
-    # Если токен отсутствует, возвращаем None для поддержки анонимных пользователей
-    if not token:
-        logger.info("Токен не предоставлен")
-        return None
         
     try:
         # Декодируем токен
-        logger.info(f"Попытка декодирования токена: {token[:20]}...")
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        logger.info(f"Попытка декодирования токена: {actual_token[:20]}...")
+        payload = jwt.decode(actual_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         
         # Используем ключ "sub" вместо "user_id" как в других сервисах
         user_id = payload.get("sub")
@@ -102,7 +95,7 @@ async def get_current_user(
             "user_id": int(user_id),
             "is_admin": payload.get("is_admin", False),
             "is_super_admin": payload.get("is_super_admin", False),
-            "token": token
+            "token": actual_token
         }
     except PyJWTError as e:
         logger.error(f"Ошибка при декодировании токена: {str(e)}")

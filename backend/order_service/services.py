@@ -328,6 +328,11 @@ async def change_order_status(
         logger.error(f"Статус с ID {status_data.status_id} не найден")
         raise ValueError(f"Статус с ID {status_data.status_id} не найден")
     
+    # Проверяем, что новый статус отличается от текущего
+    if order.status_id == new_status.id:
+        logger.warning(f"Попытка установить тот же статус ({new_status.id}) для заказа {order_id}. Операция отменена.")
+        raise ValueError(f"Заказ уже имеет статус '{new_status.name}'")
+        
     # Проверяем возможность отмены заказа
     if order.status_id != new_status.id:
         current_status = await session.get(OrderStatusModel, order.status_id)

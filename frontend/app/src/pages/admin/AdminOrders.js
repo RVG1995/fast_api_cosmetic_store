@@ -366,7 +366,7 @@ const AdminOrders = () => {
                   {Array.isArray(orders) && orders.length > 0 ? (
                     orders.map(order => (
                       <tr key={order.id}>
-                        <td>{order.id}-{new Date(order.created_at).getFullYear()}</td>
+                        <td>{order.order_number}</td>
                         <td>{order.created_at ? formatDateTime(order.created_at) : '-'}</td>
                         <td className="text-center">
                           {order.user_id ? (

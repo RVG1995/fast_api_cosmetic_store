@@ -154,6 +154,14 @@ const AdminOrderDetail = () => {
   // Открытие модального окна для подтверждения изменения статуса
   const handleOpenModal = () => {
     if (!selectedStatus) return;
+    
+    // Проверяем, не пытается ли пользователь выбрать текущий статус
+    if (order && order.status && selectedStatus === order.status.id.toString()) {
+      setError('Заказ уже имеет данный статус');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+    
     setShowModal(true);
   };
   
@@ -272,6 +280,12 @@ const AdminOrderDetail = () => {
         </Alert>
       )}
       
+      {error && (
+        <Alert variant="danger" className="mb-4">
+          {error}
+        </Alert>
+      )}
+      
       <Row>
         {/* Основная информация о заказе */}
         <Col md={8}>
@@ -282,7 +296,7 @@ const AdminOrderDetail = () => {
             <Card.Body>
               <Row>
                 <Col md={6}>
-                  <p><strong>ID заказа:</strong> {order.id}-{new Date(order.created_at).getFullYear()}</p>
+                  <p><strong>ID заказа:</strong> {order.order_number}</p>
                   <p><strong>Дата создания:</strong> {formatDateTime(order.created_at)}</p>
                   <p><strong>Статус:</strong> <OrderStatusBadge status={order.status} /></p>
                 </Col>

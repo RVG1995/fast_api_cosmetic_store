@@ -6,7 +6,7 @@ import aio_pika
 logger = logging.getLogger(__name__)
 
 
-def create_order_email_content(order_data, new_status_name=None):
+def create_order_email_content(order_data, new_status_name=None, stock=None):
     if new_status_name:
         message_body = {
             "order_number": order_data.order_number,
@@ -28,6 +28,17 @@ def create_order_email_content(order_data, new_status_name=None):
                         "total_price": item.total_price
                     } for item in order_data.items
                 ] if order_data.items else []
+        }
+    elif isinstance(order_data, list):
+        # Случай для списка товаров с низким остатком
+        message_body = {
+            "low_stock_products": order_data
+        }
+    elif stock is not None:
+        # Устаревший случай для одного товара с низким остатком
+        message_body = {
+            "product_name": order_data,
+            "stock": stock
         }
     else:
         message_body = {
@@ -126,6 +137,42 @@ async def update_order_status(
             routing_key=queue.name
         )
         logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+    finally:
+        # Закрываем соединение в любом случае
+        await close_connection(connection)
+
+async def notification_message_about_low_stock(
+    low_stock_products
+):
+    """
+    Отправляет уведомление о товарах с низким остатком в очередь RabbitMQ
+    
+    Args:
+        low_stock_products: Список товаров с низким остатком, каждый товар содержит id, name и stock
+    """
+    connection = await get_connection()
+    
+    try:
+        # Создаем канал
+        channel = await connection.channel()
+        
+        # Объявляем очередь
+        queue = await channel.declare_queue(
+            "notification_message",
+            durable=True
+        )
+        # Создаем сообщение
+        message_body = create_order_email_content(order_data=low_stock_products)  
+        
+        # Отправляем сообщение
+        await channel.default_exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(message_body).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+            ),
+            routing_key=queue.name
+        )
+        logger.info(f"Отправлено уведомление о {len(low_stock_products)} товарах с низким остатком")
     finally:
         # Закрываем соединение в любом случае
         await close_connection(connection)

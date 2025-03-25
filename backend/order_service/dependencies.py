@@ -195,6 +195,40 @@ async def check_products_availability(product_ids: list[int], token: Optional[st
         # Получаем информацию о продуктах с использованием batch-запроса
         products = await product_api.get_products_batch(product_ids, token)
         
+        # Собираем товары с низким остатком
+        low_stock_products = []
+        for product_id in product_ids:
+            if product_id in products:
+                product = products[product_id]
+                if product.stock < 10:
+                    # Добавляем товар в список для уведомления
+                    low_stock_products.append({
+                        "id": product.id,
+                        "name": product.name,
+                        "stock": product.stock
+                    })
+        
+        # Отправляем уведомление только если список товаров с низким остатком не пустой 
+        # и в нем есть хотя бы один товар
+        if low_stock_products and len(low_stock_products) > 0:
+            # Логируем информацию о товарах с низким остатком
+            low_stock_names = [f"{p['name']} (ID: {p['id']}, остаток: {p['stock']})" for p in low_stock_products]
+            logger.warning(f"Обнаружены товары с низким остатком: {', '.join(low_stock_names)}")
+            
+            # Используем глобальный флаг для отслеживания отправки уведомлений
+            # Предотвращаем повторную отправку в рамках одного запроса
+            if not getattr(check_products_availability, "_notification_sent", False):
+                # Импортируем функцию для отправки уведомлений
+                from app.services.order_service import notification_message_about_low_stock
+                await notification_message_about_low_stock(low_stock_products)
+                # Устанавливаем флаг, что уведомление уже отправлено
+                check_products_availability._notification_sent = True
+                logger.info(f"Отправлено уведомление о {len(low_stock_products)} товарах с низким остатком")
+            else:
+                logger.info(f"Пропуск повторной отправки уведомления о товарах с низким остатком")
+        
+        logger.info(f"Products: {products}")
+        
         # Проверяем наличие (stock > 0)
         result = {}
         for product_id in product_ids:
@@ -212,6 +246,9 @@ async def check_products_availability(product_ids: list[int], token: Optional[st
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Сервис продуктов недоступен",
         )
+
+# Установка начального значения для флага отправки уведомлений
+check_products_availability._notification_sent = False
 
 # Функция для получения информации о товарах из сервиса продуктов
 async def get_products_info(product_ids: list[int], token: Optional[str] = None) -> Dict[int, Dict[str, Any]]:

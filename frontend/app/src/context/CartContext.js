@@ -46,8 +46,17 @@ export const CartProvider = ({ children }) => {
   // Загрузка сводки корзины (легковесный запрос)
   const fetchCartSummary = useCallback(async () => {
     try {
+      console.log('Запрос сводки корзины...');
       const response = await cartAPI.getCartSummary();
-      setCartSummary(response.data);
+      console.log('Получена сводка корзины:', response.data);
+      
+      // Убедимся, что у нас есть данные и они имеют правильную структуру
+      if (response.data) {
+        setCartSummary(response.data);
+        
+        // Логируем обновленную сводку для дебага
+        console.log('CartSummary обновлен:', response.data);
+      }
     } catch (err) {
       console.error('Ошибка при загрузке сводки корзины:', err);
     }
@@ -62,24 +71,38 @@ export const CartProvider = ({ children }) => {
       if (response.data.success) {
         // Устанавливаем данные корзины из ответа сервера
         setCart(response.data.cart);
-        setCartSummary({
-          total_items: response.data.cart.total_items || 0,
+        
+        // Убедимся, что у нас есть total_items и total_price
+        // Если их нет, вычислим из данных корзины
+        const cartSummaryData = {
+          total_items: response.data.cart.total_items || 
+                      (response.data.cart.items ? response.data.cart.items.length : 0),
           total_price: response.data.cart.total_price || 0
-        });
+        };
+        
+        setCartSummary(cartSummaryData);
+        
+        // Логируем обновление для дебага
+        console.log('Данные корзины обновлены после добавления:', response.data.cart);
+        console.log('Сводка корзины обновлена:', cartSummaryData);
 
-        // Оповещаем всех, что корзина обновилась
-        window.dispatchEvent(new CustomEvent('cart:updated'));
+        // Оповещаем всех, что корзина обновилась, передавая данные
+        window.dispatchEvent(new CustomEvent('cart:updated', { 
+          detail: {
+            cart: response.data.cart,
+            summary: cartSummaryData
+          }
+        }));
         
         return { success: true, message: response.data.message };
       } else {
-        // Получаем детали ошибки из ответа сервера
         const errorMessage = response.data.error || response.data.message || 'Не удалось добавить товар в корзину';
         console.warn('Ошибка при добавлении товара в корзину:', errorMessage);
         
         return { 
           success: false, 
           message: errorMessage,
-          error: errorMessage // Добавляем для обратной совместимости
+          error: errorMessage
         };
       }
     } catch (err) {
@@ -107,8 +130,16 @@ export const CartProvider = ({ children }) => {
           total_price: response.data.cart.total_price || 0
         });
 
-        // Оповещаем всех, что корзина обновилась
-        window.dispatchEvent(new CustomEvent('cart:updated'));
+        // Оповещаем всех, что корзина обновилась, передавая данные
+        window.dispatchEvent(new CustomEvent('cart:updated', { 
+          detail: {
+            cart: response.data.cart,
+            summary: {
+              total_items: response.data.cart.total_items || 0,
+              total_price: response.data.cart.total_price || 0
+            }
+          }
+        }));
         
         return { success: true, message: response.data.message };
       } else {
@@ -135,8 +166,16 @@ export const CartProvider = ({ children }) => {
           total_price: response.data.cart.total_price || 0
         });
 
-        // Оповещаем всех, что корзина обновилась
-        window.dispatchEvent(new CustomEvent('cart:updated'));
+        // Оповещаем всех, что корзина обновилась, передавая данные
+        window.dispatchEvent(new CustomEvent('cart:updated', { 
+          detail: {
+            cart: response.data.cart,
+            summary: {
+              total_items: response.data.cart.total_items || 0,
+              total_price: response.data.cart.total_price || 0
+            }
+          }
+        }));
         
         return { success: true, message: response.data.message };
       } else {

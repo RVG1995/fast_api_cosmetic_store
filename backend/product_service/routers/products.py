@@ -18,6 +18,7 @@ from typing import List, Optional, Union, Annotated, Any, Dict
 from fastapi.staticfiles import StaticFiles
 # Импортируем функции для работы с кэшем
 from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, CACHE_TTL, close_redis_connection
+from sqlalchemy.orm import selectinload
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -156,48 +157,33 @@ async def get_products(
     # Расчет пропуска записей для пагинации
     skip = (page - 1) * limit
     
-    # Получаем базовый запрос для доступных продуктов
-    query = await ProductModel.get_products_query()
-    
-    # Добавляем фильтры, если они указаны
+    # Подготавливаем фильтры
+    filter_criteria = {}
     if category_id is not None:
-        query = query.filter(ProductModel.category_id == category_id)
-    
+        filter_criteria['category_id'] = category_id
     if subcategory_id is not None:
-        query = query.filter(ProductModel.subcategory_id == subcategory_id)
-    
+        filter_criteria['subcategory_id'] = subcategory_id
     if brand_id is not None:
-        query = query.filter(ProductModel.brand_id == brand_id)
-    
+        filter_criteria['brand_id'] = brand_id
     if country_id is not None:
-        query = query.filter(ProductModel.country_id == country_id)
+        filter_criteria['country_id'] = country_id
     
-    # Изменяем сортировку если указана
-    if sort == "price_asc":
-        # Заменяем сортировку по id на сортировку по цене
-        query = query.order_by(None).order_by(ProductModel.price.asc())
-    elif sort == "price_desc":
-        query = query.order_by(None).order_by(ProductModel.price.desc())
-    # В случае sort="newest" или None оставляем сортировку по умолчанию (по id desc)
-    
-    # Получаем общее количество записей, соответствующих фильтрам
-    count_query = select(func.count()).select_from(query.alias())
-    total_result = await session.execute(count_query)
-    total = total_result.scalar() or 0
-    
-    # Применяем пагинацию
-    query = query.offset(skip).limit(limit)
-    
-    # Выполняем запрос
-    result = await session.execute(query)
-    paginated_products = result.scalars().all()
+    # Используем оптимизированный метод для получения продуктов и их связанных данных
+    products, total = await ProductModel.get_products_with_relations(
+        session=session,
+        filter_criteria=filter_criteria,
+        limit=limit,
+        offset=skip,
+        sort=sort,
+        only_in_stock=True
+    )
     
     # Формируем ответ с информацией о пагинации
     response_data = {
         "total": total,
         "limit": limit,
         "offset": skip,
-        "items": paginated_products
+        "items": products
     }
     
     # Сохраняем данные в кэш
@@ -230,48 +216,34 @@ async def get_admin_products(
     # Расчет пропуска записей для пагинации
     skip = (page - 1) * limit
     
-    # Получаем базовый запрос для всех продуктов (админский доступ)
-    query = await ProductModel.get_admin_products_query()
-    
-    # Добавляем фильтры, если они указаны
+    # Подготавливаем фильтры
+    filter_criteria = {}
     if category_id is not None:
-        query = query.filter(ProductModel.category_id == category_id)
-    
+        filter_criteria['category_id'] = category_id
     if subcategory_id is not None:
-        query = query.filter(ProductModel.subcategory_id == subcategory_id)
-    
+        filter_criteria['subcategory_id'] = subcategory_id
     if brand_id is not None:
-        query = query.filter(ProductModel.brand_id == brand_id)
-    
+        filter_criteria['brand_id'] = brand_id
     if country_id is not None:
-        query = query.filter(ProductModel.country_id == country_id)
+        filter_criteria['country_id'] = country_id
     
-    # Изменяем сортировку если указана
-    if sort == "price_asc":
-        # Заменяем сортировку по id на сортировку по цене
-        query = query.order_by(None).order_by(ProductModel.price.asc())
-    elif sort == "price_desc":
-        query = query.order_by(None).order_by(ProductModel.price.desc())
-    # В случае sort="newest" или None оставляем сортировку по умолчанию (по id desc)
-    
-    # Получаем общее количество записей, соответствующих фильтрам
-    count_query = select(func.count()).select_from(query.alias())
-    total_result = await session.execute(count_query)
-    total = total_result.scalar() or 0
-    
-    # Применяем пагинацию
-    query = query.offset(skip).limit(limit)
-    
-    # Выполняем запрос
-    result = await session.execute(query)
-    paginated_products = result.scalars().all()
+    # Используем оптимизированный метод для получения продуктов и их связанных данных
+    # Для администратора показываем все товары, включая те, которых нет в наличии
+    products, total = await ProductModel.get_products_with_relations(
+        session=session,
+        filter_criteria=filter_criteria,
+        limit=limit,
+        offset=skip,
+        sort=sort,
+        only_in_stock=False  # Показываем все товары для админа
+    )
     
     # Формируем ответ с информацией о пагинации
     response_data = {
         "total": total,
         "limit": limit,
         "offset": skip,
-        "items": paginated_products
+        "items": products
     }
     
     # Сохраняем данные в кэш с уменьшенным TTL для админского интерфейса
@@ -299,8 +271,11 @@ async def search_products(session: SessionDep, name: str):
     # Формируем поисковый запрос с использованием LIKE
     search_term = f"%{name}%"
     
-    # Создаем запрос к базе данных
-    query = select(ProductModel).filter(
+    # Создаем запрос к базе данных с предварительной загрузкой связанных данных
+    query = select(ProductModel).options(
+        selectinload(ProductModel.category),
+        selectinload(ProductModel.brand)
+    ).filter(
         ProductModel.name.ilike(search_term)
     ).order_by(ProductModel.id.desc()).limit(10)
     
@@ -318,7 +293,9 @@ async def search_products(session: SessionDep, name: str):
             "name": product.name,
             "price": product.price,
             "image": product.image,
-            "stock": product.stock,  # Может быть полезно для отображения наличия
+            "stock": product.stock,
+            "brand": product.brand.name if product.brand else None,
+            "category": product.category.name if product.category else None
         }
         
         # Добавляем продукт в список ответа
@@ -341,10 +318,8 @@ async def get_product_id(product_id: int, session: SessionDep):
         logger.info(f"Данные о продукте ID={product_id} получены из кэша")
         return cached_data
     
-    # Получаем товар
-    query = select(ProductModel).filter(ProductModel.id == product_id)
-    result = await session.execute(query)
-    product = result.scalars().first()
+    # Используем оптимизированный метод для получения продукта с его связанными данными
+    product = await ProductModel.get_product_with_relations(session, product_id)
     
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -367,66 +342,40 @@ async def get_product_id(product_id: int, session: SessionDep):
         "country": None
     }
     
-    # Загружаем связанные данные
-    try:
-        # Загружаем категорию
-        if product.category_id:
-            category_query = select(CategoryModel).filter(CategoryModel.id == product.category_id)
-            category_result = await session.execute(category_query)
-            category = category_result.scalars().first()
-            if category:
-                response_dict["category"] = {
-                    "id": category.id,
-                    "name": category.name,
-                    "slug": category.slug
-                }
-        
-        # Загружаем подкатегорию
-        if product.subcategory_id:
-            subcategory_query = select(SubCategoryModel).filter(SubCategoryModel.id == product.subcategory_id)
-            subcategory_result = await session.execute(subcategory_query)
-            subcategory = subcategory_result.scalars().first()
-            if subcategory:
-                response_dict["subcategory"] = {
-                    "id": subcategory.id,
-                    "name": subcategory.name,
-                    "slug": subcategory.slug,
-                    "category_id": subcategory.category_id
-                }
-        
-        # Загружаем бренд
-        if product.brand_id:
-            brand_query = select(BrandModel).filter(BrandModel.id == product.brand_id)
-            brand_result = await session.execute(brand_query)
-            brand = brand_result.scalars().first()
-            if brand:
-                response_dict["brand"] = {
-                    "id": brand.id,
-                    "name": brand.name,
-                    "slug": brand.slug
-                }
-        
-        # Загружаем страну
-        if product.country_id:
-            country_query = select(CountryModel).filter(CountryModel.id == product.country_id)
-            country_result = await session.execute(country_query)
-            country = country_result.scalars().first()
-            if country:
-                response_dict["country"] = {
-                    "id": country.id,
-                    "name": country.name,
-                    "slug": country.slug
-                }
+    # Преобразуем связанные данные из загруженных объектов
+    if product.category:
+        response_dict["category"] = {
+            "id": product.category.id,
+            "name": product.category.name,
+            "slug": product.category.slug
+        }
     
-    except Exception as e:
-        # Логируем ошибку, но продолжаем работу и возвращаем хотя бы базовую информацию о продукте
-        print(f"Ошибка при загрузке связанных данных: {str(e)}")
+    if product.subcategory:
+        response_dict["subcategory"] = {
+            "id": product.subcategory.id,
+            "name": product.subcategory.name,
+            "slug": product.subcategory.slug,
+            "category_id": product.subcategory.category_id
+        }
+    
+    if product.brand:
+        response_dict["brand"] = {
+            "id": product.brand.id,
+            "name": product.brand.name,
+            "slug": product.brand.slug
+        }
+    
+    if product.country:
+        response_dict["country"] = {
+            "id": product.country.id,
+            "name": product.country.name,
+            "slug": product.country.slug
+        }
     
     # Сохраняем данные в кэш
     await cache_set(cache_key, response_dict)
     logger.info(f"Данные о продукте ID={product_id} сохранены в кэш")
     
-    # Создаем и возвращаем объект схемы из словаря
     return response_dict
 
 @router.put("/{product_id}/form", response_model=ProductSchema)

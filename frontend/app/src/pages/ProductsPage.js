@@ -6,6 +6,7 @@ import CartUpdater from '../components/cart/CartUpdater';
 import { API_URLS } from '../utils/constants';
 import SimpleAddToCartButton from '../components/cart/SimpleAddToCartButton';
 import '../styles/HomePage.css';
+import ProductRating from '../components/reviews/ProductRating';
 
 const ProductsPage = () => {
   const { search } = useLocation();
@@ -580,6 +581,7 @@ const ProductsPage = () => {
                       <Link to={`/products/${product.id}`} className="product-title-link">
                         <h3>{product.name}</h3>
                       </Link>
+                      <ProductRating productId={product.id} size="sm" />
                       <p className="price">{product.price} руб.</p>
                       <p className="description">{product.description}</p>
                       <p className="stock">

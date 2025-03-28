@@ -18,31 +18,54 @@ const ReviewForm = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [permissions, setPermissions] = useState({
-    canReviewProduct: false,
-    canReviewStore: false,
-    hasReviewedProduct: false,
-    hasReviewedStore: false
+    can_review_product: false,
+    can_review_store: false,
+    has_reviewed_product: false,
+    has_reviewed_store: false
   });
+
+  // Логируем начальное состояние при монтировании компонента
+  useEffect(() => {
+    console.log('ReviewForm mounted, Authentication State:', { 
+      isAuthenticated, 
+      user: user ? `User ID: ${user.id}` : 'No user', 
+      productId 
+    });
+  }, []);
 
   useEffect(() => {
     // Проверяем права на оставление отзыва при монтировании компонента
     const checkPermissions = async () => {
       try {
-        console.log('Запрашиваем права на отзыв, productId:', productId);
+        console.log('Запрашиваем права на отзыв, productId:', productId, 'isAuthenticated:', isAuthenticated);
+        if (!isAuthenticated) {
+          console.log('Пользователь не аутентифицирован. Пропускаем запрос разрешений.');
+          return;
+        }
+
         const response = await reviewAPI.checkReviewPermissions(productId);
         console.log('Получен ответ о правах:', response.data);
         setPermissions(response.data);
         console.log('Обновлено состояние permissions:', response.data);
       } catch (error) {
-        console.error('Ошибка при проверке прав на оставление отзыва:', error);
+        console.error('Ошибка при проверке прав на оставление отзыва:', error, 'isAuthenticated:', isAuthenticated);
         setError('Не удалось проверить возможность оставления отзыва');
       }
     };
 
-    checkPermissions();
-  }, [productId]);
+    if (isAuthenticated) {
+      checkPermissions();
+    } else {
+      console.log('Пользователь не аутентифицирован, пропускаем проверку прав');
+    }
+  }, [productId, isAuthenticated]);
+
+  // Следим за изменениями в статусе аутентификации
+  useEffect(() => {
+    console.log('Изменился статус аутентификации:', { isAuthenticated });
+  }, [isAuthenticated]);
 
   // Обработчик изменения значения поля
   const handleInputChange = (e) => {
@@ -108,7 +131,19 @@ const ReviewForm = ({
       console.error('Ошибка при добавлении отзыва:', error);
       
       if (error.response?.data?.detail) {
-        setError(error.response.data.detail);
+        // Проверяем, если detail - это объект, преобразуем его в строку
+        if (typeof error.response.data.detail === 'object') {
+          // Если это массив ошибок
+          if (Array.isArray(error.response.data.detail)) {
+            setError(error.response.data.detail.map(err => err.msg).join(', '));
+          } else {
+            // Если это объект с сообщениями об ошибках
+            setError(Object.values(error.response.data.detail).join(', '));
+          }
+        } else {
+          // Если это строка, используем как есть
+          setError(error.response.data.detail);
+        }
       } else {
         setError('Произошла ошибка при добавлении отзыва. Пожалуйста, попробуйте позже.');
       }
@@ -125,11 +160,12 @@ const ReviewForm = ({
     permissions, 
     productId, 
     canSubmitProductReview, 
-    canSubmitStoreReview
+    canSubmitStoreReview,
+    isAuthenticated
   });
 
   // Если пользователь не может оставить отзыв, показываем сообщение
-  if (productId && !canSubmitProductReview) {
+  if (isAuthenticated && productId && !canSubmitProductReview) {
     if (permissions.has_reviewed_product) {
       return (
         <Alert variant="info">
@@ -145,7 +181,7 @@ const ReviewForm = ({
     }
   }
   
-  if (!productId && !canSubmitStoreReview) {
+  if (isAuthenticated && !productId && !canSubmitStoreReview) {
     if (permissions.has_reviewed_store) {
       return (
         <Alert variant="info">

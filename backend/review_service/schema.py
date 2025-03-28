@@ -17,12 +17,22 @@ class ReactionType(str, Enum):
 
 class ReviewBase(BaseModel):
     rating: int = Field(..., ge=1, le=5, description="Рейтинг от 1 до 5")
-    content: Optional[str] = Field(None, min_length=3, max_length=2000, description="Текстовый отзыв")
+    content: Optional[str] = Field(None, max_length=2000, description="Текстовый отзыв")
     
     @validator('rating')
     def validate_rating(cls, value):
         if value < 1 or value > 5:
             raise ValueError("Рейтинг должен быть от 1 до 5")
+        return value
+        
+    @validator('content')
+    def validate_content(cls, value):
+        # Если значение пустое или None, возвращаем пустую строку
+        if value is None or value == "":
+            return ""
+        # Если есть текст, проверяем минимальную длину
+        if len(value) < 3:
+            raise ValueError("Если вы добавляете текст отзыва, он должен содержать минимум 3 символа")
         return value
 
 

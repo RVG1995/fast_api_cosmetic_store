@@ -12,7 +12,8 @@ const AuthContext = createContext({
   isActivated: () => false,
   logout: async () => {},
   login: async () => {},
-  refreshAuth: async () => {}
+  refreshAuth: async () => {},
+  isAuthenticated: false
 });
 
 // Кастомный хук для удобного использования контекста
@@ -209,7 +210,8 @@ export const AuthProvider = ({ children }) => {
     refreshAuth: checkAuth,
     login,
     checkPermission,
-    getUserProfile
+    getUserProfile,
+    isAuthenticated: !!user
   };
 
   return (

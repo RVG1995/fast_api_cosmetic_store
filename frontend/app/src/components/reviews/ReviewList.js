@@ -25,17 +25,19 @@ const ReviewList = ({ productId = null, showStats = false }) => {
         let response;
         
         if (productId) {
-          // Отзывы для товара - используем обычный API для всех пользователей
-          // Админ API использовать только если пользователь залогинен как админ
-          response = user && isAdmin
-            ? await reviewAPI.admin.getProductReviews(productId, currentPage, pageSize)
-            : await reviewAPI.getProductReviews(productId, currentPage, pageSize);
+          // Отзывы для товара - используем админский API только если пользователь имеет права админа
+          if (user && isAdmin) {
+            response = await reviewAPI.admin.getProductReviews(productId, currentPage, pageSize);
+          } else {
+            response = await reviewAPI.getProductReviews(productId, currentPage, pageSize);
+          }
         } else {
-          // Отзывы для магазина - используем обычный API для всех пользователей
-          // Админ API использовать только если пользователь залогинен как админ
-          response = user && isAdmin
-            ? await reviewAPI.admin.getStoreReviews(currentPage, pageSize)
-            : await reviewAPI.getStoreReviews(currentPage, pageSize);
+          // Отзывы для магазина - используем админский API только если пользователь имеет права админа
+          if (user && isAdmin) {
+            response = await reviewAPI.admin.getStoreReviews(currentPage, pageSize);
+          } else {
+            response = await reviewAPI.getStoreReviews(currentPage, pageSize);
+          }
         }
         
         console.log('ReviewList: Получены отзывы с сервера:', response.data);

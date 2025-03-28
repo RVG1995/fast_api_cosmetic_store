@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, select
 from database import get_session
 from auth import get_current_user, require_user, User
 from models import ReviewTypeEnum, ReviewModel, ReviewReactionModel
@@ -171,10 +171,18 @@ async def add_reaction(
     """
     reaction_result = await add_review_reaction(session, current_user, reaction_data)
     
-    # Получаем обновленный отзыв для возврата клиенту
+    # Получаем обновленный отзыв для возврата клиенту с загрузкой связанных данных
     review = await get_review_by_id(session, reaction_data.review_id)
     if not review:
         return {"status": "error", "message": "Отзыв не найден"}
+    
+    # Загружаем все реакции для отзыва для точного подсчета
+    reactions_query = select(ReviewReactionModel).where(ReviewReactionModel.review_id == review.id)
+    reactions_result = await session.execute(reactions_query)
+    reactions = reactions_result.scalars().all()
+    
+    # Вручную устанавливаем реакции для отзыва
+    setattr(review, 'reactions', reactions)
     
     # Добавляем информацию о реакции пользователя
     user_reaction = await ReviewReactionModel.get_user_reaction(
@@ -210,6 +218,10 @@ async def add_reaction(
         "reaction_stats": review.get_reaction_stats(),
         "user_reaction": user_reaction.reaction_type if user_reaction else None
     }
+    
+    logger.info(f"Обработана реакция для отзыва {review.id}, пользователь {current_user.id}, " +
+               f"тип реакции: {user_reaction.reaction_type if user_reaction else 'None'}, " +
+               f"стат: likes={response_data['reaction_stats']['likes']}, dislikes={response_data['reaction_stats']['dislikes']}")
     
     return ReviewRead.model_validate(response_data)
 
@@ -372,4 +384,96 @@ async def get_store_stats(
     if isinstance(stats, dict) and "rating_counts" in stats:
         if any(isinstance(k, str) for k in stats["rating_counts"].keys()):
             stats["rating_counts"] = {int(k): v for k, v in stats["rating_counts"].items()}
-    return stats 
+    return stats
+
+@router.post("/reactions/delete", status_code=status.HTTP_200_OK)
+async def delete_reaction_post_method(
+    review_data: Dict[str, Any] = Body(...),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_user)
+):
+    """
+    Удаление реакции (лайк/дизлайк) на отзыв по POST запросу.
+    Альтернативный метод для клиентов, которые не могут отправить DELETE запрос.
+    Доступно только для авторизованных пользователей.
+    """
+    review_id = review_data.get("review_id")
+    
+    if not review_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать review_id"
+        )
+    
+    # Получаем текущую реакцию пользователя
+    user_reaction = await ReviewReactionModel.get_user_reaction(
+        session, review_id, current_user.id
+    )
+    
+    # Сохраняем тип реакции для логирования
+    old_reaction_type = user_reaction.reaction_type if user_reaction else None
+    
+    if user_reaction:
+        # Удаляем реакцию
+        await session.delete(user_reaction)
+        await session.commit()
+        
+        # Инвалидируем кэш в отдельном блоке try после успешного коммита
+        try:
+            await invalidate_review_cache(review_id)
+        except Exception as cache_error:
+            logger.error(f"Ошибка при инвалидации кэша после удаления реакции на отзыв {review_id}: {str(cache_error)}")
+    
+    # Получаем обновленный отзыв для возврата клиенту
+    review = await get_review_by_id(session, review_id)
+    if not review:
+        return {"status": "error", "message": "Отзыв не найден"}
+    
+    # Загружаем все реакции для отзыва для точного подсчета
+    reactions_query = select(ReviewReactionModel).where(ReviewReactionModel.review_id == review.id)
+    reactions_result = await session.execute(reactions_query)
+    reactions = reactions_result.scalars().all()
+    
+    # Вручную устанавливаем реакции для отзыва
+    setattr(review, 'reactions', reactions)
+    
+    # Перепроверяем, что реакция точно удалена
+    user_reaction_after = await ReviewReactionModel.get_user_reaction(
+        session, review.id, current_user.id
+    )
+    
+    # Создаем объект ответа вручную со всеми необходимыми данными
+    response_data = {
+        "id": review.id,
+        "user_id": review.user_id,
+        "rating": review.rating,
+        "content": review.content,
+        "review_type": review.review_type,
+        "product_id": review.product_id,
+        "product_name": review.product_name,
+        "created_at": review.created_at,
+        "updated_at": review.updated_at,
+        "is_hidden": review.is_hidden,
+        "is_anonymous": review.is_anonymous,
+        "user_first_name": review.user_first_name,
+        "user_last_name": review.user_last_name,
+        "admin_comments": [
+            {
+                "id": comment.id,
+                "review_id": comment.review_id,
+                "admin_user_id": comment.admin_user_id,
+                "content": comment.content,
+                "created_at": comment.created_at,
+                "updated_at": comment.updated_at,
+                "admin_name": comment.admin_name
+            } for comment in review.admin_comments
+        ],
+        "reaction_stats": review.get_reaction_stats(),
+        "user_reaction": user_reaction_after.reaction_type if user_reaction_after else None
+    }
+    
+    logger.info(f"Удалена реакция для отзыва {review.id}, пользователь {current_user.id}, " +
+               f"старый тип реакции: {old_reaction_type}, новая реакция: {response_data['user_reaction']}, " +
+               f"стат: likes={response_data['reaction_stats']['likes']}, dislikes={response_data['reaction_stats']['dislikes']}")
+    
+    return ReviewRead.model_validate(response_data) 

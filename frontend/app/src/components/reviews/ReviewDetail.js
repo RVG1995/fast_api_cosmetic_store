@@ -23,9 +23,13 @@ const ReviewDetail = () => {
 
       try {
         // Получаем детали отзыва в зависимости от роли пользователя
-        const response = user && isAdmin
-          ? await reviewAPI.admin.getReview(reviewId)
-          : await reviewAPI.getReview(reviewId);
+        let response;
+        
+        if (user && isAdmin) {
+          response = await reviewAPI.admin.getReview(reviewId);
+        } else {
+          response = await reviewAPI.getReview(reviewId);
+        }
         
         setReview(response.data);
       } catch (error) {

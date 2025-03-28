@@ -32,18 +32,22 @@ const ReviewItem = ({ review, onReactionChange, isAdmin = false }) => {
     setIsProcessing(true);
     try {
       const currentReaction = localReview.user_reaction;
-      console.log(`Обработка реакции ${reactionType}, текущая реакция: ${currentReaction}`);
+      console.log(`Начало обработки реакции: ${reactionType}, текущая реакция: ${currentReaction}, 
+        текущие счетчики: likes=${localReview.reaction_stats?.likes || 0}, dislikes=${localReview.reaction_stats?.dislikes || 0}`);
       
       let response;
       
+      // Если текущая реакция такая же, как нажатая кнопка - удаляем её
       if (currentReaction === reactionType) {
-        // Если уже стоит такая реакция - удаляем её
-        console.log(`Удаляем реакцию ${reactionType} для отзыва ${localReview.id}`);
+        console.log(`Отправляем запрос на удаление реакции ${reactionType} для отзыва ${localReview.id}`);
         response = await reviewAPI.deleteReaction(localReview.id);
-      } else {
-        // Иначе добавляем или обновляем реакцию
-        console.log(`Добавляем реакцию ${reactionType} для отзыва ${localReview.id}`);
+        console.log('Ответ на запрос удаления реакции:', response);
+      } 
+      // Иначе - добавляем новую реакцию (или изменяем существующую)
+      else {
+        console.log(`Отправляем запрос на добавление реакции ${reactionType} для отзыва ${localReview.id}`);
         response = await reviewAPI.addReaction(localReview.id, reactionType);
+        console.log('Ответ на запрос добавления реакции:', response);
       }
       
       // Проверяем ответ
@@ -52,23 +56,25 @@ const ReviewItem = ({ review, onReactionChange, isAdmin = false }) => {
         return;
       }
       
-      console.log('Получен ответ от сервера:', response);
-
-      // Создаем обновленный объект отзыва с новыми данными о реакциях
+      // Создаем новый объект отзыва с данными от сервера
       const updatedReview = {
         ...localReview,
-        reaction_stats: response.reaction_stats || localReview.reaction_stats || { likes: 0, dislikes: 0 },
-        user_reaction: response.user_reaction // Может быть null, если реакция удалена
+        reaction_stats: {
+          likes: response.reaction_stats?.likes || 0,
+          dislikes: response.reaction_stats?.dislikes || 0
+        },
+        user_reaction: response.user_reaction
       };
       
-      console.log('Обновленный отзыв:', updatedReview);
+      console.log(`Обновление после запроса. Новые счетчики: likes=${updatedReview.reaction_stats.likes}, 
+        dislikes=${updatedReview.reaction_stats.dislikes}, пользовательская реакция: ${updatedReview.user_reaction}`);
       
-      // Обновляем локальное состояние 
+      // Обновляем локальное состояние
       setLocalReview(updatedReview);
       
-      // Уведомляем родительский компонент об изменении
+      // Уведомляем родительский компонент
       if (onReactionChange) {
-        console.log('Вызываем onReactionChange в родительском компоненте');
+        console.log('Отправляем обновление в родительский компонент');
         onReactionChange(updatedReview);
       }
     } catch (error) {

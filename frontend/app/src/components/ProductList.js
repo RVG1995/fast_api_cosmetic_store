@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { productAPI } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { Button, Row, Col, Card } from 'react-bootstrap';
+import { Link } from 'react-router-dom';
+import { AddToCartButton } from './AddToCartButton';
 
 const ProductList = () => {
   const [products, setProducts] = useState([]);
@@ -71,10 +74,17 @@ const ProductList = () => {
         </div>
       </div>
       
-      {isAdmin && isAdmin() && (
-        <div className="admin-controls mb-4">
-          <button className="btn btn-primary">Добавить новый продукт</button>
-        </div>
+      {/* Кнопка создания товара для администраторов */}
+      {isAdmin && (
+        <Button
+          variant="success"
+          size="sm"
+          className="mb-3 d-flex align-items-center"
+          onClick={handleOpenCreateModal}
+        >
+          <i className="bi bi-plus-circle me-1"></i>
+          Добавить товар
+        </Button>
       )}
       
       {products.length === 0 ? (
@@ -99,7 +109,7 @@ const ProductList = () => {
                 </p>
               </div>
               
-              {isAdmin && isAdmin() && (
+              {isAdmin && (
                 <div className="admin-actions">
                   <button className="btn btn-edit">Редактировать</button>
                   <button 

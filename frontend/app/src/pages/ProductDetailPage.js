@@ -270,8 +270,6 @@ const ProductDetailPage = () => {
 
       {/* Секция отзывов */}
       <div className="product-reviews mt-5">
-        <h2 className="mb-4">Отзывы о товаре</h2>
-        
         {/* Статистика отзывов */}
         <ReviewStats productId={productId} />
         

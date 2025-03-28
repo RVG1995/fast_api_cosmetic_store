@@ -89,17 +89,8 @@ const ReviewStats = ({ productId = null }) => {
   }
 
   if (!stats || !stats.total_reviews || stats.average_rating === undefined) {
-    return (
-      <Card className="shadow-sm mb-4">
-        <Card.Body>
-          <Alert variant="info" className="mb-0">
-            {productId 
-              ? 'Для этого товара пока нет отзывов' 
-              : 'Для магазина пока нет отзывов'}
-          </Alert>
-        </Card.Body>
-      </Card>
-    );
+    // Не отображаем ничего, так как отсутствие отзывов уже показано в компоненте ReviewList
+    return null;
   }
 
   return (

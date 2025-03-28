@@ -361,14 +361,9 @@ const ProductsPage = () => {
     );
   };
 
-  // Безопасная проверка админских прав
-  const hasAdminRights = () => {
-    try {
-      return isAdmin && isAdmin();
-    } catch (error) {
-      console.error('Ошибка при проверке прав администратора:', error);
-      return false;
-    }
+  // Вспомогательная функция для отображения административных элементов
+  const canShowAdminFeatures = () => {
+    return isAdmin;
   };
 
   // Отображение фильтров
@@ -522,7 +517,7 @@ const ProductsPage = () => {
       <div className="products-page-wrapper">
         <div className="d-flex justify-content-between align-items-center mb-4">
           <h1 className="products-heading mb-0">Каталог товаров</h1>
-          {hasAdminRights() && (
+          {canShowAdminFeatures() && (
             <Link to="/admin/products" className="btn btn-primary">
               <i className="bi bi-gear-fill me-1"></i>
               Управление товарами

@@ -809,7 +809,13 @@ export const reviewAPI = {
       reaction_type: reactionType
     })
     .then(response => {
-      console.log('Ответ от API addReaction:', response.data);
+      console.log(`API addReaction ответ успешно получен, статус: ${response.status}`, response.data);
+      // Убедимся, что данные о реакциях есть в объекте
+      if (!response.data.reaction_stats) {
+        console.error('В ответе API addReaction отсутствуют данные о реакциях:', response.data);
+        // Добавим данные по умолчанию, если их нет в ответе
+        response.data.reaction_stats = { likes: 0, dislikes: 0 };
+      }
       return response.data;
     })
     .catch(error => {
@@ -820,15 +826,23 @@ export const reviewAPI = {
   
   deleteReaction: (reviewId) => {
     console.log(`Вызов API deleteReaction для отзыва ${reviewId}`);
-    return reviewApi.delete(`/reviews/reactions/${reviewId}`)
-      .then(response => {
-        console.log('Ответ от API deleteReaction:', response.data);
-        return response.data;
-      })
-      .catch(error => {
-        console.error('Ошибка в API deleteReaction:', error);
-        throw error;
-      });
+    return reviewApi.post(`/reviews/reactions/delete`, {
+      review_id: reviewId
+    })
+    .then(response => {
+      console.log(`API deleteReaction ответ успешно получен, статус: ${response.status}`, response.data);
+      // Убедимся, что данные о реакциях есть в объекте
+      if (!response.data.reaction_stats) {
+        console.error('В ответе API deleteReaction отсутствуют данные о реакциях:', response.data);
+        // Добавим данные по умолчанию, если их нет в ответе
+        response.data.reaction_stats = { likes: 0, dislikes: 0 };
+      }
+      return response.data;
+    })
+    .catch(error => {
+      console.error('Ошибка в API deleteReaction:', error);
+      throw error;
+    });
   },
   
   // Проверка прав на оставление отзыва

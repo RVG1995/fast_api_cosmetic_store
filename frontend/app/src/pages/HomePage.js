@@ -154,14 +154,9 @@ const HomePage = () => {
     );
   };
 
-  // Безопасная проверка админских прав
-  const hasAdminRights = () => {
-    try {
-      return isAdmin && isAdmin();
-    } catch (error) {
-      console.error('Ошибка при проверке прав администратора:', error);
-      return false;
-    }
+  // Вспомогательная функция для проверки прав администратора
+  const checkAdminRights = () => {
+    return isAdmin;
   };
 
   if (loading) {
@@ -205,7 +200,7 @@ const HomePage = () => {
                 <option value="price_desc">Цена (по убыванию)</option>
               </select>
             </div>
-            {hasAdminRights() && (
+            {checkAdminRights() && (
               <Link to="/admin/products" className="btn btn-primary">
                 <i className="bi bi-gear-fill me-1"></i>
                 Управление товарами

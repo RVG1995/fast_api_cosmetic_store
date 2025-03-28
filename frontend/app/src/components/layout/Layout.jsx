@@ -154,7 +154,7 @@ const Layout = () => {
                       </li>
                       
                       {/* Добавляем ссылку на админ-панель для администраторов */}
-                      {isAdmin && isAdmin() && (
+                      {isAdmin && (
                         <li className="nav-item">
                           <Link 
                             to="/admin" 

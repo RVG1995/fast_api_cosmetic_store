@@ -265,12 +265,17 @@ class ReviewModel(Base):
         likes = 0
         dislikes = 0
         
-        if hasattr(self, 'reactions'):
+        # Проверяем, есть ли загруженные реакции
+        if hasattr(self, 'reactions') and self.reactions is not None:
             for reaction in self.reactions:
                 if reaction.reaction_type == ReactionTypeEnum.LIKE.value:
                     likes += 1
                 elif reaction.reaction_type == ReactionTypeEnum.DISLIKE.value:
                     dislikes += 1
+            
+            logger.info(f"Подсчитаны реакции для отзыва {self.id}: likes={likes}, dislikes={dislikes}")
+        else:
+            logger.warning(f"У отзыва {self.id} не загружены реакции, статистика может быть неточной")
         
         return {
             "likes": likes,

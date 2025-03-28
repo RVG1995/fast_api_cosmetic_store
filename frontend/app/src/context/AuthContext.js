@@ -111,22 +111,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Функции для проверки ролей
-  const isAdmin = () => {
-    try {
-      // Проверяем сначала прямые флаги из ответа сервера
-      if (user && 'is_admin' in user) {
-        console.log('Проверка админа по is_admin:', user.is_admin);
-        return Boolean(user.is_admin || user.is_super_admin);
-      }
-      
-      // Для обратной совместимости, если точных флагов нет
-      console.log('Проверка админа через другие поля (для совместимости)');
-      return false;
-    } catch (e) {
-      console.error("Ошибка при проверке прав администратора:", e);
-      return false;
-    }
-  };
+  const isAdmin = Boolean(user?.is_admin || user?.is_super_admin);
 
   const isSuperAdmin = () => {
     try {

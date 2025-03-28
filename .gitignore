@@ -21,6 +21,7 @@ var/
 *.egg
 venv/
 .env
+.cursor
 
 # JavaScript / Node.js
 node_modules/

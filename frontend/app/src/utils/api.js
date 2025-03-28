@@ -24,6 +24,8 @@ const contentApi = createApiInstance(API_URLS.CONTENT);
 const notificationApi = createApiInstance(API_URLS.NOTIFICATION);
 const productApi = createApiInstance(API_URLS.PRODUCT_SERVICE);
 const cartApi = createApiInstance(API_URLS.CART_SERVICE);
+const orderApi = createApiInstance(API_URLS.ORDER_SERVICE);
+const reviewApi = createApiInstance(API_URLS.REVIEW_SERVICE);
 
 // Интерцептор для обработки ошибок и отладки
 const setupInterceptors = (api, serviceName) => {
@@ -95,6 +97,8 @@ setupInterceptors(contentApi, 'Content');
 setupInterceptors(notificationApi, 'Notification');
 setupInterceptors(productApi, 'Product');
 setupInterceptors(cartApi, 'Cart');
+setupInterceptors(orderApi, 'Order');
+setupInterceptors(reviewApi, 'Review');
 
 // API для работы с аутентификацией
 export const authAPI = {
@@ -758,6 +762,125 @@ export const cartService = {
   }
 };
 
+// API для работы с отзывами
+export const reviewAPI = {
+  // Публичные методы для работы с отзывами о товарах
+  getProductReviews: (productId, page = 1, pageSize = 10) => {
+    return reviewApi.get(`/reviews/products/${productId}`, {
+      params: { page, limit: pageSize }
+    });
+  },
+  
+  createProductReview: (productId, data) => {
+    return reviewApi.post('/reviews/products', {
+      ...data,
+      product_id: productId
+    });
+  },
+  
+  getProductStats: (productId) => {
+    return reviewApi.get(`/reviews/products/${productId}/stats`);
+  },
+  
+  // Публичные методы для работы с отзывами о магазине
+  getStoreReviews: (page = 1, pageSize = 10) => {
+    return reviewApi.get('/reviews/store/all', {
+      params: { page, limit: pageSize }
+    });
+  },
+  
+  createStoreReview: (data) => {
+    return reviewApi.post('/reviews/store', data);
+  },
+  
+  getStoreStats: () => {
+    return reviewApi.get('/reviews/store/stats');
+  },
+  
+  // Общие методы для всех типов отзывов
+  getReview: (reviewId) => {
+    return reviewApi.get(`/reviews/${reviewId}`);
+  },
+  
+  addReaction: (reviewId, reactionType) => {
+    console.log(`Вызов API addReaction для отзыва ${reviewId} с типом ${reactionType}`);
+    return reviewApi.post(`/reviews/reactions`, {
+      review_id: reviewId,
+      reaction_type: reactionType
+    })
+    .then(response => {
+      console.log('Ответ от API addReaction:', response.data);
+      return response.data;
+    })
+    .catch(error => {
+      console.error('Ошибка в API addReaction:', error);
+      throw error;
+    });
+  },
+  
+  deleteReaction: (reviewId) => {
+    console.log(`Вызов API deleteReaction для отзыва ${reviewId}`);
+    return reviewApi.delete(`/reviews/reactions/${reviewId}`)
+      .then(response => {
+        console.log('Ответ от API deleteReaction:', response.data);
+        return response.data;
+      })
+      .catch(error => {
+        console.error('Ошибка в API deleteReaction:', error);
+        throw error;
+      });
+  },
+  
+  // Проверка прав на оставление отзыва
+  checkReviewPermissions: (productId = null) => {
+    const params = productId ? { product_id: productId } : {};
+    return reviewApi.get('/reviews/permissions/check', { params });
+  },
+  
+  // Методы для администратора
+  admin: {
+    getProductReviews: (productId, page = 1, pageSize = 10) => {
+      return reviewApi.get(`/admin/reviews/products/${productId}`, {
+        params: { page, limit: pageSize, include_hidden: true }
+      });
+    },
+    
+    getStoreReviews: (page = 1, pageSize = 10) => {
+      return reviewApi.get('/admin/reviews/store', {
+        params: { page, limit: pageSize, include_hidden: true }
+      });
+    },
+    
+    getReview: (reviewId) => {
+      return reviewApi.get(`/admin/reviews/${reviewId}`);
+    },
+    
+    toggleReviewVisibility: (reviewId) => {
+      // Получаем текущий статус отзыва, а затем устанавливаем противоположный
+      return reviewApi.get(`/admin/reviews/${reviewId}`)
+        .then(response => {
+          const review = response.data;
+          const newStatus = !review.is_hidden;
+          
+          return reviewApi.patch(`/admin/reviews/${reviewId}`, {
+            is_hidden: newStatus
+          }).then(response => response.data);
+        });
+    },
+    
+    addComment: (reviewId, content) => {
+      return reviewApi.post(`/admin/reviews/comments`, {
+        review_id: reviewId,
+        content
+      }).then(response => response.data);
+    },
+    
+    deleteComment: (reviewId, commentId) => {
+      return reviewApi.delete(`/admin/reviews/${reviewId}/comments/${commentId}`);
+    }
+  }
+};
+
 // Экспортируем все API и инстансы для возможного прямого использования
 const apiExports = {
   authApi,
@@ -772,7 +895,8 @@ const apiExports = {
   notificationAPI,
   productAPI,
   cartAPI,
-  cartService
+  cartService,
+  reviewAPI
 };
 
 export default apiExports; 

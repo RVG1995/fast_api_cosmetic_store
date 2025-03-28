@@ -238,6 +238,12 @@ if check_directory "$BACKEND_DIR"; then
         sleep 2
     fi
     
+    # Запуск сервиса отзывов
+    if [ -d "$BACKEND_DIR/review_service" ]; then
+        start_service "review_service" "$BACKEND_DIR/review_service" "python main.py"
+        sleep 2
+    fi
+    
     # Деактивация виртуального окружения не требуется, т.к. каждый сервис запускается в своем подпроцессе
 else
     print_message "${YELLOW}[WARNING]${NC} Директория бэкенда не найдена. Бэкенд-сервисы не будут запущены."

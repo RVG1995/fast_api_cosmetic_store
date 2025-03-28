@@ -112,7 +112,16 @@ const Layout = () => {
                     <CartIcon />
                   </li>
                   
-                  {/* Удаляем ссылку на продукты, так как они будут на главной */}
+                  {/* Ссылка на отзывы */}
+                  <li className="nav-item">
+                    <Link 
+                      to="/reviews" 
+                      className={`nav-link ${location.pathname === "/reviews" ? "active fw-bold" : ""}`}
+                    >
+                      <i className="bi bi-star me-1"></i>
+                      Отзывы
+                    </Link>
+                  </li>
                   
                   {/* Добавляем мобильную версию поиска */}
                   <li className="nav-item d-md-none mb-2">

@@ -69,6 +69,23 @@ services:
       - POSTGRES_DB=orders_db
       - TZ=Europe/Moscow
 
+  # База данных для review_service
+  review-db:
+    image: postgres:15
+    container_name: review-db
+    restart: always
+    ports:
+      - "5436:5432"
+    volumes:
+      - review-db-data:/var/lib/postgresql/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=reviews_db
+      - TZ=Europe/Moscow
+
   # Redis для cart_service (для Celery)
   redis:
     image: redis:alpine
@@ -102,4 +119,5 @@ volumes:
   product-db-data:
   cart-db-data:
   order-db-data:
+  review-db-data:
   redis-data:

@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { Alert, Badge, Spinner } from 'react-bootstrap';
 import { productAPI } from '../utils/api';
 import { API_URLS } from '../utils/constants';
 import AddToCartButton from '../components/cart/AddToCartButton';
 import CartUpdater from '../components/cart/CartUpdater';
 import '../styles/ProductDetailPage.css';
+import ReviewList from '../components/reviews/ReviewList';
+import ReviewForm from '../components/reviews/ReviewForm';
+import ReviewStats from '../components/reviews/ReviewStats';
+import { useAuth } from '../context/AuthContext';
 
 const ProductDetailPage = () => {
   const { productId } = useParams();
@@ -12,6 +17,9 @@ const ProductDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [relatedProducts, setRelatedProducts] = useState([]);
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewReloadKey, setReviewReloadKey] = useState(0);
+  const { user } = useAuth();
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {
@@ -259,6 +267,31 @@ const ProductDetailPage = () => {
           </div>
         </div>
       )}
+
+      {/* Секция отзывов */}
+      <div className="product-reviews mt-5">
+        <h2 className="mb-4">Отзывы о товаре</h2>
+        
+        {/* Статистика отзывов */}
+        <ReviewStats productId={productId} />
+        
+        {/* Форма оставления отзыва (для авторизованных пользователей) */}
+        {user && (
+          <ReviewForm 
+            productId={productId} 
+            productName={product?.name} 
+            onReviewSubmitted={() => setReviewReloadKey(prev => prev + 1)}
+          />
+        )}
+        
+        {/* Список отзывов */}
+        <ReviewList 
+          key={reviewReloadKey}
+          productId={productId}
+          currentPage={reviewPage}
+          onPageChange={setReviewPage}
+        />
+      </div>
     </div>
   );
 };

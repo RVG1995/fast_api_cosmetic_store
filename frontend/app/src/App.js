@@ -27,6 +27,8 @@ import AdminOrders from './pages/admin/AdminOrders'; // Импортируем �
 import AdminOrderDetail from './pages/admin/AdminOrderDetail'; // Импортируем страницу с деталями заказа
 import AdminOrderStatuses from './pages/admin/AdminOrderStatuses'; // Импортируем страницу управления статусами заказов
 import AdminPaymentStatuses from './pages/admin/AdminPaymentStatuses'; // Импортируем страницу управления статусами оплаты
+import AdminReviewsPage from './pages/admin/reviews/AdminReviewsPage'; // Импортируем страницу управления отзывами
+import AdminReviewDetailPage from './pages/admin/reviews/AdminReviewDetailPage'; // Импортируем страницу деталей отзыва в админке
 import HomePage from './pages/HomePage';
 import ProductsPage from './pages/ProductsPage';
 import ProductDetailPage from './pages/ProductDetailPage';
@@ -34,6 +36,8 @@ import CartPage from './pages/CartPage'; // Импортируем страни�
 import CheckoutPage from './pages/CheckoutPage'; // Импортируем страницу оформления заказа
 import OrdersPage from './pages/user/OrdersPage'; // Импортируем страницу заказов пользователя
 import OrderDetailPage from './pages/user/OrderDetailPage'; // Импортируем страницу деталей заказа
+import ReviewsPage from './pages/reviews/ReviewsPage'; // Импортируем страницу отзывов
+import ReviewPage from './pages/reviews/ReviewPage'; // Импортируем страницу детального просмотра отзыва
 
 // Импорт стилей
 import './styles/App.css';
@@ -73,6 +77,10 @@ function App() {
                     <OrderDetailPage />
                   </PrivateRoute>
                 } />
+                
+                {/* Маршруты для отзывов */}
+                <Route path="reviews" element={<ReviewsPage />} />
+                <Route path="reviews/:id" element={<ReviewPage />} />
                 
                 {/* Публичные маршруты только для неавторизованных пользователей */}
                 <Route 
@@ -232,6 +240,23 @@ function App() {
                   element={
                     <AdminRoute>
                       <AdminPaymentStatuses />
+                    </AdminRoute>
+                  } 
+                />
+                {/* Маршруты для управления отзывами */}
+                <Route 
+                  path="admin/reviews" 
+                  element={
+                    <AdminRoute>
+                      <AdminReviewsPage />
+                    </AdminRoute>
+                  } 
+                />
+                <Route 
+                  path="admin/reviews/:id" 
+                  element={
+                    <AdminRoute>
+                      <AdminReviewDetailPage />
                     </AdminRoute>
                   } 
                 />

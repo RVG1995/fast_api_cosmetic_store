@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 import logging
 import os
 from dotenv import load_dotenv
@@ -887,4 +888,82 @@ async def update_batch_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при массовом обновлении статусов",
+        )
+
+@router.post("/check-can-review", status_code=status.HTTP_200_OK)
+async def check_can_review(
+    request_data: Dict[str, Any] = Body(...),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Проверка, может ли пользователь оставить отзыв на товар
+    (заказал товар и заказ доставлен)
+    """
+    try:
+        user_id = request_data.get("user_id")
+        product_id = request_data.get("product_id")
+        
+        if not user_id or not product_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо указать user_id и product_id"
+            )
+        
+        # Проверяем, есть ли завершенные заказы с этим товаром у пользователя
+        query = text("""
+            SELECT COUNT(*) FROM orders o
+            JOIN order_items oi ON o.id = oi.order_id
+            WHERE o.user_id = :user_id 
+            AND oi.product_id = :product_id
+            AND o.status_id = 5
+        """)
+        
+        result = await session.execute(
+            query, 
+            {"user_id": user_id, "product_id": product_id}
+        )
+        count = result.scalar_one()
+        
+        return {"can_review": count > 0}
+    except Exception as e:
+        logger.error(f"Ошибка при проверке возможности оставить отзыв: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при проверке возможности оставить отзыв"
+        )
+
+@router.post("/check-can-review-store", status_code=status.HTTP_200_OK)
+async def check_can_review_store(
+    request_data: Dict[str, Any] = Body(...),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Проверка, может ли пользователь оставить отзыв на магазин
+    (имеет хотя бы один завершенный заказ)
+    """
+    try:
+        user_id = request_data.get("user_id")
+        
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо указать user_id"
+            )
+        
+        # Проверяем, есть ли завершенные заказы у пользователя
+        query = text("""
+            SELECT COUNT(*) FROM orders o
+            WHERE o.user_id = :user_id 
+            AND o.status_id = 5
+        """)
+        
+        result = await session.execute(query, {"user_id": user_id})
+        count = result.scalar_one()
+        
+        return {"can_review": count > 0}
+    except Exception as e:
+        logger.error(f"Ошибка при проверке возможности оставить отзыв на магазин: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при проверке возможности оставить отзыв на магазин"
         ) 

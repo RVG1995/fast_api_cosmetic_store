@@ -8,10 +8,11 @@ export const API_URLS = {
   PRODUCT_SERVICE: process.env.REACT_APP_PRODUCT_SERVICE_URL || 'http://localhost:8001',
   CART_SERVICE: process.env.REACT_APP_CART_SERVICE_URL || 'http://localhost:8002',
   ORDER_SERVICE: process.env.REACT_APP_ORDER_SERVICE_URL || 'http://localhost:8003',
-  PAYMENT_SERVICE: process.env.REACT_APP_PAYMENT_SERVICE_URL || 'http://localhost:8004',
-  USER: 'http://localhost:8004',       // Сервис пользователей (если будет)
-  CONTENT: 'http://localhost:8005',    // Сервис контента (если будет)
-  NOTIFICATION: 'http://localhost:8006' // Сервис уведомлений (если будет)
+  REVIEW_SERVICE: process.env.REACT_APP_REVIEW_SERVICE_URL || 'http://localhost:8004',
+  PAYMENT_SERVICE: process.env.REACT_APP_PAYMENT_SERVICE_URL || 'http://localhost:8005',
+  USER: 'http://localhost:8006',       // Сервис пользователей (если будет)
+  CONTENT: 'http://localhost:8007',    // Сервис контента (если будет)
+  NOTIFICATION: 'http://localhost:8008' // Сервис уведомлений (если будет)
 };
 
 // Маршруты
@@ -31,11 +32,13 @@ export const ROUTES = {
   ADMIN_BRANDS: '/admin/brands',
   ADMIN_COUNTRIES: '/admin/countries',
   ADMIN_CARTS: '/admin/carts',
+  ADMIN_REVIEWS: '/admin/reviews',
   REGISTRATION_CONFIRMATION: '/registration-confirmation',
   PRODUCTS: '/products',
   CATEGORIES: '/categories',
   BRANDS: '/brands',
-  CART: '/cart'
+  CART: '/cart',
+  REVIEWS: '/reviews'
 };
 
 // Сообщения об ошибках

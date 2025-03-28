@@ -4,6 +4,7 @@ import { reviewAPI } from '../../utils/api';
 const ProductRating = ({ productId, size = 'sm', showText = true }) => {
   const [rating, setRating] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [totalReviews, setTotalReviews] = useState(0);
 
   useEffect(() => {
     const fetchRating = async () => {
@@ -13,8 +14,11 @@ const ProductRating = ({ productId, size = 'sm', showText = true }) => {
       try {
         const response = await reviewAPI.getProductStats(productId);
         setRating(response.data.average_rating);
+        setTotalReviews(response.data.total_reviews);
       } catch (error) {
         console.error('Ошибка при загрузке рейтинга:', error);
+        setRating(0);
+        setTotalReviews(0);
       } finally {
         setLoading(false);
       }
@@ -23,10 +27,7 @@ const ProductRating = ({ productId, size = 'sm', showText = true }) => {
     fetchRating();
   }, [productId]);
 
-  if (loading || rating === null) return null;
-
-  // Если нет отзывов или рейтинг 0, не показываем ничего
-  if (!rating) return null;
+  if (loading) return null;
 
   // Определяем размер звезд
   const getFontSize = () => {
@@ -40,13 +41,13 @@ const ProductRating = ({ productId, size = 'sm', showText = true }) => {
   };
 
   const fontSize = getFontSize();
-  const roundedRating = Math.round(rating * 2) / 2; // Округляем до ближайшего 0.5
+  const roundedRating = rating ? Math.round(rating * 2) / 2 : 0; // Округляем до ближайшего 0.5
 
   return (
     <div className="product-rating d-flex align-items-center">
       {[1, 2, 3, 4, 5].map((i) => {
         // Определяем заполнение звезды (полная, половина или пустая)
-        const starClass = i <= Math.floor(roundedRating)
+        const starClass = rating && i <= Math.floor(roundedRating)
           ? 'bi bi-star-fill text-warning'
           : 'bi bi-star text-muted';
         
@@ -61,7 +62,7 @@ const ProductRating = ({ productId, size = 'sm', showText = true }) => {
       
       {showText && (
         <span className="ms-1" style={{ fontSize }}>
-          {rating.toFixed(1)}
+          {rating ? rating.toFixed(1) : 'Нет отзывов'}
         </span>
       )}
     </div>

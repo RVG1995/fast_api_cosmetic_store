@@ -175,6 +175,7 @@ async def get_current_user(
         return None
 
 async def get_current_admin_user(
+    request: Request,
     token: Annotated[Optional[str], Depends(get_token_from_cookie_or_header)],
     service_key: Optional[str] = Header(None, alias="service-key")
 ) -> Optional[User]:
@@ -186,6 +187,7 @@ async def get_current_admin_user(
     выбрасывает исключение 401 Unauthorized.
     
     Args:
+        request: Объект запроса
         token: JWT токен
         service_key: Секретный ключ для межсервисного взаимодействия
         
@@ -199,7 +201,20 @@ async def get_current_admin_user(
         return None
     
     # Если нет сервисного ключа, проверяем наличие пользователя с правами админа
-    user = await get_current_user(token)
+    access_token = None
+    authorization = None
+    
+    # Получаем токен из cookie, если есть
+    for cookie in request.cookies:
+        if cookie == "access_token":
+            access_token = request.cookies[cookie]
+            break
+    
+    # Получаем токен из заголовка Authorization, если есть
+    if "authorization" in request.headers:
+        authorization = request.headers["authorization"]
+    
+    user = await get_current_user(request, access_token, authorization)
     
     if not user:
         logger.warning("Отсутствует авторизованный пользователь и сервисный ключ")

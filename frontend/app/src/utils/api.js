@@ -24,6 +24,8 @@ const contentApi = createApiInstance(API_URLS.CONTENT);
 const notificationApi = createApiInstance(API_URLS.NOTIFICATION);
 const productApi = createApiInstance(API_URLS.PRODUCT_SERVICE);
 const cartApi = createApiInstance(API_URLS.CART_SERVICE);
+const orderApi = createApiInstance(API_URLS.ORDER_SERVICE);
+const reviewApi = createApiInstance(API_URLS.REVIEW_SERVICE);
 
 // Интерцептор для обработки ошибок и отладки
 const setupInterceptors = (api, serviceName) => {
@@ -95,26 +97,28 @@ setupInterceptors(contentApi, 'Content');
 setupInterceptors(notificationApi, 'Notification');
 setupInterceptors(productApi, 'Product');
 setupInterceptors(cartApi, 'Cart');
+setupInterceptors(orderApi, 'Order');
+setupInterceptors(reviewApi, 'Review');
 
 // API для работы с аутентификацией
 export const authAPI = {
-  login: (credentials) => {
+  login: async (credentials) => {
     // Создаем объект FormData для отправки данных в формате x-www-form-urlencoded
     const formData = new URLSearchParams();
     formData.append('username', credentials.username);
     formData.append('password', credentials.password);
     
-    return authApi.post('/auth/login', formData, {
+    return await authApi.post('/auth/login', formData, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
       }
     });
   },
-  register: (userData) => authApi.post('/auth/register', userData),
-  logout: () => authApi.post('/auth/logout'),
-  getCurrentUser: () => authApi.get('/auth/users/me'),
-  getUserProfile: () => authApi.get('/auth/users/me/profile'),
-  checkPermissions: (permission, resourceType, resourceId) => {
+  register: async (userData) => await authApi.post('/auth/register', userData),
+  logout: async () => await authApi.post('/auth/logout'),
+  getCurrentUser: async () => await authApi.get('/auth/users/me'),
+  getUserProfile: async () => await authApi.get('/auth/users/me/profile'),
+  checkPermissions: async (permission, resourceType, resourceId) => {
     const params = {};
     if (permission) params.permission = permission;
     if (resourceType) params.resource_type = resourceType;
@@ -122,39 +126,40 @@ export const authAPI = {
     
     console.log('authAPI: Запрос проверки разрешений с параметрами:', params);
     
-    // Прямой вызов эндпоинта с правильным URL относительно базового URL сервиса
-    return authApi.get('/auth/users/me/permissions', { 
-      params,
-      withCredentials: true,  // Гарантируем отправку куки
-    }).then(response => {
+    try {
+      // Прямой вызов эндпоинта с правильным URL относительно базового URL сервиса
+      const response = await authApi.get('/auth/users/me/permissions', { 
+        params,
+        withCredentials: true,  // Гарантируем отправку куки
+      });
       console.log('authAPI: Успешный ответ проверки разрешений:', response.data);
       return response;
-    }).catch(error => {
+    } catch (error) {
       console.error('authAPI: Ошибка проверки разрешений:', error.response?.data || error.message);
       console.error('authAPI: Статус ошибки:', error.response?.status);
       throw error;
-    });
+    }
   },
-  activateUser: (token) => authApi.get(`/auth/activate/${token}`),
-  changePassword: (passwordData) => authApi.post('/auth/change-password', passwordData),
+  activateUser: async (token) => await authApi.get(`/auth/activate/${token}`),
+  changePassword: async (passwordData) => await authApi.post('/auth/change-password', passwordData),
 };
 
 // API для работы с пользователями
 export const userAPI = {
-  updateProfile: (userData) => userApi.patch('/users/me', userData),
-  getUserById: (userId) => userApi.get(`/users/${userId}`),
-  getUsers: (params) => userApi.get('/users', { params }),
+  updateProfile: async (userData) => await userApi.patch('/users/me', userData),
+  getUserById: async (userId) => await userApi.get(`/users/${userId}`),
+  getUsers: async (params) => await userApi.get('/users', { params }),
 };
 
 // API для работы с админ-панелью 
 export const adminAPI = {
-  getAllUsers: () => authApi.get('/admin/users'),
-  activateUser: (userId) => authApi.patch(`/admin/users/${userId}/activate`),
-  makeAdmin: (userId) => authApi.patch(`/admin/users/${userId}/make-admin`),
-  removeAdmin: (userId) => authApi.patch(`/admin/users/${userId}/remove-admin`),
-  deleteUser: (userId) => authApi.delete(`/admin/users/${userId}`),
-  checkAdminAccess: () => authApi.get('/admin/check-access'),
-  checkSuperAdminAccess: () => authApi.get('/admin/check-super-access'),
+  getAllUsers: async () => await authApi.get('/admin/users'),
+  activateUser: async (userId) => await authApi.patch(`/admin/users/${userId}/activate`),
+  makeAdmin: async (userId) => await authApi.patch(`/admin/users/${userId}/make-admin`),
+  removeAdmin: async (userId) => await authApi.patch(`/admin/users/${userId}/remove-admin`),
+  deleteUser: async (userId) => await authApi.delete(`/admin/users/${userId}`),
+  checkAdminAccess: async () => await authApi.get('/admin/check-access'),
+  checkSuperAdminAccess: async () => await authApi.get('/admin/check-super-access'),
   getDashboardStats: async () => {
     try {
       // Получаем количество пользователей
@@ -205,38 +210,39 @@ export const adminAPI = {
 
 // API для работы с контентом
 export const contentAPI = {
-  getArticles: () => contentApi.get('/articles'),
-  getArticleById: (id) => contentApi.get(`/articles/${id}`),
-  createArticle: (data) => contentApi.post('/articles', data),
-  updateArticle: (id, data) => contentApi.put(`/articles/${id}`, data),
-  deleteArticle: (id) => contentApi.delete(`/articles/${id}`),
+  getArticles: async () => await contentApi.get('/articles'),
+  getArticleById: async (id) => await contentApi.get(`/articles/${id}`),
+  createArticle: async (data) => await contentApi.post('/articles', data),
+  updateArticle: async (id, data) => await contentApi.put(`/articles/${id}`, data),
+  deleteArticle: async (id) => await contentApi.delete(`/articles/${id}`),
 };
 
 // API для работы с уведомлениями
 export const notificationAPI = {
-  getNotifications: () => notificationApi.get('/notifications'),
-  markAsRead: (id) => notificationApi.patch(`/notifications/${id}/read`),
-  deleteNotification: (id) => notificationApi.delete(`/notifications/${id}`),
+  getNotifications: async () => await notificationApi.get('/notifications'),
+  markAsRead: async (id) => await notificationApi.patch(`/notifications/${id}/read`),
+  deleteNotification: async (id) => await notificationApi.delete(`/notifications/${id}`),
 };
 
 // API для работы с продуктами
 export const productAPI = {
   // Продукты
-  searchProducts: (searchTerm) => {
+  searchProducts: async (searchTerm) => {
     console.log('searchProducts вызван с параметром:', searchTerm);
     
-    return productApi.get('/products/search', { 
-      params: { name: searchTerm }
-    }).then(response => {
+    try {
+      const response = await productApi.get('/products/search', { 
+        params: { name: searchTerm }
+      });
       console.log('API searchProducts ответ успешно получен');
       return response;
-    }).catch(error => {
+    } catch (error) {
       console.error('Ошибка в API searchProducts:', error);
       throw error;
-    });
+    }
   },
   
-  getProducts: (page = 1, pageSize = 10, filters = {}, sort = null) => {
+  getProducts: async (page = 1, pageSize = 10, filters = {}, sort = null) => {
     console.log('getProducts вызван с параметрами:', { page, pageSize, filters, sort });
     
     // Формируем параметры запроса
@@ -252,7 +258,8 @@ export const productAPI = {
     
     console.log('Итоговые параметры запроса:', params);
     
-    return productApi.get('/products', { params }).then(response => {
+    try {
+      const response = await productApi.get('/products', { params });
       console.log('API getProducts ответ успешно получен');
       console.log('Параметры запроса были:', { page, pageSize, filters, sort });
       console.log('Данные ответа (первые 2 товара):', response.data?.items?.slice(0, 2).map(item => ({
@@ -261,14 +268,14 @@ export const productAPI = {
         price: item.price
       })));
       return response;
-    }).catch(error => {
+    } catch (error) {
       console.error('Ошибка в API getProducts:', error);
       console.error('Параметры запроса были:', { page, pageSize, filters, sort });
       throw error;
-    });
+    }
   },
   // Метод для получения всех продуктов для админки (включая товары с stock=0)
-  getAdminProducts: (page = 1, pageSize = 10, category_id = null, subcategory_id = null, brand_id = null, country_id = null, sort = null) => {
+  getAdminProducts: async (page = 1, pageSize = 10, category_id = null, subcategory_id = null, brand_id = null, country_id = null, sort = null) => {
     console.log('getAdminProducts вызван с параметрами:', { page, pageSize, category_id, subcategory_id, brand_id, country_id, sort });
     
     // Формируем параметры запроса
@@ -289,7 +296,8 @@ export const productAPI = {
     
     console.log('Итоговые параметры запроса:', params);
     
-    return productApi.get('products/admin', { params }).then(response => {
+    try {
+      const response = await productApi.get('products/admin', { params });
       console.log('API getAdminProducts ответ успешно получен');
       console.log('Параметры запроса были:', { page, pageSize, category_id, subcategory_id, brand_id, country_id, sort });
       console.log('Данные ответа (первые 2 товара):', response.data?.items?.slice(0, 2).map(item => ({
@@ -298,15 +306,15 @@ export const productAPI = {
         price: item.price
       })));
       return response;
-    }).catch(error => {
+    } catch (error) {
       console.error('Ошибка в API getAdminProducts:', error);
       console.error('Параметры запроса были:', { page, pageSize, category_id, subcategory_id, brand_id, country_id, sort });
       throw error;
-    });
+    }
   },
-  getProductById: (id, timestamp = '') => {
+  getProductById: async (id, timestamp = '') => {
     const url = timestamp ? `/products/${id}${timestamp}` : `/products/${id}`;
-    return productApi.get(url);
+    return await productApi.get(url);
   },
   
   // Получение похожих товаров
@@ -377,19 +385,19 @@ export const productAPI = {
   },
   
   // Получение категории по ID
-  getCategoryById: (id) => productApi.get(`/categories/${id}`),
+  getCategoryById: async (id) => await productApi.get(`/categories/${id}`),
   
   // Получение подкатегории по ID
-  getSubcategoryById: (id) => productApi.get(`/subcategories/${id}`),
+  getSubcategoryById: async (id) => await productApi.get(`/subcategories/${id}`),
   
   // Получение страны по ID
-  getCountryById: (id) => productApi.get(`/countries/${id}`),
+  getCountryById: async (id) => await productApi.get(`/countries/${id}`),
   
   // Получение бренда по ID
-  getBrandById: (id) => productApi.get(`/brands/${id}`),
+  getBrandById: async (id) => await productApi.get(`/brands/${id}`),
   
   // Заменяем метод createProduct для поддержки загрузки файлов
-  createProduct: (data) => {
+  createProduct: async (data) => {
     console.log('createProduct вызван с данными:', data);
     
     // Проверка наличия всех обязательных полей
@@ -438,7 +446,7 @@ export const productAPI = {
       });
       
       // Отправляем на эндпоинт /products
-      return productApi.post('/products', formData, {
+      return await productApi.post('/products', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -464,7 +472,7 @@ export const productAPI = {
         formData.append('subcategory_id', data.subcategory_id.toString());
       }
       
-      return productApi.post('/products', formData, {
+      return await productApi.post('/products', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -473,7 +481,7 @@ export const productAPI = {
   },
   
   // Обновляем метод updateProduct с поддержкой загрузки файлов
-  updateProduct: (id, data) => {
+  updateProduct: async (id, data) => {
     console.log(`updateProduct вызван для ID=${id} с данными:`, data);
     
     // Всегда используем FormData для универсальности
@@ -505,38 +513,38 @@ export const productAPI = {
     console.log('FormData готова для отправки');
     
     // Отправляем всегда на эндпоинт /products/{id}/form
-    return productApi.put(`/products/${id}/form`, formData, {
+    return await productApi.put(`/products/${id}/form`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
     });
   },
   
-  deleteProduct: (id) => productApi.delete(`/products/${id}`),
+  deleteProduct: async (id) => await productApi.delete(`/products/${id}`),
   
   // Категории
-  getCategories: () => productApi.get('/categories'),
-  createCategory: (data) => productApi.post('/categories', data),
-  updateCategory: (id, data) => productApi.put(`/categories/${id}`, data),
-  deleteCategory: (id) => productApi.delete(`/categories/${id}`),
+  getCategories: async () => await productApi.get('/categories'),
+  createCategory: async (data) => await productApi.post('/categories', data),
+  updateCategory: async (id, data) => await productApi.put(`/categories/${id}`, data),
+  deleteCategory: async (id) => await productApi.delete(`/categories/${id}`),
   
   // Бренды
-  getBrands: () => productApi.get('/brands'),
-  createBrand: (data) => productApi.post('/brands', data),
-  updateBrand: (id, data) => productApi.put(`/brands/${id}`, data),
-  deleteBrand: (id) => productApi.delete(`/brands/${id}`),
+  getBrands: async () => await productApi.get('/brands'),
+  createBrand: async (data) => await productApi.post('/brands', data),
+  updateBrand: async (id, data) => await productApi.put(`/brands/${id}`, data),
+  deleteBrand: async (id) => await productApi.delete(`/brands/${id}`),
   
   // Страны
-  getCountries: () => productApi.get('/countries'),
-  createCountry: (data) => productApi.post('/countries', data),
-  updateCountry: (id, data) => productApi.put(`/countries/${id}`, data),
-  deleteCountry: (id) => productApi.delete(`/countries/${id}`),
+  getCountries: async () => await productApi.get('/countries'),
+  createCountry: async (data) => await productApi.post('/countries', data),
+  updateCountry: async (id, data) => await productApi.put(`/countries/${id}`, data),
+  deleteCountry: async (id) => await productApi.delete(`/countries/${id}`),
   
   // Подкатегории
-  getSubcategories: () => productApi.get('/subcategories'),
-  createSubcategory: (data) => productApi.post('/subcategories', data),
-  updateSubcategory: (id, data) => productApi.put(`/subcategories/${id}`, data),
-  deleteSubcategory: (id) => productApi.delete(`/subcategories/${id}`),
+  getSubcategories: async () => await productApi.get('/subcategories'),
+  createSubcategory: async (data) => await productApi.post('/subcategories', data),
+  updateSubcategory: async (id, data) => await productApi.put(`/subcategories/${id}`, data),
+  deleteSubcategory: async (id) => await productApi.delete(`/subcategories/${id}`),
 };
 
 // Экспортируем объект с методами для работы с корзиной
@@ -545,16 +553,16 @@ export const cartAPI = {
    * Получает текущую корзину пользователя
    * @returns {Promise<Object>} - Данные корзины
    */
-  getCart: () => {
-    return cartApi.get('/cart');
+  getCart: async () => {
+    return await cartApi.get('/cart');
   },
 
   /**
    * Получает краткую информацию о корзине (количество товаров и общая стоимость)
    * @returns {Promise<Object>} - Краткая информация о корзине
    */
-  getCartSummary: () => {
-    return cartApi.get('/cart/summary');
+  getCartSummary: async () => {
+    return await cartApi.get('/cart/summary');
   },
 
   /**
@@ -563,8 +571,8 @@ export const cartAPI = {
    * @param {number} quantity - Количество товара
    * @returns {Promise<Object>} - Обновленная корзина
    */
-  addToCart: (productId, quantity) => {
-    return cartApi.post('/cart/items', {
+  addToCart: async (productId, quantity) => {
+    return await cartApi.post('/cart/items', {
       product_id: productId,
       quantity: quantity
     });
@@ -576,8 +584,8 @@ export const cartAPI = {
    * @param {number} quantity - Новое количество товара
    * @returns {Promise<Object>} - Обновленная корзина
    */
-  updateCartItem: (itemId, quantity) => {
-    return cartApi.put(`/cart/items/${itemId}`, {
+  updateCartItem: async (itemId, quantity) => {
+    return await cartApi.put(`/cart/items/${itemId}`, {
       quantity: quantity
     });
   },
@@ -587,16 +595,16 @@ export const cartAPI = {
    * @param {number} itemId - ID элемента корзины
    * @returns {Promise<Object>} - Обновленная корзина
    */
-  removeFromCart: (itemId) => {
-    return cartApi.delete(`/cart/items/${itemId}`);
+  removeFromCart: async (itemId) => {
+    return await cartApi.delete(`/cart/items/${itemId}`);
   },
 
   /**
    * Очищает корзину (удаляет все товары)
    * @returns {Promise<Object>} - Пустая корзина
    */
-  clearCart: () => {
-    return cartApi.delete('/cart');
+  clearCart: async () => {
+    return await cartApi.delete('/cart');
   },
 
   /**
@@ -604,7 +612,7 @@ export const cartAPI = {
    * @param {string} [sessionId] - Идентификатор сессии для корзины (необязательный)
    * @returns {Promise<Object>} - Объединенная корзина
    */
-  mergeCarts: (sessionId) => {
+  mergeCarts: async (sessionId) => {
     let url = '/cart/merge';
     
     // Если передан sessionId, добавляем его как query параметр
@@ -612,7 +620,7 @@ export const cartAPI = {
       url += `?url_session_id=${sessionId}`;
     }
     
-    return cartApi.post(url);
+    return await cartApi.post(url);
   }
 };
 
@@ -758,6 +766,144 @@ export const cartService = {
   }
 };
 
+// API для работы с отзывами
+export const reviewAPI = {
+  // Публичные методы для работы с отзывами о товарах
+  getProductReviews: async (productId, page = 1, pageSize = 10) => {
+    return await reviewApi.get(`/reviews/products/${productId}`, {
+      params: { page, limit: pageSize }
+    });
+  },
+  
+  createProductReview: async (productId, data) => {
+    return await reviewApi.post('/reviews/products', {
+      ...data,
+      product_id: productId
+    });
+  },
+  
+  getProductStats: async (productId) => {
+    return await reviewApi.get(`/reviews/products/${productId}/stats`);
+  },
+  
+  // Публичные методы для работы с отзывами о магазине
+  getStoreReviews: async (page = 1, pageSize = 10) => {
+    return await reviewApi.get('/reviews/store/all', {
+      params: { page, limit: pageSize }
+    });
+  },
+  
+  createStoreReview: async (data) => {
+    return await reviewApi.post('/reviews/store', data);
+  },
+  
+  getStoreStats: async () => {
+    return await reviewApi.get('/reviews/store/stats');
+  },
+  
+  // Общие методы для всех типов отзывов
+  getReview: async (reviewId) => {
+    return await reviewApi.get(`/reviews/${reviewId}`);
+  },
+  
+  addReaction: async (reviewId, reactionType) => {
+    console.log(`Вызов API addReaction для отзыва ${reviewId} с типом ${reactionType}`);
+    try {
+      const response = await reviewApi.post(`/reviews/reactions`, {
+        review_id: reviewId,
+        reaction_type: reactionType
+      });
+      
+      console.log(`API addReaction ответ успешно получен, статус: ${response.status}`, response.data);
+      // Убедимся, что данные о реакциях есть в объекте
+      if (!response.data.reaction_stats) {
+        console.error('В ответе API addReaction отсутствуют данные о реакциях:', response.data);
+        // Добавим данные по умолчанию, если их нет в ответе
+        response.data.reaction_stats = { likes: 0, dislikes: 0 };
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API addReaction:', error);
+      throw error;
+    }
+  },
+  
+  deleteReaction: async (reviewId) => {
+    console.log(`Вызов API deleteReaction для отзыва ${reviewId}`);
+    try {
+      const response = await reviewApi.post(`/reviews/reactions/delete`, {
+        review_id: reviewId
+      });
+      
+      console.log(`API deleteReaction ответ успешно получен, статус: ${response.status}`, response.data);
+      // Убедимся, что данные о реакциях есть в объекте
+      if (!response.data.reaction_stats) {
+        console.error('В ответе API deleteReaction отсутствуют данные о реакциях:', response.data);
+        // Добавим данные по умолчанию, если их нет в ответе
+        response.data.reaction_stats = { likes: 0, dislikes: 0 };
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API deleteReaction:', error);
+      throw error;
+    }
+  },
+  
+  // Проверка прав на оставление отзыва
+  checkReviewPermissions: async (productId = null) => {
+    const params = productId ? { product_id: productId } : {};
+    return await reviewApi.get('/reviews/permissions/check', { params });
+  },
+  
+  // Методы для администратора
+  admin: {
+    getProductReviews: async (productId, page = 1, pageSize = 10) => {
+      return await reviewApi.get(`/admin/reviews/products/${productId}`, {
+        params: { page, limit: pageSize, include_hidden: true }
+      });
+    },
+    
+    getStoreReviews: async (page = 1, pageSize = 10) => {
+      return await reviewApi.get('/admin/reviews/store', {
+        params: { page, limit: pageSize, include_hidden: true }
+      });
+    },
+    
+    getReview: async (reviewId) => {
+      return await reviewApi.get(`/admin/reviews/${reviewId}`);
+    },
+    
+    toggleReviewVisibility: async (reviewId) => {
+      // Получаем текущий статус отзыва, а затем устанавливаем противоположный
+      try {
+        const response = await reviewApi.get(`/admin/reviews/${reviewId}`);
+        const review = response.data;
+        const newStatus = !review.is_hidden;
+        
+        const updateResponse = await reviewApi.patch(`/admin/reviews/${reviewId}`, {
+          is_hidden: newStatus
+        });
+        return updateResponse.data;
+      } catch (error) {
+        console.error('Ошибка в toggleReviewVisibility:', error);
+        throw error;
+      }
+    },
+    
+    addComment: async (reviewId, content) => {
+      const response = await reviewApi.post(`/admin/reviews/comments`, {
+        review_id: reviewId,
+        content
+      });
+      return response.data;
+    },
+    
+    deleteComment: async (reviewId, commentId) => {
+      return await reviewApi.delete(`/admin/reviews/${reviewId}/comments/${commentId}`);
+    }
+  }
+};
+
 // Экспортируем все API и инстансы для возможного прямого использования
 const apiExports = {
   authApi,
@@ -772,7 +918,8 @@ const apiExports = {
   notificationAPI,
   productAPI,
   cartAPI,
-  cartService
+  cartService,
+  reviewAPI
 };
 
 export default apiExports; 

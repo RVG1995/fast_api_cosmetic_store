@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Badge, Card, Form, Row, Col, Pagination } from 'react-bootstrap';
+import { Table, Button, Badge, Card, Form, Row, Col, Pagination, Modal } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { useOrders } from '../../context/OrderContext';
 import { formatDateTime } from '../../utils/dateUtils';
@@ -8,7 +8,7 @@ import OrderStatusBadge from '../../components/OrderStatusBadge';
 import './AdminOrders.css';
 
 const AdminOrders = () => {
-  const { getAllOrders, getOrderStatuses, loading, error } = useOrders();
+  const { getAllOrders, getOrderStatuses, updateOrderStatus, loading, error } = useOrders();
   const [orders, setOrders] = useState([]);
   const [statuses, setStatuses] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -18,7 +18,15 @@ const AdminOrders = () => {
     order_id: '',
     date_from: '',
     date_to: '',
+    username: '',
   });
+  
+  // Состояние для хранения измененных статусов
+  const [statusChanges, setStatusChanges] = useState({});
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [updateInProgress, setUpdateInProgress] = useState(false);
+  const [updateResults, setUpdateResults] = useState({ success: 0, errors: 0 });
+  const [showResultsModal, setShowResultsModal] = useState(false);
 
   // Загрузка статусов заказов при монтировании компонента
   useEffect(() => {
@@ -50,6 +58,7 @@ const AdminOrders = () => {
         if (filters.order_id) params.id = Number(filters.order_id);
         if (filters.date_from) params.date_from = filters.date_from;
         if (filters.date_to) params.date_to = filters.date_to;
+        if (filters.username) params.username = filters.username;
         
         console.log('Отправляем запрос с параметрами:', params);
         
@@ -84,15 +93,29 @@ const AdminOrders = () => {
             console.log(`Текущая страница (${currentPage}) больше общего количества (${finalPages}), переходим на страницу ${finalPages}`);
             setCurrentPage(finalPages);
           }
+          
+          // Сбрасываем изменения статусов при загрузке новых данных
+          if (isEditMode) {
+            // При переключении страниц в режиме редактирования сохраняем текущие статусы
+            const initialStatusChanges = {};
+            response.items.forEach(order => {
+              initialStatusChanges[order.id] = order.status_id;
+            });
+            setStatusChanges(initialStatusChanges);
+          } else {
+            setStatusChanges({});
+          }
         } else {
           console.log('Ответ не содержит элементов или некорректен');
           setOrders([]);
           setTotalPages(1);
+          setStatusChanges({});
         }
       } catch (err) {
         console.error('Ошибка при загрузке заказов:', err);
         setOrders([]);
         setTotalPages(1);
+        setStatusChanges({});
       }
     };
     
@@ -116,8 +139,109 @@ const AdminOrders = () => {
       order_id: '',
       date_from: '',
       date_to: '',
+      username: '',
     });
     setCurrentPage(1);
+  };
+
+  // Обработчик изменения статуса заказа
+  const handleOrderStatusChange = (orderId, statusId) => {
+    setStatusChanges(prev => ({
+      ...prev,
+      [orderId]: statusId
+    }));
+  };
+  
+  // Переключение режима редактирования
+  const toggleEditMode = () => {
+    const newMode = !isEditMode;
+    setIsEditMode(newMode);
+    
+    if (newMode) {
+      // Инициализируем статусы для всех заказов в списке
+      const initialStatusChanges = {};
+      orders.forEach(order => {
+        initialStatusChanges[order.id] = order.status_id;
+      });
+      setStatusChanges(initialStatusChanges);
+    } else {
+      // Выходим из режима редактирования - сбрасываем изменения
+      setStatusChanges({});
+    }
+  };
+  
+  // Сохранение изменений статусов
+  const saveStatusChanges = async () => {
+    const originalStatuses = {};
+    orders.forEach(order => {
+      originalStatuses[order.id] = order.status_id;
+    });
+    
+    // Фильтруем только измененные статусы
+    const changedOrders = Object.entries(statusChanges).filter(
+      ([orderId, statusId]) => originalStatuses[orderId] !== statusId && statusId !== ''
+    );
+    
+    if (changedOrders.length === 0) {
+      alert('Нет изменений для сохранения');
+      return;
+    }
+    
+    setUpdateInProgress(true);
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Обновляем статус каждого измененного заказа
+    for (const [orderId, statusId] of changedOrders) {
+      try {
+        await updateOrderStatus(Number(orderId), { status_id: Number(statusId) });
+        successCount++;
+      } catch (err) {
+        console.error(`Ошибка при обновлении статуса заказа ${orderId}:`, err);
+        errorCount++;
+      }
+    }
+    
+    // Обновляем список заказов после сохранения изменений
+    try {
+      // Подготавливаем параметры запроса правильно, как в loadOrders
+      const params = {
+        page: currentPage,
+        size: 10
+      };
+      
+      // Добавляем параметры фильтрации только если они заданы и не пустые
+      if (filters.status_id) params.status_id = Number(filters.status_id);
+      if (filters.order_id) params.id = Number(filters.order_id);
+      if (filters.date_from) params.date_from = filters.date_from;
+      if (filters.date_to) params.date_to = filters.date_to;
+      if (filters.username) params.username = filters.username;
+      
+      console.log('Обновление списка заказов с параметрами:', params);
+      
+      const response = await getAllOrders(params);
+      
+      if (response && response.items) {
+        setOrders(response.items);
+      }
+    } catch (err) {
+      console.error('Ошибка при обновлении списка заказов:', err);
+    }
+    
+    setUpdateResults({ success: successCount, errors: errorCount });
+    setShowResultsModal(true);
+    setUpdateInProgress(false);
+    
+    // Выходим из режима редактирования после сохранения
+    if (errorCount === 0) {
+      setIsEditMode(false);
+      setStatusChanges({});
+    }
+  };
+  
+  // Закрытие модального окна с результатами
+  const handleCloseResultsModal = () => {
+    setShowResultsModal(false);
   };
 
   // Формирование элементов пагинации
@@ -249,6 +373,16 @@ const AdminOrders = () => {
     setCurrentPage(parsedPage);
   };
 
+  // Наличие изменений статусов
+  const hasStatusChanges = () => {
+    if (!isEditMode) return false;
+    
+    return orders.some(order => 
+      statusChanges[order.id] !== undefined && 
+      statusChanges[order.id] !== order.status_id
+    );
+  };
+
   return (
     <div className="container py-4 admin-orders-container">
       <h2 className="mb-4">Управление заказами</h2>
@@ -302,6 +436,19 @@ const AdminOrders = () => {
               
               <Col md={3}>
                 <Form.Group className="mb-3">
+                  <Form.Label>Имя пользователя</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="username"
+                    value={filters.username}
+                    onChange={handleFilterChange}
+                    placeholder="Введите имя пользователя"
+                  />
+                </Form.Group>
+              </Col>
+              
+              <Col md={3}>
+                <Form.Group className="mb-3">
                   <Form.Label>Дата от</Form.Label>
                   <Form.Control
                     type="date"
@@ -338,6 +485,28 @@ const AdminOrders = () => {
         </Card.Body>
       </Card>
       
+      {/* Кнопки управления режимом редактирования */}
+      <div className="mb-3 d-flex">
+        <Button 
+          variant={isEditMode ? "secondary" : "primary"} 
+          onClick={toggleEditMode}
+          className="me-2"
+          disabled={loading || updateInProgress}
+        >
+          {isEditMode ? "Отменить изменения" : "Изменить статусы"}
+        </Button>
+        
+        {isEditMode && (
+          <Button 
+            variant="success" 
+            onClick={saveStatusChanges}
+            disabled={loading || updateInProgress || !hasStatusChanges()}
+          >
+            {updateInProgress ? "Сохранение..." : "Сохранить изменения"}
+          </Button>
+        )}
+      </div>
+      
       {/* Таблица заказов */}
       <Card>
         <Card.Body>
@@ -365,8 +534,8 @@ const AdminOrders = () => {
                 <tbody>
                   {Array.isArray(orders) && orders.length > 0 ? (
                     orders.map(order => (
-                      <tr key={order.id}>
-                        <td>{order.id}-{new Date(order.created_at).getFullYear()}</td>
+                      <tr key={order.id} className={statusChanges[order.id] !== undefined && statusChanges[order.id] !== order.status_id ? "table-warning" : ""}>
+                        <td>{order.order_number}</td>
                         <td>{order.created_at ? formatDateTime(order.created_at) : '-'}</td>
                         <td className="text-center">
                           {order.user_id ? (
@@ -381,9 +550,26 @@ const AdminOrders = () => {
                         </td>
                         <td>{order.total_price !== undefined ? formatPrice(order.total_price) : '-'}</td>
                         <td>
-                          {order.status ? (
-                            <OrderStatusBadge status={order.status} />
-                          ) : '-'}
+                          {isEditMode ? (
+                            <Form.Select
+                              value={statusChanges[order.id] || order.status_id}
+                              onChange={e => handleOrderStatusChange(order.id, e.target.value)}
+                              size="sm"
+                              style={{ minWidth: '150px' }}
+                            >
+                              {Array.isArray(statuses) && statuses.length > 0 && 
+                                statuses.map(status => (
+                                  <option key={status.id} value={status.id}>
+                                    {status.name}
+                                  </option>
+                                ))
+                              }
+                            </Form.Select>
+                          ) : (
+                            order.status ? (
+                              <OrderStatusBadge status={order.status} />
+                            ) : '-'
+                          )}
                         </td>
                         <td>Онлайн</td>
                         <td>
@@ -397,7 +583,7 @@ const AdminOrders = () => {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="7" className="text-center">
+                      <td colSpan="8" className="text-center">
                         Заказы не найдены
                       </td>
                     </tr>
@@ -410,37 +596,23 @@ const AdminOrders = () => {
                 <div className="d-flex justify-content-center mt-4">
                   <Pagination>
                     <Pagination.First
-                      onClick={() => {
-                        console.log('Клик на First, переход на страницу 1');
-                        safeSetCurrentPage(1);
-                      }}
-                      disabled={currentPage === 1}
+                      onClick={() => safeSetCurrentPage(1)}
+                      disabled={currentPage === 1 || loading}
                     />
                     <Pagination.Prev
-                      onClick={() => {
-                        const prevPage = currentPage - 1;
-                        console.log(`Клик на Prev, переход с ${currentPage} на ${prevPage}`);
-                        safeSetCurrentPage(prevPage);
-                      }}
-                      disabled={currentPage === 1}
+                      onClick={() => safeSetCurrentPage(currentPage - 1)}
+                      disabled={currentPage === 1 || loading}
                     />
                     
                     {renderPagination()}
                     
                     <Pagination.Next
-                      onClick={() => {
-                        const nextPage = currentPage + 1;
-                        console.log(`Клик на Next, переход с ${currentPage} на ${nextPage}`);
-                        safeSetCurrentPage(nextPage);
-                      }}
-                      disabled={currentPage === totalPages}
+                      onClick={() => safeSetCurrentPage(currentPage + 1)}
+                      disabled={currentPage === totalPages || loading}
                     />
                     <Pagination.Last
-                      onClick={() => {
-                        console.log(`Клик на Last, переход на страницу ${totalPages}`);
-                        safeSetCurrentPage(totalPages);
-                      }}
-                      disabled={currentPage === totalPages}
+                      onClick={() => safeSetCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages || loading}
                     />
                   </Pagination>
                 </div>
@@ -449,6 +621,26 @@ const AdminOrders = () => {
           )}
         </Card.Body>
       </Card>
+      
+      {/* Модальное окно с результатами обновления */}
+      <Modal show={showResultsModal} onHide={handleCloseResultsModal}>
+        <Modal.Header closeButton>
+          <Modal.Title>Результаты обновления</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="alert alert-success mb-0">
+            <p className="mb-1">Успешно обновлено заказов: {updateResults.success}</p>
+            {updateResults.errors > 0 && (
+              <p className="mb-0 text-danger">Ошибок при обновлении: {updateResults.errors}</p>
+            )}
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="primary" onClick={handleCloseResultsModal}>
+            Закрыть
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 // src/App.js
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import RegistrationPage from './pages/auth/RegistrationPage';
 import UserInfoPage from './pages/user/UserInfoPage';
@@ -13,32 +14,61 @@ import ActivationPage from './pages/auth/ActivationPage';
 import PrivateRoute from './components/common/PrivateRoute';
 import PublicOnlyRoute from './components/common/PublicOnlyRoute';
 import AdminRoute from './components/common/AdminRoute';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminUsers from './pages/admin/AdminUsers';
-import AdminProducts from './pages/admin/AdminProducts';
-import AdminProductDetail from './pages/admin/AdminProductDetail';
-import AdminCategories from './pages/admin/AdminCategories';
-import AdminSubcategories from './pages/admin/AdminSubcategories';
-import AdminBrands from './pages/admin/AdminBrands';
-import AdminCountries from './pages/admin/AdminCountries';
-import AdminCarts from './pages/admin/AdminCarts'; // Импортируем новую страницу корзин
-import AdminCartDetail from './pages/admin/AdminCartDetail'; // Импортируем страницу с деталями корзины
-import AdminOrders from './pages/admin/AdminOrders'; // Импортируем страницу заказов в админке
-import AdminOrderDetail from './pages/admin/AdminOrderDetail'; // Импортируем страницу с деталями заказа
 import HomePage from './pages/HomePage';
-import ProductsPage from './pages/ProductsPage';
+import ProductsPage from './pages/ProductsPage'; // Импортируем настоящую страницу ProductsPage
 import ProductDetailPage from './pages/ProductDetailPage';
 import CartPage from './pages/CartPage'; // Импортируем страницу корзины
 import CheckoutPage from './pages/CheckoutPage'; // Импортируем страницу оформления заказа
 import OrdersPage from './pages/user/OrdersPage'; // Импортируем страницу заказов пользователя
 import OrderDetailPage from './pages/user/OrderDetailPage'; // Импортируем страницу деталей заказа
-
-// Импорт стилей
+import ReviewsPage from './pages/reviews/ReviewsPage'; // Импортируем страницу отзывов
+import ReviewPage from './pages/reviews/ReviewPage'; // Импортируем страницу детального просмотра отзыва
+import ScrollToTop from './components/layout/ScrollToTop';
+// Импорт стилей перемещен в начало файла
 import './styles/App.css';
+
+// Ленивая загрузка админских компонентов
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
+const AdminProducts = lazy(() => import('./pages/admin/AdminProducts'));
+const AdminProductDetail = lazy(() => import('./pages/admin/AdminProductDetail'));
+const AdminCategories = lazy(() => import('./pages/admin/AdminCategories'));
+const AdminSubcategories = lazy(() => import('./pages/admin/AdminSubcategories'));
+const AdminBrands = lazy(() => import('./pages/admin/AdminBrands'));
+const AdminCountries = lazy(() => import('./pages/admin/AdminCountries'));
+const AdminCarts = lazy(() => import('./pages/admin/AdminCarts'));
+const AdminCartDetail = lazy(() => import('./pages/admin/AdminCartDetail'));
+const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
+const AdminOrderDetail = lazy(() => import('./pages/admin/AdminOrderDetail'));
+const AdminOrderStatuses = lazy(() => import('./pages/admin/AdminOrderStatuses'));
+const AdminPaymentStatuses = lazy(() => import('./pages/admin/AdminPaymentStatuses'));
+const AdminReviewsPage = lazy(() => import('./pages/admin/reviews/AdminReviewsPage'));
+const AdminReviewDetailPage = lazy(() => import('./pages/admin/reviews/AdminReviewDetailPage'));
+
+// Удаляем временную замену ProductsPage
+// const ProductsPage = HomePage;
+
+// Компонент загрузки для Suspense
+const Loading = () => (
+  <div style={{ 
+    display: 'flex', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: '2rem',
+    flexDirection: 'column',
+    minHeight: '200px'
+  }}>
+    <div className="spinner-border text-primary" role="status" style={{ width: '3rem', height: '3rem' }}>
+      <span className="visually-hidden">Загрузка...</span>
+    </div>
+    <p className="mt-3">Загружаем страницу...</p>
+  </div>
+);
 
 function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <AuthProvider>
         <CategoryProvider>
           <OrderProvider>
@@ -72,6 +102,10 @@ function App() {
                   </PrivateRoute>
                 } />
                 
+                {/* Маршруты для отзывов */}
+                <Route path="reviews" element={<ReviewsPage />} />
+                <Route path="reviews/:id" element={<ReviewPage />} />
+                
                 {/* Публичные маршруты только для неавторизованных пользователей */}
                 <Route 
                   path="register" 
@@ -99,7 +133,7 @@ function App() {
                 />
                 <Route path="activate/:token" element={<ActivationPage />} />
 
-                {/* Защищенные маршруты */}
+                {/* Защищенные маршруты - используем обычные импорты, убрали Suspense */}
                 <Route 
                   path="user" 
                   element={
@@ -117,12 +151,14 @@ function App() {
                   } 
                 />
 
-                {/* Административные маршруты */}
+                {/* Административные маршруты с ленивой загрузкой */}
                 <Route 
                   path="admin" 
                   element={
                     <AdminRoute>
-                      <AdminDashboard />
+                      <Suspense fallback={<Loading />}>
+                        <AdminDashboard />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -130,7 +166,9 @@ function App() {
                   path="admin/users" 
                   element={
                     <AdminRoute>
-                      <AdminUsers />
+                      <Suspense fallback={<Loading />}>
+                        <AdminUsers />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -138,7 +176,9 @@ function App() {
                   path="admin/products" 
                   element={
                     <AdminRoute>
-                      <AdminProducts />
+                      <Suspense fallback={<Loading />}>
+                        <AdminProducts />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -146,7 +186,9 @@ function App() {
                   path="admin/products/:productId" 
                   element={
                     <AdminRoute>
-                      <AdminProductDetail />
+                      <Suspense fallback={<Loading />}>
+                        <AdminProductDetail />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -155,7 +197,9 @@ function App() {
                   path="admin/categories" 
                   element={
                     <AdminRoute>
-                      <AdminCategories />
+                      <Suspense fallback={<Loading />}>
+                        <AdminCategories />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -163,7 +207,9 @@ function App() {
                   path="admin/subcategories" 
                   element={
                     <AdminRoute>
-                      <AdminSubcategories />
+                      <Suspense fallback={<Loading />}>
+                        <AdminSubcategories />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -171,7 +217,9 @@ function App() {
                   path="admin/brands" 
                   element={
                     <AdminRoute>
-                      <AdminBrands />
+                      <Suspense fallback={<Loading />}>
+                        <AdminBrands />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -179,7 +227,9 @@ function App() {
                   path="admin/countries" 
                   element={
                     <AdminRoute>
-                      <AdminCountries />
+                      <Suspense fallback={<Loading />}>
+                        <AdminCountries />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -188,7 +238,9 @@ function App() {
                   path="admin/carts" 
                   element={
                     <AdminRoute>
-                      <AdminCarts />
+                      <Suspense fallback={<Loading />}>
+                        <AdminCarts />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -196,7 +248,9 @@ function App() {
                   path="admin/carts/:cartId" 
                   element={
                     <AdminRoute>
-                      <AdminCartDetail />
+                      <Suspense fallback={<Loading />}>
+                        <AdminCartDetail />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -205,7 +259,9 @@ function App() {
                   path="admin/orders" 
                   element={
                     <AdminRoute>
-                      <AdminOrders />
+                      <Suspense fallback={<Loading />}>
+                        <AdminOrders />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />
@@ -213,7 +269,50 @@ function App() {
                   path="admin/orders/:orderId" 
                   element={
                     <AdminRoute>
-                      <AdminOrderDetail />
+                      <Suspense fallback={<Loading />}>
+                        <AdminOrderDetail />
+                      </Suspense>
+                    </AdminRoute>
+                  } 
+                />
+                <Route 
+                  path="admin/order-statuses" 
+                  element={
+                    <AdminRoute>
+                      <Suspense fallback={<Loading />}>
+                        <AdminOrderStatuses />
+                      </Suspense>
+                    </AdminRoute>
+                  } 
+                />
+                <Route 
+                  path="admin/payment-statuses" 
+                  element={
+                    <AdminRoute>
+                      <Suspense fallback={<Loading />}>
+                        <AdminPaymentStatuses />
+                      </Suspense>
+                    </AdminRoute>
+                  } 
+                />
+                {/* Маршруты для управления отзывами */}
+                <Route 
+                  path="admin/reviews" 
+                  element={
+                    <AdminRoute>
+                      <Suspense fallback={<Loading />}>
+                        <AdminReviewsPage />
+                      </Suspense>
+                    </AdminRoute>
+                  } 
+                />
+                <Route 
+                  path="admin/reviews/:reviewId" 
+                  element={
+                    <AdminRoute>
+                      <Suspense fallback={<Loading />}>
+                        <AdminReviewDetailPage />
+                      </Suspense>
                     </AdminRoute>
                   } 
                 />

@@ -9,7 +9,11 @@ import {
   MdBranding, 
   MdPublic, 
   MdShoppingCart,
-  MdSecurity 
+  MdSecurity,
+  MdReceipt,
+  MdAssignment,
+  MdPayment,
+  MdStar
 } from 'react-icons/md';
 import { useAuth } from '../../context/AuthContext';
 
@@ -92,6 +96,38 @@ const AdminSidebar = () => {
             className={`nav-link ${isActive('/admin/carts') ? 'active' : ''}`}
           >
             <MdShoppingCart className="me-2" /> Корзины
+          </Link>
+        </Nav.Item>
+        <Nav.Item>
+          <Link 
+            to="/admin/orders" 
+            className={`nav-link ${isActive('/admin/orders') ? 'active' : ''}`}
+          >
+            <MdReceipt className="me-2" /> Заказы
+          </Link>
+        </Nav.Item>
+        <Nav.Item>
+          <Link 
+            to="/admin/order-statuses" 
+            className={`nav-link ${isActive('/admin/order-statuses') ? 'active' : ''}`}
+          >
+            <MdAssignment className="me-2" /> Статусы заказов
+          </Link>
+        </Nav.Item>
+        <Nav.Item>
+          <Link 
+            to="/admin/payment-statuses" 
+            className={`nav-link ${isActive('/admin/payment-statuses') ? 'active' : ''}`}
+          >
+            <MdPayment className="me-2" /> Статусы оплаты
+          </Link>
+        </Nav.Item>
+        <Nav.Item>
+          <Link 
+            to="/admin/reviews" 
+            className={`nav-link ${isActive('/admin/reviews') ? 'active' : ''}`}
+          >
+            <MdStar className="me-2" /> Отзывы
           </Link>
         </Nav.Item>
         {isSuperAdmin && (

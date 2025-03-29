@@ -56,19 +56,17 @@ async def get_current_user(
             actual_token = authorization
         logger.info(f"Используем токен из заголовка Authorization: {actual_token[:20]}...")
     
+    # Если токен не найден, возвращаем None для анонимного доступа
     if actual_token is None:
-        logger.error("Токен не найден ни в куках, ни в заголовке")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Токен не найден в cookies или заголовке Authorization"
-        )
+        logger.info("Токен не найден, продолжаем с анонимным доступом")
+        return None
     
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Невозможно проверить учетные данные",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if token == INTERNAL_SERVICE_KEY and x_service_name:
+    if actual_token == INTERNAL_SERVICE_KEY and x_service_name:
         logger.info(f"Внутренний запрос от сервиса {x_service_name} авторизован")
         # Возвращаем специальные данные для внутреннего сервиса с повышенными правами
         return {
@@ -77,18 +75,13 @@ async def get_current_user(
             "is_super_admin": True,
             "is_service": True,
             "service_name": x_service_name,
-            "token": token
+            "token": actual_token
         }
-    
-    # Если токен отсутствует, возвращаем None для поддержки анонимных пользователей
-    if not token:
-        logger.info("Токен не предоставлен")
-        return None
         
     try:
         # Декодируем токен
-        logger.info(f"Попытка декодирования токена: {token[:20]}...")
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        logger.info(f"Попытка декодирования токена: {actual_token[:20]}...")
+        payload = jwt.decode(actual_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         
         # Используем ключ "sub" вместо "user_id" как в других сервисах
         user_id = payload.get("sub")
@@ -102,7 +95,7 @@ async def get_current_user(
             "user_id": int(user_id),
             "is_admin": payload.get("is_admin", False),
             "is_super_admin": payload.get("is_super_admin", False),
-            "token": token
+            "token": actual_token
         }
     except PyJWTError as e:
         logger.error(f"Ошибка при декодировании токена: {str(e)}")
@@ -145,6 +138,7 @@ def get_order_filter_params(
     size: int = 10,
     status_id: Optional[int] = None,
     user_id: Optional[int] = None,
+    username: Optional[str] = None,
     id: Optional[int] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
@@ -159,6 +153,7 @@ def get_order_filter_params(
         size: Размер страницы
         status_id: ID статуса заказа
         user_id: ID пользователя
+        username: Имя пользователя для поиска
         id: ID заказа
         date_from: Дата начала периода (YYYY-MM-DD)
         date_to: Дата окончания периода (YYYY-MM-DD)
@@ -173,6 +168,7 @@ def get_order_filter_params(
         size=size,
         status_id=status_id,
         user_id=user_id,
+        username=username,
         id=id,
         date_from=date_from,
         date_to=date_to,
@@ -199,6 +195,40 @@ async def check_products_availability(product_ids: list[int], token: Optional[st
         # Получаем информацию о продуктах с использованием batch-запроса
         products = await product_api.get_products_batch(product_ids, token)
         
+        # Собираем товары с низким остатком
+        low_stock_products = []
+        for product_id in product_ids:
+            if product_id in products:
+                product = products[product_id]
+                if product.stock < 10:
+                    # Добавляем товар в список для уведомления
+                    low_stock_products.append({
+                        "id": product.id,
+                        "name": product.name,
+                        "stock": product.stock
+                    })
+        
+        # Отправляем уведомление только если список товаров с низким остатком не пустой 
+        # и в нем есть хотя бы один товар
+        if low_stock_products and len(low_stock_products) > 0:
+            # Логируем информацию о товарах с низким остатком
+            low_stock_names = [f"{p['name']} (ID: {p['id']}, остаток: {p['stock']})" for p in low_stock_products]
+            logger.warning(f"Обнаружены товары с низким остатком: {', '.join(low_stock_names)}")
+            
+            # Используем глобальный флаг для отслеживания отправки уведомлений
+            # Предотвращаем повторную отправку в рамках одного запроса
+            if not getattr(check_products_availability, "_notification_sent", False):
+                # Импортируем функцию для отправки уведомлений
+                from app.services.order_service import notification_message_about_low_stock
+                await notification_message_about_low_stock(low_stock_products)
+                # Устанавливаем флаг, что уведомление уже отправлено
+                check_products_availability._notification_sent = True
+                logger.info(f"Отправлено уведомление о {len(low_stock_products)} товарах с низким остатком")
+            else:
+                logger.info(f"Пропуск повторной отправки уведомления о товарах с низким остатком")
+        
+        logger.info(f"Products: {products}")
+        
         # Проверяем наличие (stock > 0)
         result = {}
         for product_id in product_ids:
@@ -216,6 +246,9 @@ async def check_products_availability(product_ids: list[int], token: Optional[st
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Сервис продуктов недоступен",
         )
+
+# Установка начального значения для флага отправки уведомлений
+check_products_availability._notification_sent = False
 
 # Функция для получения информации о товарах из сервиса продуктов
 async def get_products_info(product_ids: list[int], token: Optional[str] = None) -> Dict[int, Dict[str, Any]]:

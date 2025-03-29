@@ -61,7 +61,6 @@ app.conf.task_routes = {
     'auth.*': {'queue': 'auth'},
     'cart.*': {'queue': 'cart'},
     'order.*': {'queue': 'order'},
-    'product.*': {'queue': 'product'},
 }
 
 # Импортируем расписание из отдельного файла

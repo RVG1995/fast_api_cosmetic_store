@@ -9,65 +9,41 @@ const AdminRoute = ({ children, requireSuperAdmin = false }) => {
   console.log('AdminRoute - isAdmin:', isAdmin);
   console.log('AdminRoute - isSuperAdmin:', isSuperAdmin);
   
-  // Если все еще загружается, показываем загрузчик
+  // Проверка прав администратора
+  const checkAdmin = () => {
+    console.log('AdminRoute - isAdmin:', isAdmin);
+    console.log('AdminRoute - user:', user);
+    
+    // Ожидаем загрузку данных пользователя
+    if (loading) {
+      return false;
+    }
+    
+    // Проверяем авторизацию и админские права
+    return !!user && isAdmin;
+  };
+  
+  // Ожидаем загрузку данных аутентификации
   if (loading) {
     return (
-      <div className="container d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
+      <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh' }}>
         <div className="spinner-border text-primary" role="status">
           <span className="visually-hidden">Загрузка...</span>
         </div>
       </div>
     );
   }
-  
-  // Проверяем, авторизован ли пользователь и имеет ли права администратора
+
+  // Проверка аутентификации
   if (!user) {
-    // Пользователь не авторизован, перенаправляем на страницу входа
     return <Navigate to="/login" replace />;
   }
   
-  // Безопасная проверка админских прав
-  const hasAdminRights = () => {
-    try {
-      return isAdmin && typeof isAdmin === 'function' && isAdmin();
-    } catch (error) {
-      console.error('Ошибка при проверке прав администратора:', error);
-      return false;
-    }
-  };
-  
-  // Безопасная проверка прав суперадмина
-  const hasSuperAdminRights = () => {
-    try {
-      return isSuperAdmin && typeof isSuperAdmin === 'function' && isSuperAdmin();
-    } catch (error) {
-      console.error('Ошибка при проверке прав суперадминистратора:', error);
-      return false;
-    }
-  };
-  
-  // Если требуется суперадминистратор, проверяем эту роль
-  if (requireSuperAdmin && !hasSuperAdminRights()) {
-    return (
-      <div className="container">
-        <div className="alert alert-danger text-center" role="alert">
-          <h4 className="alert-heading">Доступ запрещен</h4>
-          <p>Для доступа к этой странице требуются права суперадминистратора.</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // Если пользователь не админ (и не суперадмин), запрещаем доступ
-  if (!hasAdminRights()) {
-    return (
-      <div className="container">
-        <div className="alert alert-danger text-center" role="alert">
-          <h4 className="alert-heading">Доступ запрещен</h4>
-          <p>У вас нет прав для доступа к административной панели.</p>
-        </div>
-      </div>
-    );
+  // Проверка админских прав
+  if (!checkAdmin()) {
+    console.error('Access Denied: User does not have admin rights');
+    // Перенаправляем на главную страницу при отсутствии прав
+    return <Navigate to="/" replace />;
   }
   
   // Если все проверки пройдены, показываем содержимое

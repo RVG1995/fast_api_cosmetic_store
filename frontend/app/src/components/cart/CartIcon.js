@@ -6,37 +6,49 @@ import { API_URLS } from '../../utils/constants';
 import './CartIcon.css';
 
 const CartIcon = () => {
-  const { cartSummary, cart, removeFromCart, loading, fetchCart } = useCart();
+  const { cartSummary, cart, removeFromCart, loading, fetchCart, fetchCartSummary } = useCart();
   const [isOpen, setIsOpen] = useState(false);
   const [isRemoving, setIsRemoving] = useState({}); // состояние для отслеживания удаления товаров
   const dropdownRef = useRef(null);
   const mouseTimeoutRef = useRef(null);
   const navigate = useNavigate();
   
-  // При монтировании компонента обновляем данные корзины
+  // Логируем cartSummary при каждом изменении
   useEffect(() => {
+    console.log('cartSummary изменился:', cartSummary);
+  }, [cartSummary]);
+
+  // При монтировании компонента и открытии дропдауна обновляем данные корзины
+  useEffect(() => {
+    // При первом рендере загружаем полные данные
     fetchCart();
     
     // Слушаем событие обновления корзины
-    const handleCartUpdated = () => {
-      console.log('Событие обновления корзины получено, обновляем данные');
-      fetchCart();
-    };
-    
-    // Слушаем событие объединения корзин
-    const handleCartMerged = () => {
-      console.log('Событие объединения корзин получено, обновляем данные');
-      fetchCart();
+    const handleCartUpdated = (event) => {
+      console.log('Событие обновления корзины получено, обновляем сводку');
+      // Если дропдаун открыт, обновляем полные данные
+      if (isOpen) {
+        fetchCart();
+      }
+      // В любом случае обновляем сводку
+      fetchCartSummary();
     };
     
     window.addEventListener('cart:updated', handleCartUpdated);
-    window.addEventListener('cart:merged', handleCartMerged);
+    window.addEventListener('cart:merged', handleCartUpdated);
     
     return () => {
       window.removeEventListener('cart:updated', handleCartUpdated);
-      window.removeEventListener('cart:merged', handleCartMerged);
+      window.removeEventListener('cart:merged', handleCartUpdated);
     };
-  }, [fetchCart]);
+  }, [fetchCart, fetchCartSummary, isOpen]);
+
+  // При открытии дропдауна обновляем полные данные корзины
+  useEffect(() => {
+    if (isOpen) {
+      fetchCart();
+    }
+  }, [isOpen, fetchCart]);
 
   // Обработчик клика вне выпадающего меню
   useEffect(() => {
@@ -107,6 +119,9 @@ const CartIcon = () => {
     navigate('/cart');
   };
 
+  // Получаем количество товаров из cartSummary или cart
+  const itemsCount = cartSummary?.total_items || (cart?.items?.length || 0);
+
   return (
     <div 
       className="cart-icon-container" 
@@ -121,9 +136,9 @@ const CartIcon = () => {
         title="Корзина"
       >
         <i className="bi bi-cart3"></i>
-        {cart && cart.items && cart.items.length > 0 && (
+        {itemsCount > 0 && (
           <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-            {cart.items.length}
+            {itemsCount}
           </span>
         )}
       </button>

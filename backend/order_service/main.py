@@ -20,6 +20,7 @@ from database import engine
 from routers.orders import router as order_router
 from routers.orders import admin_router as admin_order_router
 from routers.order_statuses import router as order_statuses_router
+from routers.payment_statuses import router as payment_statuses_router
 from cache import close_redis
 
 # Загрузка переменных окружения
@@ -101,7 +102,7 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", "static/uploads")
 app.include_router(order_router)
 app.include_router(admin_order_router)
 app.include_router(order_statuses_router)
-
+app.include_router(payment_statuses_router)
 # Маршрут для проверки работоспособности сервиса
 @app.get("/api/health", tags=["health"])
 async def health_check():

@@ -9,7 +9,7 @@ import fastapi
 from models import ProductModel
 from database import get_session
 from auth import User, get_current_user, require_admin
-from cache import cache_delete_pattern, CACHE_KEYS
+from cache import cache_delete_pattern, CACHE_KEYS, invalidate_cache
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -168,6 +168,8 @@ async def update_product_stock(
         
         # Инвалидация кэша продукта
         await cache_delete_pattern(f"{CACHE_KEYS['products']}detail:{product_id}")
+        # Инвалидация всего кэша продуктов для обновления списков
+        await invalidate_cache("products")
         logger.info(f"Обновлено количество товара ID={product_id}: {old_stock} -> {new_stock} администратором {admin.get('user_id')}")
         
         return {"id": product.id, "stock": product.stock}
@@ -233,10 +235,77 @@ async def update_product_public_stock(
         
         # Инвалидация кэша продукта
         await cache_delete_pattern(f"{CACHE_KEYS['products']}detail:{product_id}")
+        # Инвалидация всего кэша продуктов для обновления списков
+        await invalidate_cache("products")
         logger.info(f"Публичное обновление количества товара ID={product_id}: {old_stock} -> {new_stock} через сервисный ключ")
         
         return {"id": product.id, "stock": product.stock}
     except Exception as e:
         await session.rollback()
         logger.error(f"Ошибка при публичном обновлении количества товара: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении количества товара: {str(e)}")
+
+@router.put("/{product_id}/admin-stock", status_code=200)
+async def update_product_admin_stock(
+    product_id: int,
+    session: SessionDep,
+    data: dict = Body(..., description="Данные для обновления остатка"),
+    service_key: str = Header(..., alias="Service-Key", description="Секретный ключ для доступа к API")
+):
+    """
+    Админский API для обновления количества товара на складе без ограничений.
+    Доступен только для внутренних сервисов с правильным ключом.
+    
+    - **product_id**: ID продукта
+    - **data**: Данные для обновления (должны содержать поле 'stock')
+    - **service_key**: Секретный ключ для доступа к API (передается в заголовке Service-Key)
+    """
+    # Проверяем секретный ключ (должен совпадать с ключом в конфигурации)
+    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "your-internal-service-key")
+    # Для тестирования жестко кодируем значение
+    INTERNAL_SERVICE_KEY = "test"
+    
+    logger.info(f"Запрос на админское обновление остатка товара {product_id} с ключом {service_key}")
+    
+    if service_key != INTERNAL_SERVICE_KEY:
+        logger.warning(f"Попытка доступа к админскому API с неверным ключом: {service_key}")
+        raise HTTPException(
+            status_code=403, 
+            detail="Доступ запрещен: неверный ключ сервиса"
+        )
+    
+    # Проверяем наличие обязательного поля
+    if 'stock' not in data:
+        raise HTTPException(status_code=400, detail="Поле 'stock' обязательно")
+    
+    new_stock = data['stock']
+    if not isinstance(new_stock, int) or new_stock < 0:
+        raise HTTPException(status_code=400, detail="Поле 'stock' должно быть неотрицательным целым числом")
+    
+    # Ищем продукт по id
+    query = select(ProductModel).filter(ProductModel.id == product_id)
+    result = await session.execute(query)
+    product = result.scalars().first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Продукт не найден")
+    
+    # В админском API разрешаем изменять количество товара без ограничений
+    try:
+        # Обновляем количество товара
+        old_stock = product.stock
+        product.stock = new_stock
+        await session.commit()
+        await session.refresh(product)
+        
+        # Инвалидация кэша продукта
+        await cache_delete_pattern(f"{CACHE_KEYS['products']}detail:{product_id}")
+        # Инвалидация всего кэша продуктов для обновления списков
+        await invalidate_cache("products")
+        logger.info(f"Админское обновление количества товара ID={product_id}: {old_stock} -> {new_stock} через сервисный ключ")
+        
+        return {"id": product.id, "stock": product.stock}
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Ошибка при админском обновлении количества товара: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка при обновлении количества товара: {str(e)}")

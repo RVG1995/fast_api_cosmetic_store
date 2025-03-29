@@ -175,14 +175,15 @@ class OrderModel(Base):
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         order_by: str = "created_at",
-        order_dir: str = "desc"
+        order_dir: str = "desc",
+        username: Optional[str] = None
     ) -> Tuple[List["OrderModel"], int]:
         """Получить все заказы с пагинацией и фильтрацией"""
         try:
             # Логируем входящие параметры фильтрации
             logger = logging.getLogger("order_model")
             logger.info(f"Запрос всех заказов с параметрами: page={page}, limit={limit}, status_id={status_id}, "
-                       f"user_id={user_id}, id={id}, date_from={date_from}, date_to={date_to}")
+                       f"user_id={user_id}, id={id}, date_from={date_from}, date_to={date_to}, username={username}")
             
             # Формируем базовый запрос
             query = select(cls)
@@ -196,6 +197,15 @@ class OrderModel(Base):
                 filters.append(cls.user_id == user_id)
             if id is not None:
                 filters.append(cls.id == id)
+            
+            # Добавляем фильтрацию по имени пользователя
+            if username is not None and username.strip():
+                # Используем оператор ILIKE для регистронезависимого поиска по части имени
+                # Обратите внимание, что % нужно добавить и в начало, и в конец для поиска по подстроке
+                filters.append(cls.full_name.ilike(f'%{username}%'))
+                logger.info(f"Применяется фильтр по имени пользователя: full_name ILIKE %{username}%")
+                # Добавляем отладочную информацию
+                logger.debug(f"Текущие фильтры: {filters}")
             
             # Добавляем фильтрацию по датам
             if date_from is not None:
@@ -341,4 +351,85 @@ class BillingAddressModel(Base):
     phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now()) 
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+
+class PaymentStatusModel(Base):
+    """
+    Модель для статусов оплаты заказов
+    """
+    __tablename__ = "payment_statuses"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    color: Mapped[str] = mapped_column(String(20), nullable=False, default="#3498db")
+    is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, onupdate=func.now())
+    
+    # Обратные отношения (если будут связи)
+    # orders = relationship("OrderModel", back_populates="payment_status")
+    
+    @classmethod
+    async def get_all(cls, session: AsyncSession, skip: int = 0, limit: int = 100) -> List["PaymentStatusModel"]:
+        """Получение всех статусов оплаты"""
+        query = select(cls).offset(skip).limit(limit)
+        result = await session.execute(query)
+        return result.scalars().all()
+    
+    @classmethod
+    async def get_by_id(cls, session: AsyncSession, status_id: int) -> Optional["PaymentStatusModel"]:
+        """Получение статуса по ID"""
+        query = select(cls).where(cls.id == status_id)
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
+    
+    @classmethod
+    async def get_by_name(cls, session: AsyncSession, name: str) -> Optional["PaymentStatusModel"]:
+        """Получение статуса по названию"""
+        query = select(cls).where(cls.name == name)
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
+    
+    @classmethod
+    async def create(cls, session: AsyncSession, status_data) -> "PaymentStatusModel":
+        """Создание нового статуса оплаты"""
+        db_status = cls(**status_data.model_dump())
+        session.add(db_status)
+        await session.commit()
+        await session.refresh(db_status)
+        return db_status
+    
+    @classmethod
+    async def update(cls, session: AsyncSession, status_id: int, status_data) -> Optional["PaymentStatusModel"]:
+        """Обновление статуса оплаты"""
+        db_status = await cls.get_by_id(session, status_id)
+        if not db_status:
+            return None
+        
+        data_dict = status_data.model_dump(exclude_unset=True)
+        for key, value in data_dict.items():
+            setattr(db_status, key, value)
+        
+        await session.commit()
+        await session.refresh(db_status)
+        return db_status
+    
+    @classmethod
+    async def delete(cls, session: AsyncSession, status_id: int) -> bool:
+        """Удаление статуса оплаты"""
+        db_status = await cls.get_by_id(session, status_id)
+        if not db_status:
+            return False
+        
+        await session.delete(db_status)
+        await session.commit()
+        return True
+    
+    @classmethod
+    async def is_used_in_orders(cls, session: AsyncSession, status_id: int) -> bool:
+        """Проверка, используется ли статус в заказах"""
+        # TODO: Реализовать проверку использования статуса в заказах
+        # когда будет добавлена связь с заказами
+        return False 

@@ -1,65 +1,48 @@
 import logging
-from ..utils.celery_utils import send_celery_task
+from ..utils.rabbit_utils import get_connection, close_connection
+import json
+import aio_pika
 
 logger = logging.getLogger(__name__)
 
-def send_verification_email(user_id, email, verification_link):
+async def send_email_activation_message(
+    user_id: str,
+    email: str,
+    activation_link: str
+):
     """
-    Отправляет email для подтверждения регистрации через Celery.
+    Отправляет сообщение с данными для email в очередь
     
     Args:
-        user_id (str): ID пользователя
-        email (str): Email пользователя
-        verification_link (str): Ссылка для подтверждения email
-    
-    Returns:
-        str или None: ID задачи Celery или None в случае ошибки
+        user_id: ID пользователя
+        email: Email получателя
+        activation_link: Ссылка для активации аккаунта
     """
-    logger.info(f"Отправка email для подтверждения пользователю {email}")
+    connection = await get_connection()
     
-    # Отправляем задачу в Celery через утилиту
-    task_id = send_celery_task(
-        'auth.send_verification_email',
-        args=[user_id, email, verification_link]
-    )
-    
-    return task_id
-
-def send_password_reset_email(user_id, email, reset_link):
-    """
-    Отправляет email для сброса пароля через Celery.
-    
-    Args:
-        user_id (str): ID пользователя
-        email (str): Email пользователя
-        reset_link (str): Ссылка для сброса пароля
-    
-    Returns:
-        str или None: ID задачи Celery или None в случае ошибки
-    """
-    logger.info(f"Отправка email для сброса пароля пользователю {email}")
-    
-    # Отправляем задачу в Celery через утилиту
-    task_id = send_celery_task(
-        'auth.send_password_reset',
-        args=[user_id, email, reset_link]
-    )
-    
-    return task_id
-
-def cleanup_expired_tokens():
-    """
-    Запускает задачу очистки истекших токенов.
-    
-    Returns:
-        str или None: ID задачи Celery или None в случае ошибки
-    """
-    logger.info("Запуск задачи очистки истекших токенов")
-    
-    # Отправляем задачу в Celery через утилиту
-    task_id = send_celery_task(
-        'auth.cleanup_expired_tokens',
-        args=[7]  # Хранить токены 7 дней
-    )
-    
-    return task_id 
+    try:
+        # Создаем канал
+        channel = await connection.channel()
+        
+        # Объявляем очередь
+        queue = await channel.declare_queue(
+            "registration_message",
+            durable=True
+        )
+        message_body = {
+            "user_id": user_id,
+            "email": email,
+            "activation_link": activation_link
+        }
+        # Отправляем сообщение
+        await channel.default_exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(message_body).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+            ),
+            routing_key=queue.name
+        )
+        logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+    finally:
+        # Закрываем соединение в любом случае
+        await close_connection(connection)

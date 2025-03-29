@@ -107,10 +107,13 @@ class UserCartSchema(BaseModel):
     id: int
     user_id: int
     user_name: str = ""
+    user_email: Optional[str] = None
+    session_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     items: List[UserCartItemSchema] = []
     total_items: int = 0
+    items_count: Optional[int] = None
     total_price: int = 0
     
     model_config = ConfigDict(from_attributes=True)

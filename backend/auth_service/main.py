@@ -6,6 +6,10 @@ import os
 from router import router as auth_router
 from admin_router import router as admin_router
 import logging
+from app.services import (
+    cache_service,
+    bruteforce_protection
+)
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -16,10 +20,27 @@ from fastapi.staticfiles import StaticFiles
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Инициализация Redis-клиентов при старте приложения"""
+    logger.info("Инициализация Redis-клиентов...")
+    # Инициализируем кэш-сервис
+    await cache_service.initialize() 
+    # Инициализируем сервис защиты от брутфорса
+    await bruteforce_protection.initialize()
+    
+    logger.info("Redis-клиенты успешно инициализированы")
     await setup_database()
     await create_superadmin()
     await create_default_user()
     yield 
+    logger.info("Закрытие Redis-соединений...")
+    
+    # Закрываем соединение кэш-сервиса
+    await cache_service.close()
+    
+    # Закрываем соединение сервиса защиты от брутфорса
+    await bruteforce_protection.close()
+    
+    logger.info("Redis-соединения успешно закрыты")
     await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)

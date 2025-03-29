@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 import logging
 import os
 from dotenv import load_dotenv
@@ -107,11 +108,11 @@ async def create_new_order(
         loaded_order = await get_order_by_id(session, order.id)
         
         # Отправляем подтверждение заказа на email
-        from app.services.order_service import send_order_confirmation
+        from app.services.order_service import send_email_message
         if order_data.email:
             logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
-            task_id = send_order_confirmation(order.id, order_data.email)
-            logger.info(f"Задача подтверждения заказа {order.id} отправлена в Celery, task_id: {task_id}")
+            task_id = await send_email_message(loaded_order)
+            logger.info(f"Задача подтверждения заказа {order.id} отправлена в RabbitMQ, task_id: {task_id}")
         
         # Явно инвалидируем кэш заказов перед возвратом ответа
         await invalidate_order_cache(order.id)
@@ -532,10 +533,10 @@ async def list_all_orders(
         # Логируем запрос с параметрами фильтрации
         logger.info(f"Запрос списка всех заказов с параметрами: page={filters.page}, size={filters.size}, "
                    f"status_id={filters.status_id}, user_id={filters.user_id}, id={filters.id}, "
-                   f"date_from={filters.date_from}, date_to={filters.date_to}")
+                   f"date_from={filters.date_from}, date_to={filters.date_to}, username={filters.username}")
         
         # Создаем ключ для кэша на основе параметров фильтрации
-        cache_key = f"p{filters.page}_s{filters.size}_st{filters.status_id or 'all'}_u{filters.user_id or 'all'}_id{filters.id or 'all'}_df{filters.date_from or 'all'}_dt{filters.date_to or 'all'}_ob{filters.order_by or 'default'}_od{filters.order_dir or 'default'}"
+        cache_key = f"p{filters.page}_s{filters.size}_st{filters.status_id or 'all'}_u{filters.user_id or 'all'}_id{filters.id or 'all'}_df{filters.date_from or 'all'}_dt{filters.date_to or 'all'}_un{filters.username or 'all'}_ob{filters.order_by or 'default'}_od{filters.order_dir or 'default'}"
         
         # Пытаемся получить данные из кэша
         cached_orders = await get_cached_orders_list(cache_key)
@@ -560,7 +561,7 @@ async def list_all_orders(
         
         # Кэшируем результат
         await cache_orders_list(cache_key, response)
-        logger.info(f"Данные о всех заказах добавлены в кэш")
+        logger.info(f"Данные о всех заказах добавлены в кэш с ключом: {cache_key}")
         
         return response
     except Exception as e:
@@ -753,8 +754,8 @@ async def update_order_status(
         comment = status_data.get("comment")
         
         # Проверяем, что статус существует
-        status = await session.get(OrderStatusModel, status_id)
-        if not status:
+        status_name = await session.get(OrderStatusModel, status_id)
+        if not status_name:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Статус с ID {status_id} не найден",
@@ -800,20 +801,15 @@ async def update_order_status(
         logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после изменения статуса с '{old_status_name}' на '{new_status_name}'")
         
         # Отправляем уведомление об изменении статуса
-        from app.services.order_service import update_order_status
-        if order.email:
-            logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
-            task_id = update_order_status(
-                order_id=order_id,
-                new_status=new_status_name,
-                old_status=old_status_name,
-                email=order.email,
-                notify=True
-            )
-            logger.info(f"Задача уведомления об изменении статуса заказа {order_id} отправлена в Celery, task_id: {task_id}")
-        
+        from app.services.order_service import update_order_status        
         # Обновляем заказ в сессии
         updated_order = await get_order_by_id(session, order_id)
+
+        if order.email:
+            await update_order_status(updated_order, new_status_name)
+            logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
+        
+
         
         return OrderResponse.model_validate(updated_order)
     except HTTPException:
@@ -892,4 +888,82 @@ async def update_batch_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при массовом обновлении статусов",
+        )
+
+@router.post("/check-can-review", status_code=status.HTTP_200_OK)
+async def check_can_review(
+    request_data: Dict[str, Any] = Body(...),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Проверка, может ли пользователь оставить отзыв на товар
+    (заказал товар и заказ доставлен)
+    """
+    try:
+        user_id = request_data.get("user_id")
+        product_id = request_data.get("product_id")
+        
+        if not user_id or not product_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо указать user_id и product_id"
+            )
+        
+        # Проверяем, есть ли завершенные заказы с этим товаром у пользователя
+        query = text("""
+            SELECT COUNT(*) FROM orders o
+            JOIN order_items oi ON o.id = oi.order_id
+            WHERE o.user_id = :user_id 
+            AND oi.product_id = :product_id
+            AND o.status_id = 5
+        """)
+        
+        result = await session.execute(
+            query, 
+            {"user_id": user_id, "product_id": product_id}
+        )
+        count = result.scalar_one()
+        
+        return {"can_review": count > 0}
+    except Exception as e:
+        logger.error(f"Ошибка при проверке возможности оставить отзыв: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при проверке возможности оставить отзыв"
+        )
+
+@router.post("/check-can-review-store", status_code=status.HTTP_200_OK)
+async def check_can_review_store(
+    request_data: Dict[str, Any] = Body(...),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Проверка, может ли пользователь оставить отзыв на магазин
+    (имеет хотя бы один завершенный заказ)
+    """
+    try:
+        user_id = request_data.get("user_id")
+        
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо указать user_id"
+            )
+        
+        # Проверяем, есть ли завершенные заказы у пользователя
+        query = text("""
+            SELECT COUNT(*) FROM orders o
+            WHERE o.user_id = :user_id 
+            AND o.status_id = 5
+        """)
+        
+        result = await session.execute(query, {"user_id": user_id})
+        count = result.scalar_one()
+        
+        return {"can_review": count > 0}
+    except Exception as e:
+        logger.error(f"Ошибка при проверке возможности оставить отзыв на магазин: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при проверке возможности оставить отзыв на магазин"
         ) 

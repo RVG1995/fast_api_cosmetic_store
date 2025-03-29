@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 from enum import Enum
 import logging
@@ -232,6 +232,7 @@ class OrderFilterParams(BaseModel):
     size: int = Field(10, ge=1, le=100)
     status_id: Optional[int] = None
     user_id: Optional[int] = None
+    username: Optional[str] = None
     id: Optional[int] = None
     date_from: Optional[str] = None  # Дата начала периода в формате YYYY-MM-DD
     date_to: Optional[str] = None    # Дата окончания периода в формате YYYY-MM-DD
@@ -245,5 +246,30 @@ class OrderStatistics(BaseModel):
     average_order_value: float
     orders_by_status: Dict[str, int]
     orders_by_payment_method: Dict[str, int]
+    
+    model_config = ConfigDict(from_attributes=True)
+
+# Схемы для статусов оплаты
+class PaymentStatusBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    color: str = "#3498db"  # Цвет по умолчанию (синий)
+    is_paid: bool = False  # Флаг, указывающий, считается ли статус "оплаченным"
+    sort_order: int = 0
+
+class PaymentStatusCreate(PaymentStatusBase):
+    pass
+
+class PaymentStatusUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    is_paid: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+class PaymentStatusResponse(PaymentStatusBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True) 

@@ -6,6 +6,7 @@ import '../styles/HomePage.css';
 import { API_URLS } from '../utils/constants';
 import SimpleAddToCartButton from '../components/cart/SimpleAddToCartButton';
 import CartUpdater from '../components/cart/CartUpdater';
+import ProductRating from '../components/reviews/ProductRating';
 
 const HomePage = () => {
   const [products, setProducts] = useState([]);
@@ -153,14 +154,9 @@ const HomePage = () => {
     );
   };
 
-  // Безопасная проверка админских прав
-  const hasAdminRights = () => {
-    try {
-      return isAdmin && isAdmin();
-    } catch (error) {
-      console.error('Ошибка при проверке прав администратора:', error);
-      return false;
-    }
+  // Вспомогательная функция для проверки прав администратора
+  const checkAdminRights = () => {
+    return isAdmin;
   };
 
   if (loading) {
@@ -204,7 +200,7 @@ const HomePage = () => {
                 <option value="price_desc">Цена (по убыванию)</option>
               </select>
             </div>
-            {hasAdminRights() && (
+            {checkAdminRights() && (
               <Link to="/admin/products" className="btn btn-primary">
                 <i className="bi bi-gear-fill me-1"></i>
                 Управление товарами
@@ -238,6 +234,7 @@ const HomePage = () => {
                       <Link to={`/products/${product.id}`} className="product-title-link">
                         <h3>{product.name}</h3>
                       </Link>
+                      <ProductRating productId={product.id} size="sm" />
                       <p className="price">{product.price} руб.</p>
                       <p className="description">{product.description}</p>
                       <p className="stock">

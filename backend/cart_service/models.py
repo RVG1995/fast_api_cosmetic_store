@@ -28,6 +28,20 @@ class CartModel(Base):
     )
     
     @classmethod
+    async def get_by_id(cls, session: AsyncSession, cart_id: int) -> Optional["CartModel"]:
+        """Получить корзину по ID"""
+        try:
+            query = select(cls).options(
+                selectinload(cls.items)
+            ).filter(cls.id == cart_id)
+            result = await session.execute(query)
+            return result.scalars().first()
+        except Exception as e:
+            # Логируем ошибку и возвращаем None
+            print(f"Ошибка при получении корзины по ID: {str(e)}")
+            return None
+    
+    @classmethod
     async def get_user_cart(cls, session: AsyncSession, user_id: int) -> Optional["CartModel"]:
         """Получить корзину по ID пользователя"""
         try:

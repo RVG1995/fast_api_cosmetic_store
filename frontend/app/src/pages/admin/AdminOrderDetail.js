@@ -15,7 +15,8 @@ const AdminOrderDetail = () => {
   const { 
     getAdminOrderById, 
     getOrderStatuses, 
-    updateOrderStatus, 
+    updateOrderStatus,
+    updateOrderPaymentStatus,
     loading: contextLoading, 
     error: contextError 
   } = useOrders();
@@ -26,7 +27,9 @@ const AdminOrderDetail = () => {
   const [selectedStatus, setSelectedStatus] = useState('');
   const [statusNote, setStatusNote] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [paymentUpdateSuccess, setPaymentUpdateSuccess] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -154,6 +157,14 @@ const AdminOrderDetail = () => {
   // Открытие модального окна для подтверждения изменения статуса
   const handleOpenModal = () => {
     if (!selectedStatus) return;
+    
+    // Проверяем, не пытается ли пользователь выбрать текущий статус
+    if (order && order.status && selectedStatus === order.status.id.toString()) {
+      setError('Заказ уже имеет данный статус');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+    
     setShowModal(true);
   };
   
@@ -201,6 +212,50 @@ const AdminOrderDetail = () => {
       }
       
       setError(err.response?.data?.detail || 'Не удалось обновить статус заказа');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Обработчик открытия модального окна для изменения статуса оплаты
+  const handleOpenPaymentModal = () => {
+    setShowPaymentModal(true);
+  };
+  
+  // Обработчик закрытия модального окна для изменения статуса оплаты
+  const handleClosePaymentModal = () => {
+    setShowPaymentModal(false);
+  };
+  
+  // Обработчик подтверждения изменения статуса оплаты
+  const handleConfirmPaymentUpdate = async (isPaid) => {
+    try {
+      setLoading(true);
+      
+      // Выполняем запрос на обновление статуса оплаты заказа
+      const result = await updateOrderPaymentStatus(orderId, isPaid);
+      
+      if (result) {
+        // Обновление данных заказа после изменения статуса оплаты
+        const updatedOrder = await getAdminOrderById(orderId);
+        
+        setOrder(updatedOrder);
+        setPaymentUpdateSuccess(true);
+        setTimeout(() => setPaymentUpdateSuccess(false), 3000);
+      } else {
+        setError('Не удалось обновить статус оплаты заказа');
+      }
+      
+      setShowPaymentModal(false);
+    } catch (err) {
+      console.error('Ошибка при обновлении статуса оплаты заказа:', err);
+      
+      if (err.response) {
+        console.error('Статус ошибки:', err.response.status);
+        console.error('Данные ошибки:', err.response.data);
+      }
+      
+      setError(err.response?.data?.detail || 'Не удалось обновить статус оплаты заказа');
     } finally {
       setLoading(false);
     }
@@ -272,6 +327,12 @@ const AdminOrderDetail = () => {
         </Alert>
       )}
       
+      {error && (
+        <Alert variant="danger" className="mb-4">
+          {error}
+        </Alert>
+      )}
+      
       <Row>
         {/* Основная информация о заказе */}
         <Col md={8}>
@@ -282,7 +343,7 @@ const AdminOrderDetail = () => {
             <Card.Body>
               <Row>
                 <Col md={6}>
-                  <p><strong>ID заказа:</strong> {order.id}-{new Date(order.created_at).getFullYear()}</p>
+                  <p><strong>ID заказа:</strong> {order.order_number}</p>
                   <p><strong>Дата создания:</strong> {formatDateTime(order.created_at)}</p>
                   <p><strong>Статус:</strong> <OrderStatusBadge status={order.status} /></p>
                 </Col>
@@ -390,6 +451,37 @@ const AdminOrderDetail = () => {
             </Card.Body>
           </Card>
           
+          {/* Управление статусом оплаты */}
+          <Card className="mb-4">
+            <Card.Header>
+              <h5 className="mb-0">Статус оплаты</h5>
+            </Card.Header>
+            <Card.Body>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <Badge bg={order.is_paid ? "success" : "danger"}>
+                    {order.is_paid ? "Оплачен" : "Не оплачен"}
+                  </Badge>
+                </div>
+                
+                <Button 
+                  variant={order.is_paid ? "outline-danger" : "outline-success"} 
+                  size="sm"
+                  onClick={handleOpenPaymentModal}
+                  disabled={loading}
+                >
+                  {order.is_paid ? "Отметить как неоплаченный" : "Отметить как оплаченный"}
+                </Button>
+              </div>
+              
+              {paymentUpdateSuccess && (
+                <Alert variant="success" className="mb-0">
+                  Статус оплаты успешно обновлен
+                </Alert>
+              )}
+            </Card.Body>
+          </Card>
+          
           {/* Управление статусом заказа */}
           <Card>
             <Card.Header>
@@ -454,7 +546,7 @@ const AdminOrderDetail = () => {
         </Col>
       </Row>
       
-      {/* Модальное окно подтверждения */}
+      {/* Модальное окно подтверждения изменения статуса */}
       <Modal show={showModal} onHide={handleCloseModal}>
         <Modal.Header closeButton>
           <Modal.Title>Подтверждение изменения статуса</Modal.Title>
@@ -475,6 +567,29 @@ const AdminOrderDetail = () => {
           </Button>
           <Button variant="primary" onClick={handleConfirmStatusUpdate}>
             Подтвердить
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Модальное окно подтверждения изменения статуса оплаты */}
+      <Modal show={showPaymentModal} onHide={handleClosePaymentModal}>
+        <Modal.Header closeButton>
+          <Modal.Title>Подтверждение изменения статуса оплаты</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p>Вы уверены, что хотите изменить статус оплаты заказа на <strong>
+            {order?.is_paid ? "Не оплачен" : "Оплачен"}
+          </strong>?</p>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleClosePaymentModal}>
+            Отмена
+          </Button>
+          <Button 
+            variant={order?.is_paid ? "danger" : "success"} 
+            onClick={() => handleConfirmPaymentUpdate(!order?.is_paid)}
+          >
+            {order?.is_paid ? "Отметить как неоплаченный" : "Отметить как оплаченный"}
           </Button>
         </Modal.Footer>
       </Modal>

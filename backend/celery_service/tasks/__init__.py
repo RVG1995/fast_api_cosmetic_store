@@ -2,4 +2,3 @@
 from .cart_tasks import *  # noqa
 from .auth_tasks import *  # noqa
 from .order_tasks import *  # noqa
-from .product_tasks import *  # noqa 

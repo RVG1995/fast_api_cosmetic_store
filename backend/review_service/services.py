@@ -1,5 +1,5 @@
 import os
-import requests
+import httpx
 import logging
 import json
 from typing import Dict, List, Optional, Any, Tuple
@@ -43,15 +43,17 @@ class ProductApi:
                 headers["Authorization"] = f"Bearer {token}"
                 
             url = f"{PRODUCT_SERVICE_URL}/products/{product_id}"
-            response = requests.get(url, headers=headers, timeout=5)
             
-            if response.status_code == 200:
-                data = response.json()
-                logger.info(f"Успешно получена информация о товаре: {product_id}")
-                return data
-            else:
-                logger.warning(f"Ошибка при получении информации о товаре {product_id}. Код: {response.status_code}")
-                return None
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(url, headers=headers)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"Успешно получена информация о товаре: {product_id}")
+                    return data
+                else:
+                    logger.warning(f"Ошибка при получении информации о товаре {product_id}. Код: {response.status_code}")
+                    return None
         except Exception as e:
             logger.error(f"Ошибка при обращении к сервису продуктов: {str(e)}")
             return None
@@ -76,16 +78,18 @@ class OrderApi:
                 "user_id": user_id,
                 "product_id": product_id
             }
-            response = requests.post(url, json=data, headers=headers, timeout=5)
             
-            if response.status_code == 200:
-                result = response.json()
-                can_review = result.get("can_review", False)
-                logger.info(f"Проверка возможности оставить отзыв: user_id={user_id}, product_id={product_id}, result={can_review}")
-                return can_review
-            else:
-                logger.warning(f"Ошибка при проверке возможности оставить отзыв. Код: {response.status_code}")
-                return False
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.post(url, json=data, headers=headers)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    can_review = result.get("can_review", False)
+                    logger.info(f"Проверка возможности оставить отзыв: user_id={user_id}, product_id={product_id}, result={can_review}")
+                    return can_review
+                else:
+                    logger.warning(f"Ошибка при проверке возможности оставить отзыв. Код: {response.status_code}")
+                    return False
         except Exception as e:
             logger.error(f"Ошибка при обращении к сервису заказов: {str(e)}")
             return False
@@ -105,16 +109,18 @@ class OrderApi:
             data = {
                 "user_id": user_id
             }
-            response = requests.post(url, json=data, headers=headers, timeout=5)
             
-            if response.status_code == 200:
-                result = response.json()
-                can_review = result.get("can_review", False)
-                logger.info(f"Проверка возможности оставить отзыв на магазин: user_id={user_id}, result={can_review}")
-                return can_review
-            else:
-                logger.warning(f"Ошибка при проверке возможности оставить отзыв на магазин. Код: {response.status_code}")
-                return False
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.post(url, json=data, headers=headers)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    can_review = result.get("can_review", False)
+                    logger.info(f"Проверка возможности оставить отзыв на магазин: user_id={user_id}, result={can_review}")
+                    return can_review
+                else:
+                    logger.warning(f"Ошибка при проверке возможности оставить отзыв на магазин. Код: {response.status_code}")
+                    return False
         except Exception as e:
             logger.error(f"Ошибка при обращении к сервису заказов: {str(e)}")
             return False

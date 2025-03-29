@@ -25,6 +25,7 @@ const ReviewForm = ({
     has_reviewed_product: false,
     has_reviewed_store: false
   });
+  const [isReviewSubmitted, setIsReviewSubmitted] = useState(false);
 
   // Логируем начальное состояние при монтировании компонента
   useEffect(() => {
@@ -123,6 +124,22 @@ const ReviewForm = ({
         is_anonymous: false
       });
       
+      // Устанавливаем флаг, что отзыв отправлен
+      setIsReviewSubmitted(true);
+      
+      // Обновляем разрешения, чтобы показать, что пользователь оставил отзыв
+      if (productId) {
+        setPermissions(prev => ({
+          ...prev,
+          has_reviewed_product: true
+        }));
+      } else {
+        setPermissions(prev => ({
+          ...prev,
+          has_reviewed_store: true
+        }));
+      }
+      
       // Вызываем колбэк успешного добавления
       if (onReviewSubmitted) {
         onReviewSubmitted();
@@ -153,20 +170,21 @@ const ReviewForm = ({
   };
 
   // Проверяем, может ли пользователь оставить отзыв
-  const canSubmitProductReview = productId && permissions.can_review_product && !permissions.has_reviewed_product;
-  const canSubmitStoreReview = !productId && permissions.can_review_store && !permissions.has_reviewed_store;
+  const canSubmitProductReview = productId && permissions.can_review_product && !permissions.has_reviewed_product && !isReviewSubmitted;
+  const canSubmitStoreReview = !productId && permissions.can_review_store && !permissions.has_reviewed_store && !isReviewSubmitted;
   
   console.log('Текущие разрешения:', { 
     permissions, 
     productId, 
     canSubmitProductReview, 
     canSubmitStoreReview,
-    isAuthenticated
+    isAuthenticated,
+    isReviewSubmitted
   });
 
   // Если пользователь не может оставить отзыв, показываем сообщение
   if (isAuthenticated && productId && !canSubmitProductReview) {
-    if (permissions.has_reviewed_product) {
+    if (permissions.has_reviewed_product || isReviewSubmitted) {
       return (
         <Alert variant="info">
           Вы уже оставили отзыв на этот товар. Спасибо за ваш отзыв!
@@ -182,7 +200,7 @@ const ReviewForm = ({
   }
   
   if (isAuthenticated && !productId && !canSubmitStoreReview) {
-    if (permissions.has_reviewed_store) {
+    if (permissions.has_reviewed_store || isReviewSubmitted) {
       return (
         <Alert variant="info">
           Вы уже оставили отзыв о нашем магазине. Спасибо за ваш отзыв!

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -19,13 +19,13 @@ class ReviewBase(BaseModel):
     rating: int = Field(..., ge=1, le=5, description="Рейтинг от 1 до 5")
     content: Optional[str] = Field(None, max_length=2000, description="Текстовый отзыв")
     
-    @validator('rating')
+    @field_validator('rating')
     def validate_rating(cls, value):
         if value < 1 or value > 5:
             raise ValueError("Рейтинг должен быть от 1 до 5")
         return value
         
-    @validator('content')
+    @field_validator('content')
     def validate_content(cls, value):
         # Если значение пустое или None, возвращаем пустую строку
         if value is None or value == "":

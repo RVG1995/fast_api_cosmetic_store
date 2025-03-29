@@ -1,0 +1,58 @@
+.error-message-container {
+  display: flex;
+  align-items: flex-start;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin: 1rem 0;
+  animation: errorFadeIn 0.3s ease-in-out;
+}
+
+.error-icon {
+  margin-right: 1rem;
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.error-content {
+  flex: 1;
+}
+
+.error-title {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.error-text {
+  margin-bottom: 0;
+  font-size: 0.95rem;
+}
+
+@keyframes errorFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Медиа-запрос для мобильных устройств */
+@media (max-width: 576px) {
+  .error-message-container {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  
+  .error-icon {
+    margin-right: 0;
+    margin-bottom: 0.5rem;
+  }
+} 

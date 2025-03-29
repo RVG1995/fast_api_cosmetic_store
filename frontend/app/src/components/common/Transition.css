@@ -1,0 +1,114 @@
+.transition {
+  --transition-duration: 300ms;
+  transition-duration: var(--transition-duration);
+  transition-timing-function: ease;
+}
+
+/* Fade анимация */
+.transition-fade {
+  transition-property: opacity;
+}
+
+.transition-fade.transition-entering,
+.transition-fade.transition-exiting {
+  opacity: 0;
+}
+
+.transition-fade.transition-entered {
+  opacity: 1;
+}
+
+/* Slide анимация (по умолчанию слева направо) */
+.transition-slide {
+  transition-property: transform;
+  transform-origin: left center;
+}
+
+.transition-slide.transition-entering,
+.transition-slide.transition-exiting {
+  transform: translateX(-100%);
+}
+
+.transition-slide.transition-entered {
+  transform: translateX(0);
+}
+
+/* Slide вниз */
+.transition-slide-down {
+  transition-property: transform, opacity;
+}
+
+.transition-slide-down.transition-entering,
+.transition-slide-down.transition-exiting {
+  transform: translateY(-20px);
+  opacity: 0;
+}
+
+.transition-slide-down.transition-entered {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* Slide вверх */
+.transition-slide-up {
+  transition-property: transform, opacity;
+}
+
+.transition-slide-up.transition-entering,
+.transition-slide-up.transition-exiting {
+  transform: translateY(20px);
+  opacity: 0;
+}
+
+.transition-slide-up.transition-entered {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* Slide влево */
+.transition-slide-left {
+  transition-property: transform, opacity;
+}
+
+.transition-slide-left.transition-entering,
+.transition-slide-left.transition-exiting {
+  transform: translateX(20px);
+  opacity: 0;
+}
+
+.transition-slide-left.transition-entered {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+/* Slide вправо */
+.transition-slide-right {
+  transition-property: transform, opacity;
+}
+
+.transition-slide-right.transition-entering,
+.transition-slide-right.transition-exiting {
+  transform: translateX(-20px);
+  opacity: 0;
+}
+
+.transition-slide-right.transition-entered {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+/* Zoom анимация */
+.transition-zoom {
+  transition-property: transform, opacity;
+}
+
+.transition-zoom.transition-entering,
+.transition-zoom.transition-exiting {
+  transform: scale(0.95);
+  opacity: 0;
+}
+
+.transition-zoom.transition-entered {
+  transform: scale(1);
+  opacity: 1;
+} 

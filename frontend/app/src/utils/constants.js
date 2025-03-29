@@ -2,10 +2,14 @@
  * Файл с константами для приложения
  */
 
+// Базовый URL API для хука useApi
+export const API_URL = 'http://localhost:8000';
+
 // API URLs для различных сервисов
 export const API_URLS = {
   AUTH_SERVICE: process.env.REACT_APP_AUTH_SERVICE_URL || 'http://localhost:8000',
   PRODUCT_SERVICE: process.env.REACT_APP_PRODUCT_SERVICE_URL || 'http://localhost:8001',
+  PRODUCT: process.env.REACT_APP_PRODUCT_SERVICE_URL || 'http://localhost:8001',
   CART_SERVICE: process.env.REACT_APP_CART_SERVICE_URL || 'http://localhost:8002',
   ORDER_SERVICE: process.env.REACT_APP_ORDER_SERVICE_URL || 'http://localhost:8003',
   REVIEW_SERVICE: process.env.REACT_APP_REVIEW_SERVICE_URL || 'http://localhost:8004',

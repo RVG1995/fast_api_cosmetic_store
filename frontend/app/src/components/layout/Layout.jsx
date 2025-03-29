@@ -7,6 +7,8 @@ import React, { useEffect } from 'react';
 import ProductSearch from "../ProductSearch";
 import CartIcon from "../cart/CartIcon";
 import { CartProvider } from "../../context/CartContext";
+import ScrollToTopButton from "./ScrollToTopButton";
+import OfflineIndicator from "../common/OfflineIndicator";
 import "../../styles/Layout.css"; // Обновленный путь к стилям
 
 const Layout = () => {
@@ -37,6 +39,9 @@ const Layout = () => {
   return (
     <CartProvider>
       <div className="d-flex flex-column min-vh-100">
+        {/* Индикатор отсутствия подключения */}
+        <OfflineIndicator />
+        
         <header>
           <nav className="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
             <div className="container">
@@ -235,6 +240,9 @@ const Layout = () => {
             <p className="mb-0">© 2025 Secure Auth. Все права защищены.</p>
           </div>
         </footer>
+        
+        {/* Кнопка прокрутки вверх */}
+        <ScrollToTopButton />
       </div>
     </CartProvider>
   );

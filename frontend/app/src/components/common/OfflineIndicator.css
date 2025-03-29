@@ -1,0 +1,79 @@
+.offline-indicator {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  padding: 10px;
+  animation: slideDown 0.3s ease-in-out;
+  transition: transform 0.3s ease, background-color 0.3s ease;
+  font-weight: 500;
+}
+
+.offline-indicator.offline {
+  background-color: #f8d7da;
+  color: #721c24;
+  border-bottom: 1px solid #f5c6cb;
+}
+
+.offline-indicator.online {
+  background-color: #d4edda;
+  color: #155724;
+  border-bottom: 1px solid #c3e6cb;
+  animation: fadeOut 3s forwards;
+}
+
+.offline-indicator-content {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 0;
+}
+
+.offline-retry-button {
+  background-color: #721c24;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.offline-retry-button:hover {
+  background-color: #5a171d;
+}
+
+@keyframes slideDown {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  0%, 70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+  .offline-indicator-content {
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .offline-retry-button {
+    margin-top: 8px;
+    margin-left: 0 !important;
+  }
+} 

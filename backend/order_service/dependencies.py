@@ -37,7 +37,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 async def get_current_user(
     token: str = Cookie(None, alias="access_token"),
     authorization: str = Depends(oauth2_scheme),
-    x_service_name: Optional[str] = Header(None)
+    x_service_name: Optional[str] = Header(None),
+    service_key: Optional[str] = Header(None, alias="service-key")
 )-> Optional[Dict[str, Any]]:
     logger.info(f"Получен токен из куки: {token}")
     logger.info(f"Получен токен из заголовка: {authorization}")

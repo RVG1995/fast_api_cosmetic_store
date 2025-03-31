@@ -242,7 +242,7 @@ class ProductAPI:
                         headers["Authorization"] = f"Bearer {token}"
                     
                     logger.info(f"Запрос на /products/public-batch с заголовками: {headers}")
-                    logger.info(f"Service-Key: '{INTERNAL_SERVICE_KEY}'")
+                    logger.info(f"service-key: '{INTERNAL_SERVICE_KEY}'")
                 
                     # Используем публичный эндпоинт с секретным ключом
                     response = await client.post(
@@ -283,7 +283,7 @@ class ProductAPI:
                         
                         # Пробуем с заглавной буквы (как в оригинале)
                         batch_headers = {
-                            "Service-Key": INTERNAL_SERVICE_KEY  # С большой буквы
+                            "service-key": INTERNAL_SERVICE_KEY  # С большой буквы
                         }
                         if token:
                             batch_headers["Authorization"] = f"Bearer {token}"

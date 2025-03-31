@@ -235,7 +235,7 @@ class ProductAPI:
                 logger.info(f"Попытка пакетного запроса для {len(to_fetch_ids)} продуктов")
                 
                 async with httpx.AsyncClient() as client:
-                    # Добавляем заголовок Service-Key для авторизации
+                    # Добавляем заголовок service-key для авторизации
                     headers = {
                         "service-key": INTERNAL_SERVICE_KEY
                     }

@@ -14,7 +14,7 @@ INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-async def verify_service_key(service_key: str = Header(None, alias="X-Service-Key")):
+async def verify_service_key(service_key: str = Header(None, alias="service-key")):
     """Проверяет сервисный ключ для межсервисного взаимодействия"""
     if not service_key or service_key != INTERNAL_SERVICE_KEY:
         raise HTTPException(

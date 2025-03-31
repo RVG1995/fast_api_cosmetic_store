@@ -972,7 +972,7 @@ async def get_user_info(user_id: int) -> Dict[str, Any]:
         logger.info(f"Запрос информации о пользователе {user_id} по URL: {auth_service_url}/admin/users/{user_id}")
         
         headers = {
-            "X-Service-Key": service_key
+            "service-key": service_key
         }
         
         async with httpx.AsyncClient() as client:

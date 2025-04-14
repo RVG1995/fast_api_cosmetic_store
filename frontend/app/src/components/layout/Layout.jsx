@@ -9,7 +9,6 @@ import CartIcon from "../cart/CartIcon";
 import { CartProvider } from "../../context/CartContext";
 import ScrollToTopButton from "./ScrollToTopButton";
 import OfflineIndicator from "../common/OfflineIndicator";
-import Toast from "../common/Toast";
 import "../../styles/Layout.css"; // Обновленный путь к стилям
 
 const Layout = () => {
@@ -24,6 +23,7 @@ const Layout = () => {
   useEffect(() => {
     const handleAlert = (event) => {
       const { message, type } = event.detail;
+      console.log('Отображаем Bootstrap Alert:', message, type);
       setAlert({ show: true, message, type });
       
       // Автоматически скрываем через 3 секунды
@@ -64,20 +64,31 @@ const Layout = () => {
         {/* Индикатор отсутствия подключения */}
         <OfflineIndicator />
         
-        {/* Bootstrap Alert для критических уведомлений */}
+        {/* Bootstrap Alert для уведомлений - улучшенный стиль */}
         {alert.show && (
           <div 
-            className={`alert alert-${alert.type} alert-dismissible fade show m-3`} 
+            className={`alert alert-${alert.type} alert-dismissible fade show`} 
             role="alert"
             style={{ 
               position: 'fixed', 
-              top: '10px', 
-              right: '10px', 
+              top: '15px', 
+              right: '15px', 
               zIndex: 9999,
-              maxWidth: '400px'
+              maxWidth: '350px',
+              boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+              borderLeft: alert.type === 'danger' ? '4px solid #dc3545' : 
+                        alert.type === 'success' ? '4px solid #28a745' : 
+                        alert.type === 'warning' ? '4px solid #ffc107' : 
+                        '4px solid #17a2b8',
+              padding: '12px 15px'
             }}
           >
-            {alert.message}
+            {alert.type === 'danger' && <i className="bi bi-exclamation-circle-fill me-2 text-danger"></i>}
+            {alert.type === 'success' && <i className="bi bi-check-circle-fill me-2 text-success"></i>}
+            {alert.type === 'warning' && <i className="bi bi-exclamation-triangle-fill me-2 text-warning"></i>}
+            {alert.type === 'info' && <i className="bi bi-info-circle-fill me-2 text-info"></i>}
+            
+            <span className="fw-semibold">{alert.message}</span>
             <button 
               type="button" 
               className="btn-close" 
@@ -86,9 +97,6 @@ const Layout = () => {
             ></button>
           </div>
         )}
-        
-        {/* Компонент для всплывающих уведомлений */}
-        <Toast />
         
         <header>
           <nav className="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">

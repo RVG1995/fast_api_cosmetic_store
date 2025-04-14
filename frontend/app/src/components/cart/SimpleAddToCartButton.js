@@ -50,16 +50,15 @@ const SimpleAddToCartButton = ({ productId, stock, className = '' }) => {
           errorMsg.includes('stock') ||
           errorMsg.includes('количество');
         
+        // Показываем оригинальное сообщение об ошибке от API вместо фиксированного текста
         if (stockRelatedError) {
-          // Показываем ошибку о недостатке товара как toast
-          showToast('Недостаточно товара на складе', 'danger');
+          showToast(errorMsg, 'danger');
           setError('');
         } else if (result.error) {
-          // Другие ошибки также показываем как toast
           showToast(result.error, 'danger');
           setError(result.error);
         } else {
-          showToast('Ошибка при добавлении товара', 'danger');
+          showToast(errorMsg || 'Ошибка при добавлении товара', 'danger');
           setError('Ошибка при добавлении товара');
         }
         

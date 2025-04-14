@@ -44,6 +44,49 @@ const AdminDashboard = () => {
         <p>Вы авторизованы как {isSuperAdmin() ? 'суперадминистратор' : 'администратор'}.</p>
       </div>
       
+      {/* Блок для статистики системы - переместили в начало */}
+      <div className="row mb-4">
+        <div className="col-12">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-graph-up admin-card-icon"></i>
+              <h3>Статистика системы</h3>
+            </div>
+            <div className="admin-card-body">
+              {loading ? (
+                <div className="text-center py-3">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Загрузка...</span>
+                  </div>
+                  <p className="mt-2">Загрузка статистики...</p>
+                </div>
+              ) : error ? (
+                <div className="alert alert-danger">{error}</div>
+              ) : (
+                <div className="row stats">
+                  <div className="col-md-3 stat-item">
+                    <div className="stat-value">{stats.usersCount}</div>
+                    <div className="stat-label">Пользователей</div>
+                  </div>
+                  <div className="col-md-3 stat-item">
+                    <div className="stat-value">{stats.productsCount}</div>
+                    <div className="stat-label">Товаров</div>
+                  </div>
+                  <div className="col-md-3 stat-item">
+                    <div className="stat-value">{stats.ordersCount}</div>
+                    <div className="stat-label">Заказов</div>
+                  </div>
+                  <div className="col-md-3 stat-item">
+                    <div className="stat-value">{formatPrice(stats.totalOrdersRevenue)}</div>
+                    <div className="stat-label">Сумма заказов</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <div className="row mb-4">
         {/* Управление пользователями */}
         <div className="col-md-4 mb-4">
@@ -186,49 +229,6 @@ const AdminDashboard = () => {
             </div>
           </div>
         )}
-      </div>
-      
-      <div className="row mb-4">
-        {/* Блок для статистики системы */}
-        <div className="col-12">
-          <div className="admin-card">
-            <div className="admin-card-header">
-              <i className="bi bi-graph-up admin-card-icon"></i>
-              <h3>Статистика системы</h3>
-            </div>
-            <div className="admin-card-body">
-              {loading ? (
-                <div className="text-center py-3">
-                  <div className="spinner-border text-primary" role="status">
-                    <span className="visually-hidden">Загрузка...</span>
-                  </div>
-                  <p className="mt-2">Загрузка статистики...</p>
-                </div>
-              ) : error ? (
-                <div className="alert alert-danger">{error}</div>
-              ) : (
-                <div className="row stats">
-                  <div className="col-md-3 stat-item">
-                    <div className="stat-value">{stats.usersCount}</div>
-                    <div className="stat-label">Пользователей</div>
-                  </div>
-                  <div className="col-md-3 stat-item">
-                    <div className="stat-value">{stats.productsCount}</div>
-                    <div className="stat-label">Товаров</div>
-                  </div>
-                  <div className="col-md-3 stat-item">
-                    <div className="stat-value">{stats.ordersCount}</div>
-                    <div className="stat-label">Заказов</div>
-                  </div>
-                  <div className="col-md-3 stat-item">
-                    <div className="stat-value">{formatPrice(stats.totalOrdersRevenue)}</div>
-                    <div className="stat-label">Сумма заказов</div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

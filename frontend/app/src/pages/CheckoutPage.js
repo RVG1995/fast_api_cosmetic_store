@@ -199,10 +199,11 @@ const CheckoutPage = () => {
         {/* Форма оформления заказа */}
         <Col md={8}>
           <Card className="checkout-card">
+            <Card.Header>
+              <h3 className="checkout-summary-title">Информация о доставке</h3>
+            </Card.Header>
             <Card.Body>
               <Form noValidate validated={validated} onSubmit={handleSubmit}>
-                <h3>Информация о доставке</h3>
-                
                 <Form.Group className="mb-3">
                   <Form.Label>ФИО получателя</Form.Label>
                   <Form.Control

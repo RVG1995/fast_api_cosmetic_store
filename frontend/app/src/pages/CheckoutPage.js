@@ -352,8 +352,13 @@ const CheckoutPage = () => {
               <div className="checkout-items">
                 {cart?.items?.map(item => (
                   <div key={item.id} className="checkout-item">
-                    <div className="checkout-item-name">
-                      {item.product.name} x {item.quantity}
+                    <div className="checkout-item-details">
+                      <div className="checkout-item-name">
+                        {item.product.name}
+                      </div>
+                      <div className="checkout-item-quantity">
+                        {item.quantity} шт.
+                      </div>
                     </div>
                     <div className="checkout-item-price">
                       {formatPrice(item.product.price * item.quantity)}

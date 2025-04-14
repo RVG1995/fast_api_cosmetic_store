@@ -46,14 +46,29 @@
   border-bottom: none;
 }
 
+.checkout-item-details {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
 .checkout-item-name {
   font-weight: 500;
   color: #333;
+  margin-bottom: 0.25rem;
+}
+
+.checkout-item-quantity {
+  font-size: 0.9rem;
+  color: #666;
 }
 
 .checkout-item-price {
   font-weight: 600;
   color: #333;
+  min-width: 80px;
+  text-align: right;
+  padding-left: 10px;
 }
 
 .checkout-total {

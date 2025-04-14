@@ -1,5 +1,5 @@
 import logging
-from ..utils.rabbit_utils import get_connection, close_connection
+from ..utils.rabbit_utils import get_connection, close_connection, declare_queue
 import json
 import aio_pika
 
@@ -25,10 +25,8 @@ async def send_email_activation_message(
         channel = await connection.channel()
         
         # Объявляем очередь
-        queue = await channel.declare_queue(
-            "registration_message",
-            durable=True
-        )
+        queue = await declare_queue(channel, "registration_message")
+
         message_body = {
             "user_id": user_id,
             "email": email,

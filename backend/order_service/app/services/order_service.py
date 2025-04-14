@@ -1,5 +1,5 @@
 import logging
-from ..utils.rabbit_utils import get_connection, close_connection
+from ..utils.rabbit_utils import get_connection, close_connection, declare_queue
 import json
 import aio_pika
 
@@ -82,11 +82,8 @@ async def send_email_message(
         # Создаем канал
         channel = await connection.channel()
         
-        # Объявляем очередь
-        queue = await channel.declare_queue(
-            "email_message",
-            durable=True
-        )
+        # Объявляем очередь с использованием общей функции
+        queue = await declare_queue(channel, "email_message")
 
         message_body = create_order_email_content(order_data)        
         # Отправляем сообщение
@@ -120,11 +117,9 @@ async def update_order_status(
         # Создаем канал
         channel = await connection.channel()
         
-        # Объявляем очередь
-        queue = await channel.declare_queue(
-            "update_message",
-            durable=True
-        )
+        # Объявляем очередь с использованием общей функции
+        queue = await declare_queue(channel, "update_message")
+        
         # Создаем сообщение
         message_body = create_order_email_content(order_data, new_status_name)  
         
@@ -156,11 +151,9 @@ async def notification_message_about_low_stock(
         # Создаем канал
         channel = await connection.channel()
         
-        # Объявляем очередь
-        queue = await channel.declare_queue(
-            "notification_message",
-            durable=True
-        )
+        # Объявляем очередь с использованием общей функции
+        queue = await declare_queue(channel, "notification_message")
+        
         # Создаем сообщение
         message_body = create_order_email_content(order_data=low_stock_products)  
         

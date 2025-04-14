@@ -721,6 +721,106 @@ async def get_product_review_stats(
             "rating_counts": {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
         }
 
+async def get_batch_product_review_stats(
+    session: AsyncSession,
+    product_ids: List[int]
+) -> Dict[str, Any]:
+    """
+    Пакетное получение статистики отзывов для нескольких товаров
+    
+    Args:
+        session: Сессия базы данных
+        product_ids: Список ID товаров
+        
+    Returns:
+        Dict[str, Any]: Словарь со статистикой отзывов для каждого товара
+    """
+    try:
+        logger.info(f"Запрос пакетной статистики отзывов для товаров: {product_ids}")
+        
+        # Проверяем кэш для всего пакета
+        cache_key = f"{CACHE_KEYS['product_batch_statistics']}{','.join(map(str, sorted(product_ids)))}"
+        cached_data = await cache_get(cache_key)
+        
+        if cached_data:
+            logger.debug(f"Пакетная статистика отзывов получена из кэша для {len(product_ids)} товаров")
+            return cached_data
+            
+        # Результирующий словарь
+        results = {}
+        
+        if not product_ids:
+            return results
+            
+        # Преобразуем список ID в строку для SQL запроса
+        product_ids_str = ','.join(str(pid) for pid in product_ids)
+        
+        # Для оптимизации делаем один запрос за всеми средними рейтингами
+        avg_ratings_query = text(f"""
+            SELECT product_id, AVG(rating) as avg_rating
+            FROM reviews
+            WHERE review_type = 'product'
+            AND is_hidden = FALSE
+            AND product_id IN ({product_ids_str})
+            GROUP BY product_id
+        """)
+        avg_ratings_result = await session.execute(avg_ratings_query)
+        avg_ratings = {str(row[0]): float(row[1]) for row in avg_ratings_result}
+        
+        # Запрос для получения количества отзывов по каждому рейтингу для всех товаров
+        rating_counts_query = text(f"""
+            SELECT product_id, rating, COUNT(*) as count
+            FROM reviews
+            WHERE review_type = 'product'
+            AND is_hidden = FALSE
+            AND product_id IN ({product_ids_str})
+            GROUP BY product_id, rating
+        """)
+        rating_counts_result = await session.execute(rating_counts_query)
+        
+        # Инициализируем словарь для подсчета рейтингов по каждому товару
+        product_rating_counts = {str(pid): {1: 0, 2: 0, 3: 0, 4: 0, 5: 0} for pid in product_ids}
+        
+        # Заполняем словарь данными из запроса
+        for row in rating_counts_result:
+            product_id, rating, count = str(row[0]), row[1], row[2]
+            product_rating_counts[product_id][rating] = count
+        
+        # Формируем результат для каждого товара
+        for product_id in product_ids:
+            pid_str = str(product_id)
+            
+            # Если в базе нет данных о товаре, устанавливаем средний рейтинг 0
+            if pid_str not in avg_ratings:
+                avg_rating = 0.0
+            else:
+                avg_rating = avg_ratings[pid_str]
+                
+            rating_counts = product_rating_counts.get(pid_str, {1: 0, 2: 0, 3: 0, 4: 0, 5: 0})
+            total_reviews = sum(rating_counts.values())
+            
+            # Формируем статистику для данного товара
+            results[pid_str] = {
+                "average_rating": round(avg_rating, 1),
+                "total_reviews": total_reviews,
+                "rating_counts": rating_counts
+            }
+        
+        # Кэшируем результат
+        await cache_set(cache_key, results, CACHE_TTL["statistics"])
+        
+        return results
+    except Exception as e:
+        logger.error(f"Ошибка при пакетном получении статистики отзывов: {str(e)}")
+        # Возвращаем пустую статистику для каждого товара в случае ошибки
+        return {
+            str(product_id): {
+                "average_rating": 0.0,
+                "total_reviews": 0,
+                "rating_counts": {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+            } for product_id in product_ids
+        }
+
 async def get_store_review_stats(
     session: AsyncSession,
 ) -> ReviewStats:

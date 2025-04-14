@@ -1,33 +1,45 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useReviews } from '../../context/ReviewContext';
 import { reviewAPI } from '../../utils/api';
 
-const ProductRating = ({ productId, size = 'sm', showText = true }) => {
-  const [rating, setRating] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [totalReviews, setTotalReviews] = useState(0);
-
+const ProductRating = ({ productId, size = 'sm', showText = true, useDirectFetch = false, reloadKey = 0 }) => {
+  const { getProductRating } = useReviews();
+  const [localRating, setLocalRating] = useState(null);
+  const [localTotalReviews, setLocalTotalReviews] = useState(0);
+  const [loading, setLoading] = useState(false);
+  
+  // Получаем рейтинг из контекста, если не нужно прямое обращение к API
+  const productData = !useDirectFetch ? getProductRating(productId) : null;
+  
+  // Если нужно прямое обращение к API (для страницы отдельного товара)
   useEffect(() => {
-    const fetchRating = async () => {
-      if (!productId) return;
-      
+    if (useDirectFetch && productId) {
       setLoading(true);
-      try {
-        const response = await reviewAPI.getProductStats(productId);
-        setRating(response.data.average_rating);
-        setTotalReviews(response.data.total_reviews);
-      } catch (error) {
-        console.error('Ошибка при загрузке рейтинга:', error);
-        setRating(0);
-        setTotalReviews(0);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRating();
-  }, [productId]);
-
-  if (loading) return null;
+      reviewAPI.getProductStats(productId)
+        .then(response => {
+          console.log(`ProductRating: Получены данные для товара ${productId}:`, response.data);
+          setLocalRating(response.data.average_rating);
+          setLocalTotalReviews(response.data.total_reviews);
+        })
+        .catch(error => {
+          console.error('Ошибка при загрузке рейтинга:', error);
+          setLocalRating(0);
+          setLocalTotalReviews(0);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, [productId, useDirectFetch, reloadKey]); // Добавляем reloadKey для принудительной перезагрузки
+  
+  // Определяем финальные значения
+  const rating = useDirectFetch ? localRating : (productData ? productData.average_rating : 0);
+  const totalReviews = useDirectFetch ? localTotalReviews : (productData ? productData.total_reviews : 0);
+  
+  // Если идет загрузка при прямом запросе, показываем заглушку
+  if (useDirectFetch && loading) {
+    return <div className="product-rating-skeleton"></div>;
+  }
 
   // Определяем размер звезд
   const getFontSize = () => {
@@ -63,6 +75,7 @@ const ProductRating = ({ productId, size = 'sm', showText = true }) => {
       {showText && (
         <span className="ms-1" style={{ fontSize }}>
           {rating ? rating.toFixed(1) : 'Нет отзывов'}
+          {totalReviews > 0 && ` (${totalReviews})`}
         </span>
       )}
     </div>

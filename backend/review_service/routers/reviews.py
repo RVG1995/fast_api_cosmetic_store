@@ -7,13 +7,14 @@ from auth import get_current_user, require_user, User
 from models import ReviewTypeEnum, ReviewModel, ReviewReactionModel
 from schema import (
     ProductReviewCreate, StoreReviewCreate, ReactionCreate, 
-    ReviewRead, ReviewStats, PaginatedResponse, UserReviewPermissions
+    ReviewRead, ReviewStats, PaginatedResponse, UserReviewPermissions,
+    BatchProductReviewStatsRequest, BatchProductReviewStatsResponse
 )
 from services import (
     create_product_review, create_store_review,
     get_product_reviews, get_store_reviews,
     add_review_reaction, get_product_review_stats, get_store_review_stats,
-    get_review_by_id, invalidate_review_cache
+    get_review_by_id, invalidate_review_cache, get_batch_product_review_stats
 )
 import logging
 
@@ -333,6 +334,34 @@ async def get_product_stats(
         if any(isinstance(k, str) for k in stats["rating_counts"].keys()):
             stats["rating_counts"] = {int(k): v for k, v in stats["rating_counts"].items()}
     return stats
+
+@router.post("/products/batch-stats", response_model=BatchProductReviewStatsResponse)
+async def get_batch_product_stats(
+    request: BatchProductReviewStatsRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Пакетное получение статистики отзывов для нескольких товаров.
+    Принимает список ID товаров и возвращает статистику для каждого товара одним запросом.
+    Доступно для всех пользователей.
+    """
+    if not request.product_ids:
+        return {"results": {}}
+    
+    # Ограничиваем количество запрашиваемых товаров
+    if len(request.product_ids) > 100:
+        request.product_ids = request.product_ids[:100]
+    
+    # Получаем статистику для всех товаров
+    stats = await get_batch_product_review_stats(session, request.product_ids)
+    
+    # Преобразуем строковые ключи рейтингов в целочисленные, если нужно
+    for product_id, product_stats in stats.items():
+        if "rating_counts" in product_stats:
+            if any(isinstance(k, str) for k in product_stats["rating_counts"].keys()):
+                product_stats["rating_counts"] = {int(k): v for k, v in product_stats["rating_counts"].items()}
+    
+    return {"results": stats}
 
 @router.get("/permissions/check", response_model=UserReviewPermissions)
 async def check_review_permissions(

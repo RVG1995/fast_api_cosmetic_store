@@ -159,6 +159,14 @@ class ReviewStats(BaseModel):
     rating_counts: Dict[int, int]  # Ключ - рейтинг (1-5), значение - количество отзывов с таким рейтингом
 
 
+class BatchProductReviewStatsRequest(BaseModel):
+    product_ids: List[int] = Field(..., description="Список ID товаров для получения статистики")
+
+
+class BatchProductReviewStatsResponse(BaseModel):
+    results: Dict[str, ReviewStats] = Field(..., description="Статистика отзывов по товарам, ключ - ID товара")
+
+
 class UserReviewPermissions(BaseModel):
     can_review_product: bool = False
     can_review_store: bool = False

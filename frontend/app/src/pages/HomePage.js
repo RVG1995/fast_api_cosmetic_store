@@ -7,6 +7,7 @@ import { API_URLS } from '../utils/constants';
 import SimpleAddToCartButton from '../components/cart/SimpleAddToCartButton';
 import CartUpdater from '../components/cart/CartUpdater';
 import ProductRating from '../components/reviews/ProductRating';
+import { useReviews } from '../context/ReviewContext';
 
 const HomePage = () => {
   const [products, setProducts] = useState([]);
@@ -24,6 +25,8 @@ const HomePage = () => {
     totalItems: 0,
     pageSize: 8
   });
+
+  const { fetchBatchProductRatings } = useReviews();
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {
@@ -158,6 +161,17 @@ const HomePage = () => {
   const checkAdminRights = () => {
     return isAdmin;
   };
+
+  // После загрузки товаров, загружаем их рейтинги
+  useEffect(() => {
+    const allProducts = [...products];
+    if (allProducts.length > 0) {
+      // Извлекаем уникальные ID товаров
+      const productIds = [...new Set(allProducts.map(product => product.id))];
+      // Загружаем рейтинги пакетно
+      fetchBatchProductRatings(productIds);
+    }
+  }, [products, fetchBatchProductRatings]);
 
   if (loading) {
     return (

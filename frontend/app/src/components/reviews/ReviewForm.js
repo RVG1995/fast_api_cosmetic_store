@@ -3,6 +3,7 @@ import { Form, Button, Card, Alert, Spinner } from 'react-bootstrap';
 import { reviewAPI } from '../../utils/api';
 import StarRating from './StarRating';
 import { useAuth } from '../../context/AuthContext';
+import { useReviews } from '../../context/ReviewContext';
 
 const ReviewForm = ({ 
   productId = null, 
@@ -19,6 +20,7 @@ const ReviewForm = ({
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const { isAuthenticated, user } = useAuth();
+  const { invalidateProductRating } = useReviews();
   const [permissions, setPermissions] = useState({
     can_review_product: false,
     can_review_store: false,
@@ -109,6 +111,10 @@ const ReviewForm = ({
       if (productId) {
         // Отзыв о товаре
         await reviewAPI.createProductReview(productId, submitData);
+        
+        // Инвалидируем кэш рейтинга товара
+        console.log('Инвалидация кэша рейтинга после добавления отзыва');
+        await invalidateProductRating(productId);
       } else {
         // Отзыв о магазине
         await reviewAPI.createStoreReview(submitData);

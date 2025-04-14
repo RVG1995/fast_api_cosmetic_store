@@ -786,6 +786,20 @@ export const reviewAPI = {
     return await reviewApi.get(`/reviews/products/${productId}/stats`);
   },
   
+  getBatchProductStats: async (productIds) => {
+    console.log('Вызов API getBatchProductStats для товаров:', productIds);
+    try {
+      const response = await reviewApi.post('/reviews/products/batch-stats', {
+        product_ids: productIds
+      });
+      console.log('API getBatchProductStats ответ успешно получен:', response.data);
+      return response;
+    } catch (error) {
+      console.error('Ошибка в API getBatchProductStats:', error);
+      throw error;
+    }
+  },
+  
   // Публичные методы для работы с отзывами о магазине
   getStoreReviews: async (page = 1, pageSize = 10) => {
     return await reviewApi.get('/reviews/store/all', {

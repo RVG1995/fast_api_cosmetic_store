@@ -91,7 +91,7 @@ const ProductCard = memo(({ product }) => {
           </Card.Title>
         </Link>
         
-        <ProductRating productId={product.id} size="sm" className="mb-2" />
+        <ProductRating productId={product.id} size="sm" className="mb-2" useDirectFetch={false} />
         
         <Card.Text className="product-description text-truncate-3">
           {product.description}

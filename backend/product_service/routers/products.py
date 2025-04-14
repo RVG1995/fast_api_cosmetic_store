@@ -20,6 +20,10 @@ from fastapi.staticfiles import StaticFiles
 from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, CACHE_TTL, close_redis_connection
 from sqlalchemy.orm import selectinload
 
+# Определяем директорию для сохранения изображений
+UPLOAD_DIR = "static/images"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("product_service")

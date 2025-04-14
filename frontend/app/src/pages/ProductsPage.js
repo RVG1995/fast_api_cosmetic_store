@@ -8,6 +8,7 @@ import ProductCard from '../components/product/ProductCard';
 import FilterSidebar from '../components/filters/FilterSidebar';
 import Pagination from '../components/common/Pagination';
 import '../styles/ProductsPage.css';
+import { useReviews } from '../context/ReviewContext';
 
 /**
  * Страница со списком товаров и фильтрацией
@@ -24,6 +25,8 @@ const ProductsPage = () => {
   const [subcategories, setSubcategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [countries, setCountries] = useState([]);
+  
+  const { fetchBatchProductRatings } = useReviews();
   
   // Параметры фильтрации и сортировки
   const filters = useMemo(() => ({
@@ -129,6 +132,16 @@ const ProductsPage = () => {
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+  
+  // После загрузки списка товаров, загружаем их рейтинги
+  useEffect(() => {
+    if (products && products.length > 0) {
+      // Извлекаем ID товаров из списка
+      const productIds = products.map(product => product.id);
+      // Загружаем рейтинги пакетно
+      fetchBatchProductRatings(productIds);
+    }
+  }, [products, fetchBatchProductRatings]);
   
   // Подсчет количества страниц
   const totalPages = useMemo(() => 

@@ -10,6 +10,8 @@ import ReviewList from '../components/reviews/ReviewList';
 import ReviewForm from '../components/reviews/ReviewForm';
 import ReviewStats from '../components/reviews/ReviewStats';
 import { useAuth } from '../context/AuthContext';
+import { useReviews } from '../context/ReviewContext';
+import ProductRating from '../components/reviews/ProductRating';
 
 const ProductDetailPage = () => {
   const { productId } = useParams();
@@ -20,6 +22,7 @@ const ProductDetailPage = () => {
   const [reviewPage, setReviewPage] = useState(1);
   const [reviewReloadKey, setReviewReloadKey] = useState(0);
   const { user } = useAuth();
+  const { fetchBatchProductRatings } = useReviews();
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {
@@ -112,6 +115,16 @@ const ProductDetailPage = () => {
     
     fetchProductDetails();
   }, [productId]); // Перезагружаем при изменении ID товара
+
+  // Подгружаем рейтинги только для похожих товаров через контекст
+  useEffect(() => {
+    if (relatedProducts && relatedProducts.length > 0) {
+      // Извлекаем ID похожих товаров
+      const relatedProductIds = relatedProducts.map(product => product.id);
+      // Загружаем рейтинги пакетно только для похожих товаров
+      fetchBatchProductRatings(relatedProductIds);
+    }
+  }, [relatedProducts, fetchBatchProductRatings]);
 
   if (loading) {
     return (
@@ -271,7 +284,7 @@ const ProductDetailPage = () => {
       {/* Секция отзывов */}
       <div className="product-reviews mt-5">
         {/* Статистика отзывов */}
-        <ReviewStats productId={productId} />
+        <ReviewStats productId={productId} key={`stats-${reviewReloadKey}`} />
         
         {/* Форма оставления отзыва (для авторизованных пользователей) */}
         {user && (
@@ -284,7 +297,7 @@ const ProductDetailPage = () => {
         
         {/* Список отзывов */}
         <ReviewList 
-          key={reviewReloadKey}
+          key={`reviews-${reviewReloadKey}`}
           productId={productId}
           currentPage={reviewPage}
           onPageChange={setReviewPage}

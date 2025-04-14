@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Row, Col, ProgressBar, Spinner, Alert } from 'react-bootstrap';
 import { reviewAPI } from '../../utils/api';
 
-const ReviewStats = ({ productId = null }) => {
+const ReviewStats = ({ productId = null, reloadKey = 0 }) => {
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,11 +17,14 @@ const ReviewStats = ({ productId = null }) => {
         
         // Получаем статистику в зависимости от типа (товар или магазин)
         if (productId) {
+          console.log(`ReviewStats: Загрузка статистики для товара ${productId}, reloadKey=${reloadKey}`);
           response = await reviewAPI.getProductStats(productId);
         } else {
+          console.log(`ReviewStats: Загрузка статистики для магазина, reloadKey=${reloadKey}`);
           response = await reviewAPI.getStoreStats();
         }
         
+        console.log('ReviewStats: Получены данные:', response.data);
         setStats(response.data);
       } catch (error) {
         console.error('Ошибка при загрузке статистики:', error);
@@ -32,7 +35,7 @@ const ReviewStats = ({ productId = null }) => {
     };
 
     fetchStats();
-  }, [productId]);
+  }, [productId, reloadKey]); // Добавляем reloadKey для принудительной перезагрузки
 
   // Вычисляем процент для каждого рейтинга
   const calculatePercentage = (count, total) => {

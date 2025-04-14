@@ -40,7 +40,9 @@ CACHE_KEYS = {
     "store_statistics": "review_service:store_statistics:",
     "product_review_stats": "review_service:product_review_stats:",
     "store_review_stats": "review_service:store_review_stats:",
-    "test": "review_service:test:"
+    "test": "review_service:test:",
+    "product_batch_statistics": "product_batch_stats:",
+    "review_detail": "review_detail:"
 }
 
 async def initialize_redis() -> None:
@@ -191,21 +193,50 @@ async def invalidate_review_cache(review_id: int) -> bool:
     Returns:
         bool: True если кэш успешно инвалидирован, иначе False
     """
-    # Удаляем кэш конкретного отзыва
-    key = f"{CACHE_KEYS['review']}{review_id}"
-    await cache_delete(key)
-    
-    # Инвалидируем списки отзывов
-    await cache_delete_pattern(f"{CACHE_KEYS['product_reviews']}*")
-    await cache_delete_pattern(f"{CACHE_KEYS['store_reviews']}*")
-    await cache_delete_pattern(f"{CACHE_KEYS['user_reviews']}*")
-    
-    # Инвалидируем статистику
-    await cache_delete_pattern(f"{CACHE_KEYS['product_statistics']}*")
-    await cache_delete_pattern(f"{CACHE_KEYS['store_statistics']}*")
-    
-    logger.info(f"Кэш отзыва {review_id} и связанных списков инвалидирован")
-    return True
+    try:
+        # Получаем данные отзыва, чтобы узнать product_id
+        from models import ReviewModel
+        from sqlalchemy.ext.asyncio import AsyncSession
+        from database import get_session
+        
+        # Используем новую сессию для получения данных отзыва
+        session = await anext(get_session())
+        review = await ReviewModel.get_by_id(session, review_id)
+        
+        # Удаляем кэш конкретного отзыва
+        key = f"{CACHE_KEYS['review']}{review_id}"
+        await cache_delete(key)
+        
+        # Инвалидируем списки отзывов
+        await cache_delete_pattern(f"{CACHE_KEYS['product_reviews']}*")
+        await cache_delete_pattern(f"{CACHE_KEYS['store_reviews']}*")
+        await cache_delete_pattern(f"{CACHE_KEYS['user_reviews']}*")
+        
+        # Инвалидируем статистику
+        await cache_delete_pattern(f"{CACHE_KEYS['product_statistics']}*")
+        await cache_delete_pattern(f"{CACHE_KEYS['store_statistics']}*")
+        
+        # Инвалидируем кэш пакетных запросов статистики
+        await cache_delete_pattern(f"{CACHE_KEYS['product_batch_statistics']}*")
+        
+        # Если отзыв относится к товару, инвалидируем статистику этого товара
+        if review and review.product_id:
+            await cache_delete(f"{CACHE_KEYS['product_statistics']}{review.product_id}")
+            
+            # Инвалидируем все пакетные запросы, которые могут включать этот товар
+            keys_to_check = await redis_client.keys(f"{CACHE_KEYS['product_batch_statistics']}*")
+            for key in keys_to_check:
+                # Проверяем, содержит ли ключ ID товара
+                product_id_str = str(review.product_id)
+                # Если ключ включает ID товара (например, в списке ID через запятую)
+                if product_id_str in key:
+                    await cache_delete(key)
+                    
+        logger.info(f"Кэш отзыва {review_id} и связанных списков инвалидирован")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка при инвалидации кэша отзыва: {str(e)}")
+        return False
 
 async def invalidate_product_reviews_cache(product_id: int) -> bool:
     """
@@ -217,14 +248,28 @@ async def invalidate_product_reviews_cache(product_id: int) -> bool:
     Returns:
         bool: True если кэш успешно инвалидирован, иначе False
     """
-    # Удаляем кэш списков отзывов для товара
-    await cache_delete_pattern(f"{CACHE_KEYS['product_reviews']}{product_id}:*")
-    
-    # Инвалидируем статистику товара
-    await cache_delete(f"{CACHE_KEYS['product_statistics']}{product_id}")
-    
-    logger.info(f"Кэш отзывов для товара {product_id} инвалидирован")
-    return True
+    try:
+        # Удаляем кэш списков отзывов для товара
+        await cache_delete_pattern(f"{CACHE_KEYS['product_reviews']}{product_id}:*")
+        
+        # Инвалидируем статистику товара
+        await cache_delete(f"{CACHE_KEYS['product_statistics']}{product_id}")
+        await cache_delete(f"{CACHE_KEYS['product_review_stats']}{product_id}")
+        
+        # Инвалидируем все пакетные запросы, которые могут включать этот товар
+        keys_to_check = await redis_client.keys(f"{CACHE_KEYS['product_batch_statistics']}*")
+        product_id_str = str(product_id)
+        
+        for key in keys_to_check:
+            # Проверяем, содержит ли ключ ID товара
+            if product_id_str in key:
+                await cache_delete(key)
+        
+        logger.info(f"Кэш отзывов для товара {product_id} и связанных пакетных запросов инвалидирован")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка при инвалидации кэша отзывов для товара: {str(e)}")
+        return False
 
 async def invalidate_store_reviews_cache() -> bool:
     """

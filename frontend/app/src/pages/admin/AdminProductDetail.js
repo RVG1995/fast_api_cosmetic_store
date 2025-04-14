@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { productAPI } from '../../utils/api';
 import '../../styles/AdminProductDetail.css';
+import ReviewList from '../../components/reviews/ReviewList';
 
 const AdminProductDetail = () => {
   const { productId } = useParams();
@@ -502,6 +503,19 @@ const AdminProductDetail = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        
+          {/* Добавляем блок с отзывами */}
+          <div className="card">
+            <div className="card-header">
+              <h3>Отзывы о товаре</h3>
+            </div>
+            <div className="card-body">
+              <ReviewList 
+                productId={productId} 
+                isAdminView={true}
+              />
             </div>
           </div>
         

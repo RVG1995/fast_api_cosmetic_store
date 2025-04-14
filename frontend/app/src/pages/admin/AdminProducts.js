@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { productAPI } from '../../utils/api';
+import { reviewAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -47,6 +48,9 @@ const AdminProducts = () => {
   // Добавляем состояние для сортировки
   const [sortOption, setSortOption] = useState('newest');
 
+  // Добавляем состояние для хранения рейтингов товаров
+  const [productRatings, setProductRatings] = useState({});
+
   // Загрузка всех необходимых данных при монтировании компонента
   useEffect(() => {
     const fetchData = async () => {
@@ -66,7 +70,7 @@ const AdminProducts = () => {
         setCountries(countriesRes.data);
         setBrands(brandsRes.data);
         
-        // Загружаем первую страницу товаров
+        // Загружаем первую страницу товаров БЕЗ рейтингов
         await fetchProducts(1);
         
         // Проверяем параметр edit в URL
@@ -100,6 +104,37 @@ const AdminProducts = () => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  
+  // Загружаем рейтинги при изменении списка продуктов
+  useEffect(() => {
+    const fetchRatings = async () => {
+      if (products && products.length > 0) {
+        const productIds = products.map(item => item.id);
+        try {
+          console.log('Запрашиваем рейтинги для ID:', productIds);
+          const ratingsResponse = await reviewAPI.getBatchProductStats(productIds);
+          console.log('Получен полный ответ API рейтингов:', ratingsResponse);
+          
+          // Извлекаем данные из response.data.results
+          const ratingsData = ratingsResponse?.data?.results;
+          
+          // Проверяем, что ratingsData - это объект
+          if (ratingsData && typeof ratingsData === 'object' && !Array.isArray(ratingsData)) {
+            console.log('Установка рейтингов:', ratingsData);
+            setProductRatings(ratingsData);
+          } else {
+            console.warn('Неожиданный формат данных рейтинга в ответе API:', ratingsData);
+            setProductRatings({});
+          }
+        } catch (ratingErr) {
+          console.error('Ошибка при загрузке рейтингов товаров:', ratingErr);
+          setProductRatings({});
+        }
+      }
+    };
+    
+    fetchRatings();
+  }, [products]); // Зависимость от products
 
   // Добавляем эффект для обновления товаров при изменении сортировки
   useEffect(() => {
@@ -241,30 +276,18 @@ const AdminProducts = () => {
     setIsModalOpen(true);
   };
 
-  // Функция для загрузки определенной страницы товаров
+  // Функция для загрузки определенной страницы товаров (БЕЗ ЗАГРУЗКИ РЕЙТИНГОВ)
   const fetchProducts = async (page) => {
     try {
       setLoading(true);
       console.log(`Загружаем страницу ${page} с сортировкой ${sortOption}`);
-      // Принудительно передаем параметр сортировки, даже если это 'newest'
       const response = await productAPI.getAdminProducts(page, pagination.pageSize, null, null, null, null, sortOption);
       
-      // Обновляем товары и информацию о пагинации
       const { items, total, limit } = response.data;
       console.log(`Получено ${items?.length} товаров из ${total} с лимитом ${limit}`);
       
-      // Проверяем первые товары для отладки
-      if (items && items.length > 0) {
-        console.log('Первые два товара:', items.slice(0, 2).map(item => ({
-          id: item.id,
-          name: item.name,
-          price: item.price
-        })));
-      }
-      
       setProducts(Array.isArray(items) ? items : []);
       
-      // Обновляем информацию о пагинации
       setPagination({
         currentPage: page,
         totalPages: Math.ceil(total / limit),
@@ -479,6 +502,7 @@ const AdminProducts = () => {
                   <th>Название</th>
                   <th>Цена</th>
                   <th>Кол-во</th>
+                  <th>Рейтинг</th>
                   <th>Действия</th>
                 </tr>
               </thead>
@@ -506,6 +530,14 @@ const AdminProducts = () => {
                     </td>
                     <td>{product.price} руб.</td>
                     <td>{product.stock}</td>
+                    <td className="text-center">
+                      {productRatings[product.id] ? 
+                        <span className="rating-badge">
+                          {productRatings[product.id].average_rating.toFixed(1)}
+                        </span> : 
+                        <span className="text-muted">—</span>
+                      }
+                    </td>
                     <td>
                       <Link 
                         to={`/admin/products/${product.id}`}

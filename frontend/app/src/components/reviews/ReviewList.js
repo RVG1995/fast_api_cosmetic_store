@@ -4,7 +4,7 @@ import { reviewAPI } from '../../utils/api';
 import ReviewItem from './ReviewItem';
 import { useAuth } from '../../context/AuthContext';
 
-const ReviewList = ({ productId = null, showStats = false }) => {
+const ReviewList = ({ productId = null, showStats = false, isAdminView = false }) => {
   const [reviews, setReviews] = useState([]);
   const [totalReviews, setTotalReviews] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -24,17 +24,17 @@ const ReviewList = ({ productId = null, showStats = false }) => {
         // Определяем, какие отзывы загружать (для товара или для магазина)
         let response;
         
-        if (productId) {
-          // Отзывы для товара - используем админский API только если пользователь имеет права админа
-          if (user && isAdmin) {
+        // В админке всегда используем админский API для получения всех отзывов
+        if (isAdminView) {
+          if (productId) {
             response = await reviewAPI.admin.getProductReviews(productId, currentPage, pageSize);
           } else {
-            response = await reviewAPI.getProductReviews(productId, currentPage, pageSize);
+            response = await reviewAPI.admin.getStoreReviews(currentPage, pageSize);
           }
         } else {
-          // Отзывы для магазина - используем админский API только если пользователь имеет права админа
-          if (user && isAdmin) {
-            response = await reviewAPI.admin.getStoreReviews(currentPage, pageSize);
+          // На клиентской части используем обычный API
+          if (productId) {
+            response = await reviewAPI.getProductReviews(productId, currentPage, pageSize);
           } else {
             response = await reviewAPI.getStoreReviews(currentPage, pageSize);
           }
@@ -52,9 +52,9 @@ const ReviewList = ({ productId = null, showStats = false }) => {
       }
     };
 
-    console.log('ReviewList: Загружаем отзывы для', { productId, currentPage, isAdmin, user });
+    console.log('ReviewList: Загружаем отзывы для', { productId, currentPage, isAdmin, user, isAdminView });
     fetchReviews();
-  }, [productId, currentPage, isAdmin, user]);
+  }, [productId, currentPage, isAdmin, user, isAdminView]);
 
   // Обработчик изменения страницы
   const handlePageChange = (page) => {
@@ -204,7 +204,7 @@ const ReviewList = ({ productId = null, showStats = false }) => {
               key={review.id} 
               review={review} 
               onReactionChange={handleReviewUpdate}
-              isAdmin={user && isAdmin}
+              isAdmin={isAdminView ? true : (user && isAdmin)}
             />
           ))}
         </div>

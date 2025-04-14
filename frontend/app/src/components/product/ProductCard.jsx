@@ -47,6 +47,15 @@ const ProductCard = memo(({ product }) => {
     }
   }, [product]);
   
+  // Определяем, находимся ли мы на странице продуктов
+  const isOnProductsPage = window.location.pathname.includes('/products') && 
+                           !window.location.pathname.includes(`/products/${product.id}`);
+  
+  // Добавляем класс для особого стиля на странице каталога
+  const titleClass = isOnProductsPage ? "product-title catalog-title" : "product-title";
+  const titleLinkClass = isOnProductsPage ? "product-title-link catalog-title-link" : "product-title-link";
+  const ratingWrapperClass = isOnProductsPage ? "rating-wrapper catalog-rating-wrapper" : "rating-wrapper";
+  
   return (
     <Card className="product-card h-100">
       <Link to={`/products/${product.id}`} className="product-image-container">
@@ -85,13 +94,38 @@ const ProductCard = memo(({ product }) => {
           )}
         </div>
         
-        <Link to={`/products/${product.id}`} className="product-title-link">
-          <Card.Title className="product-title">
+        <Link to={`/products/${product.id}`} className={titleLinkClass}>
+          <Card.Title className={titleClass}>
             {product.name}
           </Card.Title>
         </Link>
         
-        <ProductRating productId={product.id} size="sm" className="mb-2" useDirectFetch={false} />
+        <div className={ratingWrapperClass}>
+          <ProductRating 
+            productId={product.id} 
+            size="sm" 
+            className="mb-2" 
+            useDirectFetch={false} 
+          />
+        </div>
+        
+        {/* Перемещаем блок с ценой сразу после рейтинга */}
+        <div className="price-block-wrapper mb-2">
+          {product.discount_percent > 0 ? (
+            <>
+              <div className="original-price text-muted">
+                {product.original_price} руб.
+              </div>
+              <div className="current-price">
+                {product.price} руб.
+              </div>
+            </>
+          ) : (
+            <div className="current-price">
+              {product.price} руб.
+            </div>
+          )}
+        </div>
         
         <Card.Text className="product-description text-truncate-3">
           {product.description}
@@ -99,26 +133,13 @@ const ProductCard = memo(({ product }) => {
         
         <div className="mt-auto">
           <div className="d-flex justify-content-between align-items-center mb-2">
-            <div className="price-block">
-              {product.discount_percent > 0 ? (
-                <>
-                  <span className="original-price text-muted">
-                    {product.original_price} руб.
-                  </span>
-                  <span className="current-price">
-                    {product.price} руб.
-                  </span>
-                </>
-              ) : (
-                <span className="current-price">
-                  {product.price} руб.
-                </span>
-              )}
+            <div className="price-block d-none">
+              {/* Скрытый блок для поддержки старой структуры */}
             </div>
             
             <div className="stock-status">
               {product.stock > 0 ? (
-                <Badge bg="success" pill>В наличии</Badge>
+                <Badge bg="success" pill>В наличии ({product.stock} шт.)</Badge>
               ) : (
                 <Badge bg="secondary" pill>Нет в наличии</Badge>
               )}

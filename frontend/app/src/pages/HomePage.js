@@ -8,6 +8,7 @@ import SimpleAddToCartButton from '../components/cart/SimpleAddToCartButton';
 import CartUpdater from '../components/cart/CartUpdater';
 import ProductRating from '../components/reviews/ProductRating';
 import { useReviews } from '../context/ReviewContext';
+import { Badge } from 'react-bootstrap';
 
 const HomePage = () => {
   const [products, setProducts] = useState([]);
@@ -251,9 +252,13 @@ const HomePage = () => {
                       <ProductRating productId={product.id} size="sm" />
                       <p className="price">{product.price} руб.</p>
                       <p className="description">{product.description}</p>
-                      <p className="stock">
-                        {product.stock > 0 ? `В наличии: ${product.stock}` : 'Нет в наличии'}
-                      </p>
+                      <div className="stock-status mb-2">
+                        {product.stock > 0 ? (
+                          <Badge bg="success" pill>В наличии ({product.stock} шт.)</Badge>
+                        ) : (
+                          <Badge bg="secondary" pill>Нет в наличии</Badge>
+                        )}
+                      </div>
                       <SimpleAddToCartButton 
                         productId={product.id}
                         stock={product.stock}

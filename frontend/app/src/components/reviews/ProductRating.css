@@ -1,0 +1,51 @@
+/* Стили для компонента рейтинга */
+.product-rating {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.product-rating .stars-container {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.product-rating .rating-text {
+  font-size: 0.85rem;
+  color: #6c757d;
+  white-space: nowrap;
+  margin-left: 5px;
+}
+
+/* Стили рейтинга для страницы продуктов */
+.products-page .product-rating {
+  margin-top: 0.25rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
+/* Стили для рейтинга в карточке товара */
+.product-card .product-rating {
+  margin-bottom: 0.75rem;
+}
+
+/* Стили для анимации загрузки рейтинга */
+.product-rating-skeleton {
+  height: 1rem;
+  width: 80px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+} 

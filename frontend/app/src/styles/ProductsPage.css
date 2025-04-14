@@ -138,4 +138,84 @@
   .price-inputs span {
     display: none;
   }
+}
+
+/* Стили для страницы каталога товаров */
+.products-page {
+  padding-bottom: 2rem;
+}
+
+/* Стили для карточек товаров в сетке */
+.products-page .product-card {
+  height: 100%;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Заголовок товара в каталоге - особенные стили для страницы каталога */
+.products-page .product-title {
+  min-height: 3rem !important; /* Увеличиваем минимальную высоту */
+  max-height: 3rem !important;
+  margin-bottom: 0.25rem !important; /* Уменьшаем отступ под заголовком */
+  line-height: 1.4 !important;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 1.1rem !important; /* Увеличиваем размер шрифта */
+  font-weight: 600 !important;
+}
+
+.products-page .product-title-link {
+  display: block !important;
+  margin-bottom: 0.25rem !important; /* Уменьшаем отступ после заголовка */
+  text-decoration: none !important;
+}
+
+/* Обертка для рейтинга на странице каталога */
+.products-page .rating-wrapper {
+  min-height: 20px !important;
+  margin-bottom: 0.25rem !important; /* Уменьшаем отступ после рейтинга */
+  display: block !important;
+  width: 100% !important;
+  clear: both !important;
+}
+
+/* Корректировки для отображения рейтинга на странице каталога */
+.products-page .product-rating {
+  margin-top: 0 !important;
+  margin-bottom: 0.25rem !important; /* Уменьшаем отступ после рейтинга */
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+}
+
+/* Стили для фильтров */
+.filter-card {
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 20px;
+}
+
+.filter-card .card-body {
+  padding: 1.25rem;
+}
+
+/* Результаты фильтрации */
+.search-results-info {
+  font-size: 0.9rem;
+  color: #6c757d;
+  margin-bottom: 1rem;
+}
+
+/* Адаптивность */
+@media (max-width: 991.98px) {
+  .filters-wrapper {
+    margin-bottom: 1.5rem;
+  }
+  
+  .filter-card {
+    position: relative;
+    top: 0;
+  }
 } 

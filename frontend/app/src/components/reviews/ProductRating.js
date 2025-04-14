@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useReviews } from '../../context/ReviewContext';
 import { reviewAPI } from '../../utils/api';
+import './ProductRating.css';
 
-const ProductRating = ({ productId, size = 'sm', showText = true, useDirectFetch = false, reloadKey = 0 }) => {
+const ProductRating = ({ productId, size = 'sm', showText = true, useDirectFetch = false, reloadKey = 0, className = '' }) => {
   const { getProductRating } = useReviews();
   const [localRating, setLocalRating] = useState(null);
   const [localTotalReviews, setLocalTotalReviews] = useState(0);
@@ -56,24 +57,26 @@ const ProductRating = ({ productId, size = 'sm', showText = true, useDirectFetch
   const roundedRating = rating ? Math.round(rating * 2) / 2 : 0; // Округляем до ближайшего 0.5
 
   return (
-    <div className="product-rating d-flex align-items-center">
-      {[1, 2, 3, 4, 5].map((i) => {
-        // Определяем заполнение звезды (полная, половина или пустая)
-        const starClass = rating && i <= Math.floor(roundedRating)
-          ? 'bi bi-star-fill text-warning'
-          : 'bi bi-star text-muted';
-        
-        return (
-          <i
-            key={i}
-            className={starClass}
-            style={{ fontSize, marginRight: '2px' }}
-          />
-        );
-      })}
+    <div className={`product-rating d-flex align-items-center ${className}`}>
+      <div className="stars-container">
+        {[1, 2, 3, 4, 5].map((i) => {
+          // Определяем заполнение звезды (полная, половина или пустая)
+          const starClass = rating && i <= Math.floor(roundedRating)
+            ? 'bi bi-star-fill text-warning'
+            : 'bi bi-star text-muted';
+          
+          return (
+            <i
+              key={i}
+              className={starClass}
+              style={{ fontSize, marginRight: '2px' }}
+            />
+          );
+        })}
+      </div>
       
       {showText && (
-        <span className="ms-1" style={{ fontSize }}>
+        <span className="ms-1 rating-text" style={{ fontSize, whiteSpace: 'nowrap' }}>
           {rating ? rating.toFixed(1) : 'Нет отзывов'}
           {totalReviews > 0 && ` (${totalReviews})`}
         </span>

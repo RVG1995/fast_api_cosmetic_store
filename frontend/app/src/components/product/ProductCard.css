@@ -92,7 +92,8 @@
   font-size: 1rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
-  height: 2.4rem;
+  min-height: 2.4rem; /* Фиксированная минимальная высота для заголовка */
+  max-height: 2.4rem;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -102,45 +103,88 @@
 .product-title-link {
   color: #212529;
   text-decoration: none;
+  display: block; /* Добавляем блочное отображение для лучшего контроля */
+  margin-bottom: 0.5rem; /* Добавляем отступ снизу для разделения от рейтинга */
 }
 
 .product-title-link:hover {
   color: #0d6efd;
 }
 
-/* Описание товара */
-.product-description {
-  font-size: 0.875rem;
-  color: #6c757d;
-  margin-bottom: 1rem;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+/* Стили для компонента рейтинга */
+.product-card .product-rating {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem; /* Добавляем отступ снизу */
+  flex-wrap: wrap; /* Позволяем переносить звезды на новую строку при необходимости */
 }
 
-/* Информация о цене */
+.product-card .product-rating i {
+  margin-right: 2px;
+}
+
+.product-card .rating-wrapper {
+  min-height: 24px;
+  margin-bottom: 0.5rem;
+  width: 100%;
+}
+
+/* Новые стили для блока с ценой сразу после рейтинга */
+.price-block-wrapper {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.5rem;
+}
+
+.price-block-wrapper .original-price {
+  font-size: 0.8rem;
+  text-decoration: line-through;
+  margin-bottom: -5px;
+  color: #6c757d;
+}
+
+.price-block-wrapper .current-price {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #007bff; /* Синий цвет как на главной странице */
+}
+
+/* Обновляем стили для старого блока с ценой (оставляем на случай использования) */
 .price-block {
   display: flex;
   flex-direction: column;
 }
 
-.original-price {
+.price-block .original-price {
   font-size: 0.8rem;
   text-decoration: line-through;
   margin-bottom: -5px;
 }
 
-.current-price {
+.price-block .current-price {
   font-size: 1.1rem;
   font-weight: 700;
-  color: #212529;
+  color: #007bff; /* Синий цвет как на главной странице */
 }
 
 /* Стили для бренда */
 .brand-name {
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+/* Стили для бейджа с наличием товара */
+.stock-status {
+  display: flex;
+  justify-content: flex-end;
+  margin-left: auto; /* Смещаем вправо */
+}
+
+.stock-status .badge {
+  font-size: 0.75rem;
+  padding: 0.35rem 0.65rem;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 /* Анимации для карточки */
@@ -159,7 +203,8 @@
 @media (max-width: 767.98px) {
   .product-title {
     font-size: 0.9rem;
-    height: 2.2rem;
+    min-height: 2.2rem;
+    max-height: 2.2rem;
   }
   
   .current-price {
@@ -171,4 +216,40 @@
   .product-image-container {
     padding-top: 65%; /* Изменяем соотношение для маленьких экранов */
   }
+}
+
+/* Специальные стили для страницы каталога */
+.catalog-title {
+  min-height: 3rem !important;
+  max-height: 3rem !important;
+  margin-bottom: 0.25rem !important;
+  font-size: 1.1rem !important;
+  line-height: 1.5 !important;
+  font-weight: 600 !important;
+}
+
+.catalog-title-link {
+  display: block !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.catalog-rating-wrapper {
+  min-height: 20px !important;
+  margin-bottom: 0.25rem !important;
+  margin-top: 0 !important;
+  width: 100% !important;
+  position: relative !important;
+  clear: both !important;
+  display: block !important;
+}
+
+/* Описание товара */
+.product-description {
+  font-size: 0.875rem;
+  color: #6c757d;
+  margin-bottom: 1rem;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 } 

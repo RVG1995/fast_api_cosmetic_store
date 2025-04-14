@@ -179,4 +179,23 @@
 .product-title-link:hover {
   color: #007bff;
   text-decoration: underline;
+}
+/* Стили для бейджа наличия товара */
+.stock-status {
+  margin-bottom: 0.75rem;
+}
+
+.stock-status .badge {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.65rem;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.stock-status .badge-success {
+  background-color: #28a745;
+}
+
+.stock-status .badge-secondary {
+  background-color: #6c757d;
 } 

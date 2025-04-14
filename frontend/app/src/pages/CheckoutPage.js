@@ -195,7 +195,7 @@ const CheckoutPage = () => {
         </Alert>
       )}
       
-      <Row>
+      <Row className="align-items-start">
         {/* Форма оформления заказа */}
         <Col md={8}>
           <Card className="checkout-card">

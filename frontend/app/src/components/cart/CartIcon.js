@@ -25,13 +25,19 @@ const CartIcon = () => {
     
     // Слушаем событие обновления корзины
     const handleCartUpdated = (event) => {
-      console.log('Событие обновления корзины получено, обновляем сводку');
-      // Если дропдаун открыт, обновляем полные данные
-      if (isOpen) {
-        fetchCart();
+      console.log('Событие обновления корзины получено', event?.detail);
+      
+      // Получаем данные, которые были переданы с событием
+      if (event?.detail?.summary) {
+        // Если в событии есть сводка, используем её для обновления счетчика
+        console.log('Получены данные сводки из события:', event.detail.summary);
+        // Нет необходимости вызывать fetchCartSummary, так как CartContext уже обновил cartSummary
+      } else if (event?.detail?.cart) {
+        console.log('Получены данные корзины из события:', event.detail.cart);
       }
-      // В любом случае обновляем сводку
-      fetchCartSummary();
+      
+      // В любом случае обновляем данные корзины
+      fetchCart();
     };
     
     window.addEventListener('cart:updated', handleCartUpdated);
@@ -41,7 +47,7 @@ const CartIcon = () => {
       window.removeEventListener('cart:updated', handleCartUpdated);
       window.removeEventListener('cart:merged', handleCartUpdated);
     };
-  }, [fetchCart, fetchCartSummary, isOpen]);
+  }, [fetchCart, fetchCartSummary]);
 
   // При открытии дропдауна обновляем полные данные корзины
   useEffect(() => {

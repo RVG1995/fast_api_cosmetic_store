@@ -143,12 +143,16 @@ const ReviewItem = ({ review, onReactionChange, isAdmin = false }) => {
   const content = localReview.content || '';
   const createdAt = localReview.created_at || '';
   const isAnonymous = localReview.is_anonymous || false;
+  const reviewUserId = localReview.user_id;
   const firstName = localReview.user_first_name || 'Пользователь';
   const lastName = localReview.user_last_name || '';
   const isHidden = localReview.is_hidden || false;
   const userReaction = localReview.user_reaction || '';
   const reactionStats = localReview.reaction_stats || { likes: 0, dislikes: 0 };
   const adminComments = localReview.admin_comments || [];
+  
+  // Проверяем, является ли текущий пользователь автором отзыва
+  const isCurrentUserAuthor = user && reviewUserId && user.id === reviewUserId;
 
   return (
     <Card className="mb-3 shadow-sm">
@@ -187,7 +191,11 @@ const ReviewItem = ({ review, onReactionChange, isAdmin = false }) => {
               
               <div className="mb-3">
                 <i className="bi bi-person me-1"></i>
-                {isAnonymous ? 'Анонимный пользователь' : `${firstName} ${lastName}`}
+                {isAnonymous 
+                  ? (isCurrentUserAuthor 
+                      ? <span>Ваш отзыв <Badge bg="info" className="ms-1">анонимный для других</Badge></span>
+                      : 'Анонимный пользователь')
+                  : `${firstName} ${lastName}`}
               </div>
               
               <div className="d-flex justify-content-md-end align-items-center">

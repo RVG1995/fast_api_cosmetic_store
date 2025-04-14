@@ -152,13 +152,23 @@ function UserInfoPage() {
                       </div>
                       <div className="col-md-4 col-sm-4">
                         <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
-                          <p className="fs-2 fw-bold text-success mb-0">{statistics.total_revenue}₽</p>
+                          <div className="d-flex flex-column align-items-center">
+                            <p className="fs-2 fw-bold text-success mb-0" style={{fontSize: "1.7rem"}}>
+                              {statistics.total_revenue}
+                            </p>
+                            <p className="fs-4 fw-bold text-success mb-0">₽</p>
+                          </div>
                           <p className="text-secondary">Покупок</p>
                         </div>
                       </div>
                       <div className="col-md-4 col-sm-4">
                         <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
-                          <p className="fs-2 fw-bold text-custom-purple mb-0">{Math.round(statistics.average_order_value)}</p>
+                          <div className="d-flex flex-column align-items-center">
+                            <p className="fs-2 fw-bold text-custom-purple mb-0">
+                              {Math.round(statistics.average_order_value)}
+                            </p>
+                            <p className="fs-4 fw-bold text-custom-purple mb-0">₽</p>
+                          </div>
                           <p className="text-secondary">Средний чек</p>
                         </div>
                       </div>

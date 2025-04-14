@@ -1,20 +1,20 @@
 from fastapi import FastAPI, Depends, HTTPException, Response, Cookie, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from contextlib import asynccontextmanager
 from models import CartModel, CartItemModel
 from database import setup_database, get_session, engine
 from auth import get_current_user, get_session_id, User, get_current_admin_user
 from schema import (
-    CartItemAddSchema, CartItemUpdateSchema, CartSchema, 
+    CartItemAddSchema, CartItemUpdateSchema, CartSchema, CartItemSchema,  
     CartResponseSchema, ProductInfoSchema, CartSummarySchema,
     CleanupResponseSchema, ShareCartRequestSchema, ShareCartResponseSchema,
     LoadSharedCartSchema, UserCartSchema, PaginatedUserCartsResponse, UserCartItemSchema
 )
 from product_api import ProductAPI
-from typing import Optional, List, Dict, Any, Annotated
+from typing import Optional, List, Dict, Any, Annotated, Union
 import logging
 import uuid
 import os
@@ -26,6 +26,8 @@ from cache import (
     invalidate_user_cart_cache, invalidate_session_cart_cache, invalidate_admin_carts_cache,
     CACHE_KEYS, CACHE_TTL
 )
+import json
+from pydantic import BaseModel
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +35,9 @@ logger = logging.getLogger("cart_service")
 
 # Инициализация ProductAPI
 product_api = ProductAPI()
+
+# Максимальный размер корзины для хранения в куках (в байтах)
+MAX_COOKIE_SIZE = 4000  # ~4KB - безопасный размер для большинства браузеров
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -92,23 +97,19 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 async def get_cart_with_items(
     session: AsyncSession,
-    user: Optional[User] = None,
-    session_id: Optional[str] = None
+    user: Optional[User] = None
 ) -> Optional[CartModel]:
     """
-    Получает корзину пользователя или сессии вместе с элементами
+    Получает корзину пользователя вместе с элементами.
+    Только для авторизованных пользователей.
     """
     if user:
         # Если пользователь авторизован, ищем по user_id
         cart = await CartModel.get_user_cart(session, user.id)
-    elif session_id:
-        # Если не авторизован, ищем по session_id
-        cart = await CartModel.get_session_cart(session, session_id)
+        return cart
     else:
-        # Если нет ни пользователя, ни сессии
+        # Если пользователь не авторизован, возвращаем None
         return None
-    
-    return cart
 
 async def enrich_cart_with_product_data(cart: CartModel) -> CartSchema:
     """
@@ -224,6 +225,194 @@ async def enrich_cart_with_product_data(cart: CartModel) -> CartSchema:
             total_price=0
         )
 
+async def serialize_cart_for_cookie(cart_data: dict) -> str:
+    """
+    Сериализует данные корзины для хранения в куках.
+    Содержит только необходимые данные: список товаров и их количество.
+    
+    Args:
+        cart_data (dict): Данные корзины
+        
+    Returns:
+        str: Сериализованная строка для хранения в куках
+    """
+    try:
+        # Создаем упрощенное представление корзины для куки
+        cookie_data = {
+            "items": [
+                {
+                    "product_id": item["product_id"],
+                    "quantity": item["quantity"]
+                }
+                for item in cart_data.get("items", [])
+            ],
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        # Сериализуем в JSON и сжимаем
+        serialized_data = json.dumps(cookie_data)
+        
+        # Проверяем размер
+        if len(serialized_data.encode('utf-8')) > MAX_COOKIE_SIZE:
+            logger.warning(f"Размер данных корзины превышает максимально допустимый для куки: {len(serialized_data)} байт")
+            # Если размер слишком большой, возвращаем только первые N товаров, которые поместятся
+            items = cookie_data["items"]
+            for i in range(len(items), 0, -1):
+                cookie_data["items"] = items[:i]
+                cookie_data["truncated"] = True
+                serialized_data = json.dumps(cookie_data)
+                if len(serialized_data.encode('utf-8')) <= MAX_COOKIE_SIZE:
+                    logger.info(f"Корзина усечена до {i} товаров для размещения в куки")
+                    break
+        
+        return serialized_data
+    except Exception as e:
+        logger.error(f"Ошибка при сериализации корзины для куки: {str(e)}")
+        return json.dumps({"items": [], "error": "Ошибка сериализации"})
+
+async def deserialize_cart_from_cookie(cookie_value: str) -> dict:
+    """
+    Десериализует данные корзины из куки
+    
+    Args:
+        cookie_value (str): Значение куки
+        
+    Returns:
+        dict: Десериализованные данные корзины
+    """
+    try:
+        if not cookie_value:
+            return {"items": []}
+        
+        # Десериализуем JSON
+        cookie_data = json.loads(cookie_value)
+        
+        # Проверяем наличие необходимых полей
+        if not isinstance(cookie_data, dict) or "items" not in cookie_data:
+            logger.warning("Некорректный формат данных корзины в куки")
+            return {"items": []}
+        
+        # Проверяем корректность списка товаров
+        items = []
+        for item in cookie_data.get("items", []):
+            if not isinstance(item, dict):
+                continue
+                
+            product_id = item.get("product_id")
+            quantity = item.get("quantity")
+            
+            if not product_id or not quantity or not isinstance(product_id, int) or not isinstance(quantity, int) or quantity <= 0:
+                continue
+                
+            items.append({
+                "product_id": product_id,
+                "quantity": quantity
+            })
+        
+        return {"items": items}
+        
+    except json.JSONDecodeError:
+        logger.warning("Не удалось десериализовать данные корзины из куки")
+        return {"items": []}
+    except Exception as e:
+        logger.error(f"Ошибка при десериализации корзины из куки: {str(e)}")
+        return {"items": []}
+
+async def cookie_cart_to_schema(cookie_cart: dict) -> CartSchema:
+    """
+    Преобразует данные корзины из куки в CartSchema с полной информацией о продуктах
+    
+    Args:
+        cookie_cart (dict): Десериализованные данные корзины из куки
+        
+    Returns:
+        CartSchema: Полные данные корзины
+    """
+    try:
+        items = cookie_cart.get("items", [])
+        
+        # Если корзина пуста
+        if not items:
+            return CartSchema(
+                id=0,
+                user_id=None,
+                session_id=None,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                items=[],
+                total_items=0,
+                total_price=0
+            )
+        
+        # Собираем ID всех продуктов в корзине
+        product_ids = [item["product_id"] for item in items]
+        
+        # Получаем информацию о продуктах
+        products_info = await product_api.get_products_info(product_ids) if product_ids else {}
+        
+        # Создаем элементы корзины
+        cart_items = []
+        total_items = 0
+        total_price = 0
+        
+        for idx, item in enumerate(items):
+            product_id = item["product_id"]
+            quantity = item["quantity"]
+            product_info = products_info.get(product_id)
+            
+            if not product_info:
+                logger.warning(f"Не удалось получить информацию о продукте ID={product_id}")
+                continue
+            
+            # Создаем объект ProductInfoSchema
+            product_schema = ProductInfoSchema(
+                id=product_info["id"],
+                name=product_info["name"],
+                price=product_info["price"],
+                image=product_info.get("image"),
+                stock=product_info["stock"]
+            )
+            
+            # Добавляем элемент корзины (используем idx как временный ID)
+            cart_items.append(CartItemSchema(
+                id=idx,  # Используем индекс как ID для анонимной корзины
+                product_id=product_id,
+                quantity=quantity,
+                added_at=datetime.now(),
+                updated_at=datetime.now(),
+                product=product_schema
+            ))
+            
+            # Обновляем общие показатели корзины
+            total_items += quantity
+            total_price += product_info["price"] * quantity
+        
+        # Создаем CartSchema
+        return CartSchema(
+            id=0,
+            user_id=None,
+            session_id=None,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            items=cart_items,
+            total_items=total_items,
+            total_price=total_price
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка при преобразовании корзины из куки в схему: {str(e)}")
+        # В случае ошибки возвращаем пустую корзину
+        return CartSchema(
+            id=0,
+            user_id=None,
+            session_id=None,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            items=[],
+            total_items=0,
+            total_price=0
+        )
+
 @app.get("/", tags=["Статус"])
 async def root():
     """
@@ -235,95 +424,158 @@ async def root():
 async def get_cart(
     response: Response,
     user: Optional[User] = Depends(get_current_user),
-    session_id: str = Depends(get_session_id),
+    cart_cookie: Optional[str] = Cookie(None, alias="cart_data"),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    Получает корзину пользователя или создает новую
+    Получает корзину пользователя или создает новую.
+    Для авторизованных пользователей корзина хранится в БД.
+    Для анонимных пользователей корзина хранится только в куках.
     """
-    logger.info(f"Запрос корзины: user={user.id if user else 'Anonymous'}, session_id={session_id}")
+    logger.info(f"Запрос корзины: user={user.id if user else 'Anonymous'}")
     
     try:
-        # Проверяем кэш корзины
-        cache_key = None
+        # Для авторизованных пользователей используем БД
         if user:
+            # Проверяем кэш корзины
             cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
-        elif session_id:
-            cache_key = f"{CACHE_KEYS['cart_session']}{session_id}"
-        
-        if cache_key:
             cached_cart = await cache_get(cache_key)
+            
             if cached_cart:
                 logger.info(f"Корзина получена из кэша: {cache_key}")
-                # Устанавливаем cookie только для анонимных пользователей
-                if not user and session_id:
-                    response.set_cookie(
-                        key="cart_session_id", 
-                        value=session_id, 
-                        httponly=True, 
-                        max_age=60*60*24*30,  # 30 дней
-                        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
-                    )
                 return CartSchema(**cached_cart)
-        
-        # Если данных в кэше нет, пытаемся найти существующую корзину
-        cart = await get_cart_with_items(db, user, session_id)
-        
-        if not cart:
-            # Создаем новую корзину только если пользователь не авторизован или авторизован, но у него нет корзины
-            logger.info(f"Создание новой корзины: user_id={user.id if user else None}, session_id={None if user else session_id}")
-            new_cart = CartModel(
-                user_id=user.id if user else None,
-                session_id=None if user else session_id
-            )
-            db.add(new_cart)
-            await db.commit()
             
-            # Загружаем созданную корзину с явной загрузкой items (пустой список)
-            query = select(CartModel).options(
-                selectinload(CartModel.items)
-            )
+            # Если данных в кэше нет, пытаемся найти существующую корзину
+            cart = await get_cart_with_items(db, user)
             
-            if user:
-                query = query.filter(CartModel.user_id == user.id)
-            else:
-                query = query.filter(CartModel.session_id == session_id)
+            if not cart:
+                # Создаем новую корзину для авторизованного пользователя
+                logger.info(f"Создание новой корзины для пользователя: user_id={user.id}")
+                new_cart = CartModel(user_id=user.id)
+                db.add(new_cart)
+                await db.commit()
                 
-            result = await db.execute(query)
-            cart = result.scalars().first()
+                # Загружаем созданную корзину с явной загрузкой items (пустой список)
+                query = select(CartModel).options(
+                    selectinload(CartModel.items)
+                ).filter(CartModel.user_id == user.id)
+                    
+                result = await db.execute(query)
+                cart = result.scalars().first()
+                
+                logger.info(f"Новая корзина создана: id={cart.id if cart else 'unknown'}")
+                
+                # Если у пользователя есть анонимная корзина в куках, объединяем их
+                if cart_cookie:
+                    try:
+                        # Десериализуем корзину из куки
+                        cookie_cart = await deserialize_cart_from_cookie(cart_cookie)
+                        cookie_items = cookie_cart.get("items", [])
+                        
+                        if cookie_items:
+                            logger.info(f"Объединение корзины из куки с корзиной пользователя: {len(cookie_items)} товаров")
+                            
+                            # Добавляем каждый товар из cookie_cart в корзину пользователя
+                            for item in cookie_items:
+                                product_id = item["product_id"]
+                                quantity = item["quantity"]
+                                
+                                # Проверяем, есть ли уже такой товар в корзине
+                                existing_item = await CartItemModel.get_item_by_product(db, cart.id, product_id)
+                                
+                                if existing_item:
+                                    # Увеличиваем количество
+                                    existing_item.quantity += quantity
+                                    existing_item.updated_at = datetime.now()
+                                else:
+                                    # Добавляем новый товар
+                                    new_item = CartItemModel(
+                                        cart_id=cart.id,
+                                        product_id=product_id,
+                                        quantity=quantity
+                                    )
+                                    db.add(new_item)
+                            
+                            await db.commit()
+                            
+                            # Перезагружаем корзину с обновленными товарами
+                            query = select(CartModel).options(
+                                selectinload(CartModel.items)
+                            ).filter(CartModel.id == cart.id)
+                            
+                            result = await db.execute(query)
+                            cart = result.scalars().first()
+                            
+                            # Удаляем куку с анонимной корзиной
+                            response.delete_cookie(key="cart_data")
+                            logger.info("Кука с анонимной корзиной удалена после объединения")
+                    except Exception as e:
+                        logger.error(f"Ошибка при объединении корзин: {str(e)}")
             
-            logger.info(f"Новая корзина создана: id={cart.id if cart else 'unknown'}")
-        
-        # Устанавливаем или обновляем cookie с session_id, если пользователь не авторизован
-        if not user and session_id:
-            # Обновляем куку только для анонимных пользователей
+            # Обогащаем корзину данными о продуктах
+            enriched_cart = await enrich_cart_with_product_data(cart)
+            
+            # Кэшируем результат
+            if enriched_cart:
+                await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
+                logger.info(f"Корзина сохранена в кэш: {cache_key}")
+            
+            logger.info(f"Корзина пользователя успешно получена: id={cart.id}, items={len(cart.items) if hasattr(cart, 'items') and cart.items else 0}")
+            
+            return enriched_cart
+            
+        # Для анонимных пользователей используем куки
+        else:
+            # Пытаемся получить корзину из куки
+            if cart_cookie:
+                logger.info("Получение корзины из куки для анонимного пользователя")
+                cookie_cart = await deserialize_cart_from_cookie(cart_cookie)
+                enriched_cart = await cookie_cart_to_schema(cookie_cart)
+                
+                # Обновляем куку с текущей корзиной
+                serialized_cart = await serialize_cart_for_cookie(enriched_cart.model_dump())
+                response.set_cookie(
+                    key="cart_data",
+                    value=serialized_cart,
+                    httponly=True,
+                    max_age=60*60*24*30,  # 30 дней
+                    secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
+                )
+                
+                return enriched_cart
+            
+            # Если куки нет, создаем пустую корзину
+            logger.info("Создание новой пустой корзины для анонимного пользователя")
+            empty_cart = CartSchema(
+                id=0,
+                user_id=None,
+                session_id=None,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                items=[],
+                total_items=0,
+                total_price=0
+            )
+            
+            # Устанавливаем куку с пустой корзиной
+            serialized_cart = await serialize_cart_for_cookie(empty_cart.model_dump())
             response.set_cookie(
-                key="cart_session_id", 
-                value=session_id, 
-                httponly=True, 
+                key="cart_data",
+                value=serialized_cart,
+                httponly=True,
                 max_age=60*60*24*30,  # 30 дней
                 secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
             )
-            logger.info(f"Обновлена/установлена cookie cart_session_id={session_id}")
-        
-        # Обогащаем корзину данными о продуктах
-        enriched_cart = await enrich_cart_with_product_data(cart)
-        
-        # Кэшируем результат
-        if cache_key and enriched_cart:
-            await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
-            logger.info(f"Корзина сохранена в кэш: {cache_key}")
-        
-        logger.info(f"Корзина успешно получена: id={cart.id}, items={len(cart.items) if hasattr(cart, 'items') and cart.items else 0}")
-        
-        return enriched_cart
+            
+            return empty_cart
+            
     except Exception as e:
         logger.error(f"Ошибка при получении корзины: {str(e)}")
         # В случае ошибки возвращаем пустую корзину
         return CartSchema(
             id=0,
             user_id=user.id if user else None,
-            session_id=None if user else session_id,
+            session_id=None,
             created_at=datetime.now(),
             updated_at=datetime.now(),
             items=[],
@@ -336,28 +588,15 @@ async def add_item_to_cart(
     item: CartItemAddSchema,
     response: Response,
     user: Optional[User] = Depends(get_current_user),
-    session_id: str = Depends(get_session_id),
+    cart_cookie: Optional[str] = Cookie(None, alias="cart_data"),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    Добавляет товар в корзину
+    Добавляет товар в корзину.
+    Для авторизованных пользователей корзина хранится в БД.
+    Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info(f"Запрос добавления товара в корзину: product_id={item.product_id}, quantity={item.quantity}, user={user.id if user else 'Anonymous'}, session_id={session_id}")
-    
-    # Проверяем и обрабатываем ситуацию с анонимным пользователем
-    if not user and not session_id:
-        # Если нет ни пользователя, ни session_id, создаем новый session_id
-        session_id = str(uuid.uuid4())
-        logger.info(f"Создан новый session_id: {session_id}")
-        
-        # Устанавливаем куку с новым session_id
-        response.set_cookie(
-            key="cart_session_id", 
-            value=session_id, 
-            httponly=True, 
-            max_age=60*60*24*30,  # 30 дней
-            secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
-        )
+    logger.info(f"Запрос добавления товара в корзину: product_id={item.product_id}, quantity={item.quantity}, user={user.id if user else 'Anonymous'}")
     
     # Проверяем наличие товара на складе
     stock_check = await product_api.check_product_stock(item.product_id, item.quantity)
@@ -370,318 +609,496 @@ async def add_item_to_cart(
             "error": stock_check["error"]
         }
     
-    # Ищем или создаем корзину
-    cart = await get_cart_with_items(db, user, session_id)
-    
-    if not cart:
-        # Создаем новую корзину
-        logger.info(f"Создание новой корзины: user_id={user.id if user else None}, session_id={None if user else session_id}")
-        new_cart = CartModel(
-            user_id=user.id if user else None,
-            session_id=None if user else session_id
-        )
-        db.add(new_cart)
-        await db.commit()
-        
-        # Загружаем созданную корзину с явной загрузкой items (пустой список)
-        query = select(CartModel).options(
-            selectinload(CartModel.items)
-        )
-        
+    try:
+        # Для авторизованных пользователей используем БД
         if user:
-            query = query.filter(CartModel.user_id == user.id)
-        else:
-            query = query.filter(CartModel.session_id == session_id)
+            # Ищем или создаем корзину
+            cart = await get_cart_with_items(db, user)
             
-        result = await db.execute(query)
-        cart = result.scalars().first()
-        
-        logger.info(f"Новая корзина создана: id={cart.id if cart else 'unknown'}")
-    
-    # Проверяем, есть ли уже такой товар в корзине
-    existing_item = await CartItemModel.get_item_by_product(db, cart.id, item.product_id)
-    
-    if existing_item:
-        # Проверяем, можно ли добавить еще товаров
-        total_quantity = existing_item.quantity + item.quantity
-        stock_check = await product_api.check_product_stock(item.product_id, total_quantity)
-        
-        if not stock_check["success"]:
-            logger.warning(f"Недостаточно товара на складе: product_id={item.product_id}, requested={total_quantity}, available={stock_check.get('available_stock')}")
+            if not cart:
+                # Создаем новую корзину
+                logger.info(f"Создание новой корзины: user_id={user.id}")
+                new_cart = CartModel(user_id=user.id)
+                db.add(new_cart)
+                await db.commit()
+                
+                # Загружаем созданную корзину с явной загрузкой items (пустой список)
+                query = select(CartModel).options(
+                    selectinload(CartModel.items)
+                ).filter(CartModel.user_id == user.id)
+                    
+                result = await db.execute(query)
+                cart = result.scalars().first()
+                
+                logger.info(f"Новая корзина создана: id={cart.id if cart else 'unknown'}")
+            
+            # Проверяем, есть ли уже такой товар в корзине
+            existing_item = await CartItemModel.get_item_by_product(db, cart.id, item.product_id)
+            
+            if existing_item:
+                # Увеличиваем количество
+                logger.info(f"Обновление существующего товара в корзине: id={existing_item.id}, новое количество={existing_item.quantity + item.quantity}")
+                existing_item.quantity += item.quantity
+                existing_item.updated_at = datetime.now()
+            else:
+                # Добавляем новый товар
+                logger.info(f"Добавление нового товара в корзину: product_id={item.product_id}, quantity={item.quantity}")
+                new_item = CartItemModel(
+                    cart_id=cart.id,
+                    product_id=item.product_id,
+                    quantity=item.quantity
+                )
+                db.add(new_item)
+            
+            # Обновляем timestamp корзины
+            cart.updated_at = datetime.now()
+            
+            await db.commit()
+            
+            # Загружаем обновленную корзину
+            query = select(CartModel).options(
+                selectinload(CartModel.items)
+            ).filter(CartModel.id == cart.id)
+            
+            result = await db.execute(query)
+            updated_cart = result.scalars().first()
+            
+            if not updated_cart:
+                logger.error(f"Не удалось получить обновленную корзину после добавления товара")
+                return {
+                    "success": False,
+                    "message": "Ошибка при добавлении товара в корзину",
+                    "error": "Не удалось получить обновленную корзину"
+                }
+            
+            # Обогащаем корзину данными о продуктах
+            enriched_cart = await enrich_cart_with_product_data(updated_cart)
+            
+            # Инвалидируем кэш корзины
+            await invalidate_user_cart_cache(user.id)
+            
             return {
-                "success": False,
-                "message": "Ошибка при добавлении товара в корзину",
-                "error": stock_check["error"]
+                "success": True,
+                "message": "Товар успешно добавлен в корзину",
+                "cart": enriched_cart
             }
         
-        # Обновляем количество
-        existing_item.quantity = total_quantity
-        logger.info(f"Обновлено количество существующего товара в корзине: cart_id={cart.id}, product_id={item.product_id}, quantity={total_quantity}")
-    else:
-        # Добавляем новый товар в корзину
-        new_item = CartItemModel(
-            cart_id=cart.id,
-            product_id=item.product_id,
-            quantity=item.quantity
-        )
-        db.add(new_item)
-        logger.info(f"Добавлен новый товар в корзину: cart_id={cart.id}, product_id={item.product_id}, quantity={item.quantity}")
-    
-    # Принудительно обновляем timestamp корзины
-    cart.updated_at = datetime.now()
-    await db.commit()
-    
-    # Получаем обновленную корзину с явной загрузкой элементов
-    query = select(CartModel).options(
-        selectinload(CartModel.items)
-    )
-    
-    if user:
-        query = query.filter(CartModel.user_id == user.id)
-    else:
-        query = query.filter(CartModel.session_id == session_id)
-        
-    result = await db.execute(query)
-    updated_cart = result.scalars().first()
-    
-    if not updated_cart:
-        logger.error(f"Не удалось получить обновленную корзину после добавления товара")
+        # Для анонимных пользователей используем куки
+        else:
+            # Получаем текущую корзину из куки
+            current_cart = {"items": []}
+            if cart_cookie:
+                current_cart = await deserialize_cart_from_cookie(cart_cookie)
+            
+            # Проверяем, есть ли уже такой товар в корзине
+            found = False
+            for cart_item in current_cart["items"]:
+                if cart_item["product_id"] == item.product_id:
+                    # Увеличиваем количество
+                    cart_item["quantity"] += item.quantity
+                    found = True
+                    logger.info(f"Обновление существующего товара в корзине (куки): product_id={item.product_id}, новое количество={cart_item['quantity']}")
+                    break
+            
+            # Если товар не найден, добавляем новый
+            if not found:
+                current_cart["items"].append({
+                    "product_id": item.product_id,
+                    "quantity": item.quantity
+                })
+                logger.info(f"Добавление нового товара в корзину (куки): product_id={item.product_id}, quantity={item.quantity}")
+            
+            # Преобразуем корзину в полный формат с информацией о продуктах
+            enriched_cart = await cookie_cart_to_schema(current_cart)
+            
+            # Сериализуем и сохраняем в куки
+            serialized_cart = await serialize_cart_for_cookie(enriched_cart.model_dump())
+            response.set_cookie(
+                key="cart_data",
+                value=serialized_cart,
+                httponly=True,
+                max_age=60*60*24*30,  # 30 дней
+                secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
+            )
+            
+            return {
+                "success": True,
+                "message": "Товар успешно добавлен в корзину",
+                "cart": enriched_cart
+            }
+            
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении товара в корзину: {str(e)}")
         return {
             "success": False,
             "message": "Ошибка при добавлении товара в корзину",
-            "error": "Не удалось получить обновленную корзину"
+            "error": str(e)
         }
-    
-    # Обогащаем корзину данными о продуктах
-    enriched_cart = await enrich_cart_with_product_data(updated_cart)
-    
-    # Инвалидируем кэш корзины
-    if user:
-        await invalidate_user_cart_cache(user.id)
-    elif session_id:
-        await invalidate_session_cart_cache(session_id)
-    
-    return {
-        "success": True,
-        "message": "Товар успешно добавлен в корзину",
-        "cart": enriched_cart
-    }
 
 @app.put("/cart/items/{item_id}", response_model=CartResponseSchema, tags=["Корзина"])
 async def update_cart_item(
     item_id: int,
     item_data: CartItemUpdateSchema,
+    response: Response,
     user: Optional[User] = Depends(get_current_user),
-    session_id: str = Depends(get_session_id),
+    cart_cookie: Optional[str] = Cookie(None, alias="cart_data"),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    Обновляет количество товара в корзине
+    Обновляет количество товара в корзине.
+    Для авторизованных пользователей корзина хранится в БД.
+    Для анонимных пользователей корзина хранится в куках.
     """
-    # Ищем корзину
-    cart = await get_cart_with_items(db, user, session_id)
+    logger.info(f"Запрос обновления количества товара: item_id={item_id}, quantity={item_data.quantity}, user={user.id if user else 'Anonymous'}")
     
-    if not cart:
-        raise HTTPException(status_code=404, detail="Корзина не найдена")
+    # Проверяем допустимость количества
+    if item_data.quantity <= 0:
+        return {
+            "success": False,
+            "message": "Количество товара должно быть больше нуля",
+            "error": "Некорректное количество товара"
+        }
     
-    # Ищем элемент корзины
-    query = select(CartItemModel).filter(CartItemModel.id == item_id, CartItemModel.cart_id == cart.id)
-    result = await db.execute(query)
-    cart_item = result.scalars().first()
-    
-    if not cart_item:
-        raise HTTPException(status_code=404, detail="Товар в корзине не найден")
-    
-    # Проверяем наличие товара на складе
-    stock_check = await product_api.check_product_stock(cart_item.product_id, item_data.quantity)
-    
-    if not stock_check["success"]:
+    try:
+        # Для авторизованных пользователей используем БД
+        if user:
+            # Получаем элемент корзины
+            query = select(CartItemModel).join(CartModel).filter(
+                CartItemModel.id == item_id,
+                CartModel.user_id == user.id
+            )
+            
+            result = await db.execute(query)
+            cart_item = result.scalars().first()
+            
+            if not cart_item:
+                logger.warning(f"Элемент корзины не найден: item_id={item_id}, user_id={user.id}")
+                return {
+                    "success": False,
+                    "message": "Товар не найден в корзине",
+                    "error": "Элемент корзины не найден"
+                }
+            
+            # Проверяем доступность товара на складе
+            stock_check = await product_api.check_product_stock(cart_item.product_id, item_data.quantity)
+            
+            if not stock_check["success"]:
+                logger.warning(f"Недостаточно товара на складе: product_id={cart_item.product_id}, requested={item_data.quantity}, available={stock_check.get('available_stock')}")
+                return {
+                    "success": False,
+                    "message": "Ошибка при обновлении количества товара",
+                    "error": stock_check["error"]
+                }
+            
+            # Обновляем количество товара
+            cart_id = cart_item.cart_id  # Запоминаем ID корзины
+            
+            # Используем SQL-запрос вместо прямого присваивания, чтобы избежать проблем с greenlet
+            update_item_stmt = (
+                update(CartItemModel)
+                .where(CartItemModel.id == item_id)
+                .values(quantity=item_data.quantity, updated_at=datetime.now())
+            )
+            await db.execute(update_item_stmt)
+            
+            # Отдельно обновляем timestamp корзины
+            update_cart_stmt = (
+                update(CartModel)
+                .where(CartModel.id == cart_id)
+                .values(updated_at=datetime.now())
+            )
+            await db.execute(update_cart_stmt)
+            
+            # Фиксируем транзакцию
+            await db.commit()
+            
+            # Получаем обновленную корзину
+            cart = await get_cart_with_items(db, user)
+            
+            # Обогащаем данными о продуктах
+            enriched_cart = await enrich_cart_with_product_data(cart)
+            
+            # Инвалидируем кэш корзины
+            await invalidate_user_cart_cache(user.id)
+            
+            return {
+                "success": True,
+                "message": "Количество товара успешно обновлено",
+                "cart": enriched_cart
+            }
+        # Для анонимных пользователей используем куки
+        else:
+            # Получаем текущую корзину из куки
+            if not cart_cookie:
+                logger.warning("Попытка обновить товар в несуществующей корзине (куки отсутствуют)")
+                return {
+                    "success": False,
+                    "message": "Корзина не найдена",
+                    "error": "Корзина не найдена"
+                }
+            
+            current_cart = await deserialize_cart_from_cookie(cart_cookie)
+            
+            # Ищем товар в корзине по индексу (item_id используется как индекс для анонимных корзин)
+            if item_id < 0 or item_id >= len(current_cart.get("items", [])):
+                logger.warning(f"Элемент корзины с индексом {item_id} не найден в куки")
+                return {
+                    "success": False,
+                    "message": "Товар не найден в корзине",
+                    "error": "Элемент корзины не найден"
+                }
+            
+            # Получаем товар по индексу
+            cart_item = current_cart["items"][item_id]
+            product_id = cart_item["product_id"]
+            
+            # Проверяем доступность товара на складе
+            stock_check = await product_api.check_product_stock(product_id, item_data.quantity)
+            
+            if not stock_check["success"]:
+                logger.warning(f"Недостаточно товара на складе: product_id={product_id}, requested={item_data.quantity}, available={stock_check.get('available_stock')}")
+                return {
+                    "success": False,
+                    "message": "Ошибка при обновлении количества товара",
+                    "error": stock_check["error"]
+                }
+            
+            # Обновляем количество товара
+            current_cart["items"][item_id]["quantity"] = item_data.quantity
+            logger.info(f"Обновлено количество товара в корзине (куки): product_id={product_id}, quantity={item_data.quantity}")
+            
+            # Преобразуем корзину в полный формат с информацией о продуктах
+            enriched_cart = await cookie_cart_to_schema(current_cart)
+            
+            # Сериализуем и сохраняем в куки
+            serialized_cart = await serialize_cart_for_cookie(enriched_cart.model_dump())
+            response.set_cookie(
+                key="cart_data",
+                value=serialized_cart,
+                httponly=True,
+                max_age=60*60*24*30,  # 30 дней
+                secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
+            )
+            
+            return {
+                "success": True,
+                "message": "Количество товара успешно обновлено",
+                "cart": enriched_cart
+            }
+            
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении количества товара: {str(e)}")
         return {
             "success": False,
             "message": "Ошибка при обновлении количества товара",
-            "error": stock_check["error"]
+            "error": str(e)
         }
-    
-    # Обновляем количество
-    cart_item.quantity = item_data.quantity
-    
-    # Принудительно обновляем timestamp корзины
-    cart.updated_at = datetime.now()
-    
-    await db.commit()
-    
-    # Получаем обновленную корзину с явной загрузкой элементов
-    query = select(CartModel).options(
-        selectinload(CartModel.items)
-    ).filter(CartModel.id == cart.id)
-    
-    result = await db.execute(query)
-    updated_cart = result.scalars().first()
-    
-    # Обогащаем данными о продуктах
-    enriched_cart = await enrich_cart_with_product_data(updated_cart)
-    
-    # Инвалидируем кэш корзины
-    if user:
-        await invalidate_user_cart_cache(user.id)
-    elif session_id:
-        await invalidate_session_cart_cache(session_id)
-    
-    return {
-        "success": True,
-        "message": "Количество товара успешно обновлено",
-        "cart": enriched_cart
-    }
 
 @app.delete("/cart/items/{item_id}", response_model=CartResponseSchema, tags=["Корзина"])
 async def remove_cart_item(
     item_id: int,
     response: Response,
     user: Optional[User] = Depends(get_current_user),
-    session_id: str = Depends(get_session_id),
+    cart_cookie: Optional[str] = Cookie(None, alias="cart_data"),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    Удаляет товар из корзины
+    Удаляет товар из корзины.
+    Для авторизованных пользователей корзина хранится в БД.
+    Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info(f"Запрос на удаление товара из корзины: item_id={item_id}, user={user.id if user else 'Anonymous'}, session_id={session_id}")
+    logger.info(f"Запрос удаления товара из корзины: item_id={item_id}, user={user.id if user else 'Anonymous'}")
     
     try:
-        # Проверяем и обрабатываем ситуацию с анонимным пользователем
-        if not user and not session_id:
-            logger.warning("Попытка удаления товара без авторизации и session_id")
-            raise HTTPException(status_code=400, detail="Не найдена сессия для анонимного пользователя")
-        
-        # Ищем корзину
-        cart = await get_cart_with_items(db, user, session_id)
-        
-        if not cart:
-            logger.warning(f"Корзина не найдена для: user={user.id if user else 'Anonymous'}, session_id={session_id}")
-            raise HTTPException(status_code=404, detail="Корзина не найдена")
-        
-        # Ищем элемент корзины
-        query = select(CartItemModel).filter(CartItemModel.id == item_id, CartItemModel.cart_id == cart.id)
-        result = await db.execute(query)
-        cart_item = result.scalars().first()
-        
-        if not cart_item:
-            logger.warning(f"Товар в корзине не найден: item_id={item_id}, cart_id={cart.id}")
-            raise HTTPException(status_code=404, detail="Товар в корзине не найден")
-        
-        # Запоминаем ID продукта для логирования
-        product_id = cart_item.product_id
-        
-        # Удаляем элемент
-        await db.delete(cart_item)
-        
-        # Принудительно обновляем timestamp корзины
-        cart.updated_at = datetime.now()
-        
-        await db.commit()
-        logger.info(f"Товар удален из корзины: item_id={item_id}, product_id={product_id}, cart_id={cart.id}")
-        
-        # Получаем обновленную корзину с перезагрузкой элементов
-        query = select(CartModel).options(
-            selectinload(CartModel.items)
-        ).filter(CartModel.id == cart.id)
-        
-        result = await db.execute(query)
-        updated_cart = result.scalars().first()
-        
-        # Обогащаем данными о продуктах
-        enriched_cart = await enrich_cart_with_product_data(updated_cart)
-        
-        # Инвалидируем кэш корзины
+        # Для авторизованных пользователей используем БД
         if user:
+            # Получаем элемент корзины
+            query = select(CartItemModel).join(CartModel).filter(
+                CartItemModel.id == item_id,
+                CartModel.user_id == user.id
+            )
+            
+            result = await db.execute(query)
+            cart_item = result.scalars().first()
+            
+            if not cart_item:
+                logger.warning(f"Элемент корзины не найден: item_id={item_id}, user_id={user.id}")
+                return {
+                    "success": False,
+                    "message": "Товар не найден в корзине",
+                    "error": "Элемент корзины не найден"
+                }
+            
+            # Запоминаем ID корзины для последующей загрузки
+            cart_id = cart_item.cart_id
+            
+            # Удаляем элемент корзины
+            await db.delete(cart_item)
+            
+            # Обновляем timestamp корзины
+            query = select(CartModel).filter(CartModel.id == cart_id)
+            result = await db.execute(query)
+            cart = result.scalars().first()
+            
+            if cart:
+                cart.updated_at = datetime.now()
+            
+            await db.commit()
+            
+            # Загружаем обновленную корзину
+            cart = await get_cart_with_items(db, user)
+            
+            # Обогащаем данными о продуктах
+            enriched_cart = await enrich_cart_with_product_data(cart)
+            
+            # Инвалидируем кэш корзины
             await invalidate_user_cart_cache(user.id)
-        elif session_id:
-            await invalidate_session_cart_cache(session_id)
-        
-        logger.info(f"Успешно получена обновленная корзина после удаления товара: cart_id={cart.id}")
-        
-        return {
-            "success": True,
-            "message": "Товар успешно удален из корзины",
-            "cart": enriched_cart
-        }
-    except HTTPException as he:
-        # Пробрасываем HTTP исключения
-        raise he
+            
+            return {
+                "success": True,
+                "message": "Товар успешно удален из корзины",
+                "cart": enriched_cart
+            }
+            
+        # Для анонимных пользователей используем куки
+        else:
+            # Получаем текущую корзину из куки
+            if not cart_cookie:
+                logger.warning("Попытка удалить товар из несуществующей корзины (куки отсутствуют)")
+                return {
+                    "success": False,
+                    "message": "Корзина не найдена",
+                    "error": "Корзина не найдена"
+                }
+            
+            current_cart = await deserialize_cart_from_cookie(cart_cookie)
+            
+            # Ищем товар в корзине по индексу
+            if item_id < 0 or item_id >= len(current_cart.get("items", [])):
+                logger.warning(f"Элемент корзины с индексом {item_id} не найден в куки")
+                return {
+                    "success": False,
+                    "message": "Товар не найден в корзине",
+                    "error": "Элемент корзины не найден"
+                }
+            
+            # Удаляем товар по индексу
+            removed_item = current_cart["items"].pop(item_id)
+            logger.info(f"Удален товар из корзины (куки): product_id={removed_item['product_id']}")
+            
+            # Преобразуем корзину в полный формат с информацией о продуктах
+            enriched_cart = await cookie_cart_to_schema(current_cart)
+            
+            # Сериализуем и сохраняем в куки
+            serialized_cart = await serialize_cart_for_cookie(enriched_cart.model_dump())
+            response.set_cookie(
+                key="cart_data",
+                value=serialized_cart,
+                httponly=True,
+                max_age=60*60*24*30,  # 30 дней
+                secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
+            )
+            
+            return {
+                "success": True,
+                "message": "Товар успешно удален из корзины",
+                "cart": enriched_cart
+            }
+            
     except Exception as e:
         logger.error(f"Ошибка при удалении товара из корзины: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка при удалении товара: {str(e)}")
+        return {
+            "success": False,
+            "message": "Ошибка при удалении товара из корзины",
+            "error": str(e)
+        }
 
 @app.get("/cart/summary", response_model=CartSummarySchema, tags=["Корзина"])
 async def get_cart_summary(
     response: Response,
     user: Optional[User] = Depends(get_current_user),
-    session_id: str = Depends(get_session_id),
+    cart_cookie: Optional[str] = Cookie(None, alias="cart_data"),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    Получает сводную информацию о корзине (количество товаров, общая сумма)
+    Получает сводную информацию о корзине (количество товаров, общая сумма).
+    Для авторизованных пользователей корзина хранится в БД.
+    Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info(f"Запрос сводной информации о корзине: user={user.id if user else 'Anonymous'}, session_id={session_id}")
+    logger.info(f"Запрос сводной информации о корзине: user={user.id if user else 'Anonymous'}")
     
     try:
-        # Проверяем кэш
-        cache_key = None
+        # Для авторизованных пользователей используем БД и кэш
         if user:
+            # Проверяем кэш
             cache_key = f"{CACHE_KEYS['cart_summary_user']}{user.id}"
-        elif session_id:
-            cache_key = f"{CACHE_KEYS['cart_summary_session']}{session_id}"
-        
-        if cache_key:
             cached_summary = await cache_get(cache_key)
             if cached_summary:
                 logger.info(f"Сводка корзины получена из кэша: {cache_key}")
                 return CartSummarySchema(**cached_summary)
-        
-        # Если данных в кэше нет, получаем корзину из БД
-        cart = await get_cart_with_items(db, user, session_id)
-        
-        if not cart or not cart.items:
-            # Если корзина не найдена или пуста
+            
+            # Если данных в кэше нет, получаем корзину из БД
+            cart = await get_cart_with_items(db, user)
+            
+            if not cart or not cart.items:
+                # Если корзина не найдена или пуста
+                summary = CartSummarySchema(
+                    total_items=0,
+                    total_price=0
+                )
+                
+                # Кэшируем результат
+                await cache_set(cache_key, summary.model_dump(), CACHE_TTL["cart_summary"])
+                    
+                return summary
+            
+            # Обрабатываем существующую корзину
+            # Собираем ID всех продуктов в корзине
+            product_ids = [item.product_id for item in cart.items]
+            
+            # Получаем информацию о продуктах
+            products_info = await product_api.get_products_info(product_ids) if product_ids else {}
+            
+            # Вычисляем общее количество товаров и сумму
+            total_items = 0
+            total_price = 0
+            
+            for item in cart.items:
+                product_info = products_info.get(item.product_id)
+                if product_info:
+                    total_items += item.quantity
+                    total_price += product_info["price"] * item.quantity
+            
+            # Формируем ответ
             summary = CartSummarySchema(
-                total_items=0,
-                total_price=0
+                total_items=total_items,
+                total_price=total_price
             )
             
             # Кэшируем результат
-            if cache_key:
-                await cache_set(cache_key, summary.model_dump(), CACHE_TTL["cart_summary"])
-                
+            await cache_set(cache_key, summary.model_dump(), CACHE_TTL["cart_summary"])
+            logger.info(f"Сводка корзины пользователя сохранена в кэш: {cache_key}")
+            
             return summary
         
-        # Обрабатываем существующую корзину
-        # Собираем ID всех продуктов в корзине
-        product_ids = [item.product_id for item in cart.items]
-        
-        # Получаем информацию о продуктах
-        products_info = await product_api.get_products_info(product_ids) if product_ids else {}
-        
-        # Вычисляем общее количество товаров и сумму
-        total_items = 0
-        total_price = 0
-        
-        for item in cart.items:
-            product_info = products_info.get(item.product_id)
-            if product_info:
-                total_items += item.quantity
-                total_price += product_info["price"] * item.quantity
-        
-        # Формируем ответ
-        summary = CartSummarySchema(
-            total_items=total_items,
-            total_price=total_price
-        )
-        
-        # Кэшируем результат
-        if cache_key:
-            await cache_set(cache_key, summary.model_dump(), CACHE_TTL["cart_summary"])
-            logger.info(f"Сводка корзины сохранена в кэш: {cache_key}")
-        
-        return summary
+        # Для анонимных пользователей используем куки
+        else:
+            # Получаем корзину из куки
+            if cart_cookie:
+                cookie_cart = await deserialize_cart_from_cookie(cart_cookie)
+                enriched_cart = await cookie_cart_to_schema(cookie_cart)
+                
+                # Возвращаем сводную информацию из обогащенной корзины
+                return CartSummarySchema(
+                    total_items=enriched_cart.total_items,
+                    total_price=enriched_cart.total_price
+                )
+            
+            # Если куки нет, возвращаем пустую сводку
+            return CartSummarySchema(
+                total_items=0,
+                total_price=0
+            )
     except Exception as e:
         logger.error(f"Ошибка при получении сводной информации о корзине: {str(e)}")
         # В случае ошибки возвращаем пустые данные
@@ -692,88 +1109,130 @@ async def get_cart_summary(
 
 @app.delete("/cart", response_model=CartResponseSchema, tags=["Корзина"])
 async def clear_cart(
+    response: Response,
     user: Optional[User] = Depends(get_current_user),
-    session_id: str = Depends(get_session_id),
+    cart_cookie: Optional[str] = Cookie(None, alias="cart_data"),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    Очищает корзину пользователя
+    Очищает корзину пользователя.
+    Для авторизованных пользователей корзина хранится в БД.
+    Для анонимных пользователей корзина хранится в куках.
     """
-    # Ищем корзину
-    cart = await get_cart_with_items(db, user, session_id)
+    logger.info(f"Запрос очистки корзины: user={user.id if user else 'Anonymous'}")
     
-    if not cart:
-        raise HTTPException(status_code=404, detail="Корзина не найдена")
-    
-    # Проверяем, что cart.items не None
-    items = getattr(cart, 'items', None)
-    
-    # Удаляем все элементы, если они есть
-    if items:
-        for item in items:
-            await db.delete(item)
-        
-        # Принудительно обновляем timestamp корзины
-        cart.updated_at = datetime.now()
-        
-        await db.commit()
-    
-    # После удаления всех элементов, нам нужно явно перезагрузить корзину
-    # с пустым списком элементов
-    query = select(CartModel).options(
-        selectinload(CartModel.items)
-    ).filter(CartModel.id == cart.id)
-    
-    result = await db.execute(query)
-    cart = result.scalars().first()
-    
-    # Обогащаем данными о продуктах (пустая корзина)
-    enriched_cart = await enrich_cart_with_product_data(cart)
-    
-    # Инвалидируем кэш корзины
-    if user:
-        await invalidate_user_cart_cache(user.id)
-    elif session_id:
-        await invalidate_session_cart_cache(session_id)
-    
-    return {
-        "success": True,
-        "message": "Корзина успешно очищена",
-        "cart": enriched_cart
-    }
+    try:
+        # Для авторизованных пользователей используем БД
+        if user:
+            # Ищем корзину
+            cart = await get_cart_with_items(db, user)
+            
+            if not cart:
+                logger.warning(f"Корзина не найдена для пользователя: user_id={user.id}")
+                return {
+                    "success": False,
+                    "message": "Корзина не найдена",
+                    "error": "Корзина не найдена"
+                }
+            
+            # Проверяем, что cart.items не None
+            items = getattr(cart, 'items', None)
+            
+            # Удаляем все элементы, если они есть
+            if items:
+                for item in items:
+                    await db.delete(item)
+                
+                # Принудительно обновляем timestamp корзины
+                cart.updated_at = datetime.now()
+                
+                await db.commit()
+            
+            # После удаления всех элементов, нам нужно явно перезагрузить корзину
+            # с пустым списком элементов
+            query = select(CartModel).options(
+                selectinload(CartModel.items)
+            ).filter(CartModel.id == cart.id)
+            
+            result = await db.execute(query)
+            cart = result.scalars().first()
+            
+            # Обогащаем данными о продуктах (пустая корзина)
+            enriched_cart = await enrich_cart_with_product_data(cart)
+            
+            # Инвалидируем кэш корзины
+            await invalidate_user_cart_cache(user.id)
+            
+            return {
+                "success": True,
+                "message": "Корзина успешно очищена",
+                "cart": enriched_cart
+            }
+            
+        # Для анонимных пользователей используем куки
+        else:
+            # Создаем пустую корзину
+            empty_cart = CartSchema(
+                id=0,
+                user_id=None,
+                session_id=None,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                items=[],
+                total_items=0,
+                total_price=0
+            )
+            
+            # Сериализуем и сохраняем в куки
+            serialized_cart = await serialize_cart_for_cookie(empty_cart.model_dump())
+            response.set_cookie(
+                key="cart_data",
+                value=serialized_cart,
+                httponly=True,
+                max_age=60*60*24*30,  # 30 дней
+                secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
+            )
+            
+            logger.info("Корзина в куках успешно очищена")
+            
+            return {
+                "success": True,
+                "message": "Корзина успешно очищена",
+                "cart": empty_cart
+            }
+            
+    except Exception as e:
+        logger.error(f"Ошибка при очистке корзины: {str(e)}")
+        return {
+            "success": False,
+            "message": "Ошибка при очистке корзины",
+            "error": str(e)
+        }
 
 @app.post("/cart/merge", response_model=CartResponseSchema, tags=["Корзина"])
 async def merge_carts(
     response: Response,
     user: User = Depends(get_current_user),
-    session_id: str = Depends(get_session_id),
-    url_session_id: Optional[str] = None,
+    cart_cookie: Optional[str] = Cookie(None, alias="cart_data"),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    Объединяет корзину сессии с корзиной пользователя после авторизации
+    Объединяет корзину из куки с корзиной пользователя после авторизации
     """
-    # Используем session_id из URL, если он предоставлен
-    actual_session_id = url_session_id or session_id
-    
     if not user:
         logger.warning("Попытка объединения корзин без авторизации")
         raise HTTPException(status_code=401, detail="Требуется авторизация")
     
-    logger.info(f"Запрос на объединение корзин: user_id={user.id}, session_id={actual_session_id}")
+    logger.info(f"Запрос на объединение корзин: user_id={user.id}")
     
-    # Ищем корзину по user_id
-    user_cart = await CartModel.get_user_cart(db, user.id)
-    
-    # Ищем корзину по session_id
-    session_cart = await CartModel.get_session_cart(db, actual_session_id)
-    
-    # Проверяем, что session_cart.items не None
-    session_items = getattr(session_cart, 'items', None) if session_cart else None
-    
-    if not session_cart or not session_items:
-        logger.info(f"Нет корзины сессии или она пуста для объединения: session_id={actual_session_id}")
-        # Если нет корзины сессии или она пуста, просто возвращаем корзину пользователя
+    # Проверяем наличие куки с корзиной
+    if not cart_cookie:
+        logger.info(f"Нет куки с корзиной для объединения")
+        
+        # Ищем корзину по user_id
+        user_cart = await CartModel.get_user_cart(db, user.id)
+        
+        # Если нет корзины пользователя, создаем новую
         if not user_cart:
             # Создаем новую корзину для пользователя
             logger.info(f"Создание новой корзины для пользователя: user_id={user.id}")
@@ -792,10 +1251,43 @@ async def merge_carts(
         
         enriched_cart = await enrich_cart_with_product_data(user_cart)
         
-        # Очищаем куку для анонимной корзины, если авторизованный пользователь
-        if user:
-            response.delete_cookie(key="cart_session_id")
-            logger.info("Удалена кука cart_session_id после объединения корзин")
+        return {
+            "success": True,
+            "message": "Корзина не требует объединения",
+            "cart": enriched_cart
+        }
+    
+    # Десериализуем корзину из куки
+    cookie_cart = await deserialize_cart_from_cookie(cart_cookie)
+    cookie_items = cookie_cart.get("items", [])
+    
+    if not cookie_items:
+        logger.info("Корзина в куках пуста, объединение не требуется")
+        
+        # Ищем корзину по user_id
+        user_cart = await CartModel.get_user_cart(db, user.id)
+        
+        # Если нет корзины пользователя, создаем новую
+        if not user_cart:
+            # Создаем новую корзину для пользователя
+            logger.info(f"Создание новой корзины для пользователя: user_id={user.id}")
+            new_cart = CartModel(user_id=user.id)
+            db.add(new_cart)
+            await db.commit()
+            
+            # Загружаем созданную корзину с явной загрузкой items (пустой список)
+            query = select(CartModel).options(
+                selectinload(CartModel.items)
+            ).filter(CartModel.user_id == user.id)
+                
+            result = await db.execute(query)
+            user_cart = result.scalars().first()
+            logger.info(f"Новая корзина создана для пользователя: id={user_cart.id}")
+        
+        enriched_cart = await enrich_cart_with_product_data(user_cart)
+        
+        # Удаляем куку с анонимной корзиной
+        response.delete_cookie(key="cart_data")
         
         return {
             "success": True,
@@ -803,88 +1295,122 @@ async def merge_carts(
             "cart": enriched_cart
         }
     
+    # Ищем корзину пользователя
+    user_cart = await CartModel.get_user_cart(db, user.id)
+    
+    # Если у пользователя нет корзины, создаем новую и добавляем товары из куки
     if not user_cart:
-        # Если у пользователя нет корзины, просто преобразуем session_cart в user_cart
-        logger.info(f"Преобразование корзины сессии в корзину пользователя: session_id={actual_session_id}, user_id={user.id}")
-        session_cart.user_id = user.id
-        session_cart.session_id = None
+        # Создаем новую корзину
+        logger.info(f"Создание новой корзины для пользователя: user_id={user.id}")
+        new_cart = CartModel(user_id=user.id)
+        db.add(new_cart)
         await db.commit()
         
-        enriched_cart = await enrich_cart_with_product_data(session_cart)
+        # Загружаем созданную корзину с пустым списком товаров
+        query = select(CartModel).options(
+            selectinload(CartModel.items)
+        ).filter(CartModel.user_id == user.id)
+            
+        result = await db.execute(query)
+        user_cart = result.scalars().first()
+        logger.info(f"Новая корзина создана для пользователя: id={user_cart.id}")
         
-        # Очищаем куку для анонимной корзины, если авторизованный пользователь
-        if user:
-            response.delete_cookie(key="cart_session_id")
-            logger.info("Удалена кука cart_session_id после объединения корзин")
+        # Добавляем товары из куки в корзину пользователя
+        for item in cookie_items:
+            new_item = CartItemModel(
+                cart_id=user_cart.id,
+                product_id=item["product_id"],
+                quantity=item["quantity"]
+            )
+            db.add(new_item)
+            logger.info(f"Добавлен товар из куки в новую корзину: product_id={item['product_id']}, quantity={item['quantity']}")
+        
+        await db.commit()
+        
+        # Получаем обновленную корзину с товарами
+        query = select(CartModel).options(
+            selectinload(CartModel.items)
+        ).filter(CartModel.id == user_cart.id)
+        
+        result = await db.execute(query)
+        updated_cart = result.scalars().first()
+        
+        enriched_cart = await enrich_cart_with_product_data(updated_cart)
+        
+        # Удаляем куку с анонимной корзиной
+        response.delete_cookie(key="cart_data")
+        logger.info("Куки с анонимной корзиной удалены после переноса")
         
         return {
             "success": True,
-            "message": "Корзина успешно привязана к пользователю",
+            "message": "Товары из анонимной корзины перенесены в корзину пользователя",
             "cart": enriched_cart
         }
     
-    # Объединяем корзины
-    logger.info(f"Объединение корзин: user_cart_id={user_cart.id}, session_cart_id={session_cart.id}")
+    # Объединяем товары из куки с существующей корзиной пользователя
+    logger.info(f"Объединение корзины из куки с корзиной пользователя: user_cart_id={user_cart.id}, товаров в куки: {len(cookie_items)}")
     
-    # Для каждого товара из session_cart добавляем его в user_cart или обновляем количество
-    updated_item_count = 0
-    new_item_count = 0
+    updated_count = 0
+    new_count = 0
     
-    for session_item in session_items:
-        # Ищем такой же товар в корзине пользователя
-        user_item = await CartItemModel.get_item_by_product(db, user_cart.id, session_item.product_id)
+    for item in cookie_items:
+        product_id = item["product_id"]
+        quantity = item["quantity"]
         
-        if user_item:
+        # Проверяем, есть ли уже такой товар в корзине
+        existing_item = await CartItemModel.get_item_by_product(db, user_cart.id, product_id)
+        
+        if existing_item:
             # Проверяем наличие на складе для суммарного количества
-            total_quantity = user_item.quantity + session_item.quantity
-            stock_check = await product_api.check_product_stock(session_item.product_id, total_quantity)
+            total_quantity = existing_item.quantity + quantity
+            stock_check = await product_api.check_product_stock(product_id, total_quantity)
             
             if stock_check["success"]:
-                user_item.quantity = total_quantity
-                updated_item_count += 1
-                logger.info(f"Обновлено количество товара: product_id={session_item.product_id}, новое количество={total_quantity}")
+                existing_item.quantity = total_quantity
+                existing_item.updated_at = datetime.now()
+                updated_count += 1
+                logger.info(f"Обновлено количество товара: product_id={product_id}, новое количество={total_quantity}")
             else:
                 # Если не хватает на складе, устанавливаем максимально доступное количество
-                available_stock = stock_check.get("available_stock", user_item.quantity)
-                user_item.quantity = available_stock
-                updated_item_count += 1
-                logger.info(f"Обновлено количество товара (ограничено наличием): product_id={session_item.product_id}, новое количество={available_stock}")
+                available_stock = stock_check.get("available_stock", existing_item.quantity)
+                existing_item.quantity = available_stock
+                existing_item.updated_at = datetime.now()
+                updated_count += 1
+                logger.info(f"Обновлено количество товара (ограничено наличием): product_id={product_id}, новое количество={available_stock}")
         else:
             # Создаем новый элемент в корзине пользователя
             new_item = CartItemModel(
                 cart_id=user_cart.id,
-                product_id=session_item.product_id,
-                quantity=session_item.quantity
+                product_id=product_id,
+                quantity=quantity
             )
             db.add(new_item)
-            new_item_count += 1
-            logger.info(f"Добавлен новый товар: product_id={session_item.product_id}, количество={session_item.quantity}")
+            new_count += 1
+            logger.info(f"Добавлен новый товар: product_id={product_id}, количество={quantity}")
     
-    # Сохраняем изменения
+    # Обновляем timestamp корзины
+    user_cart.updated_at = datetime.now()
     await db.commit()
     
-    # Удаляем корзину сессии
-    await db.delete(session_cart)
-    await db.commit()
-    logger.info(f"Удалена корзина сессии: id={session_cart.id}")
-    
-    # Получаем обновленную корзину пользователя
+    # Получаем обновленную корзину
     query = select(CartModel).options(
         selectinload(CartModel.items)
     ).filter(CartModel.id == user_cart.id)
     
     result = await db.execute(query)
-    updated_user_cart = result.scalars().first()
+    updated_cart = result.scalars().first()
     
     # Обогащаем данными о продуктах
-    enriched_cart = await enrich_cart_with_product_data(updated_user_cart)
+    enriched_cart = await enrich_cart_with_product_data(updated_cart)
     
-    # Очищаем куку для анонимной корзины, если авторизованный пользователь
-    if user:
-        response.delete_cookie(key="cart_session_id")
-        logger.info("Удалена кука cart_session_id после объединения корзин")
+    # Инвалидируем кэш корзины
+    await invalidate_user_cart_cache(user.id)
     
-    logger.info(f"Корзины успешно объединены: обновлено товаров - {updated_item_count}, добавлено новых - {new_item_count}")
+    # Удаляем куку с анонимной корзиной
+    response.delete_cookie(key="cart_data")
+    logger.info("Куки с анонимной корзиной удалены после объединения")
+    
+    logger.info(f"Корзины успешно объединены: обновлено товаров - {updated_count}, добавлено новых - {new_count}")
     
     return {
         "success": True,

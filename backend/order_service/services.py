@@ -60,6 +60,22 @@ async def create_order(
         logger.error(f"Товары с ID {unavailable_products} недоступны для заказа")
         raise ValueError(f"Товары с ID {unavailable_products} недоступны для заказа")
     
+    # Проверяем, достаточно ли товаров на складе
+    for item in order_data.items:
+        product_id = item.product_id
+        quantity = item.quantity
+        
+        # Получаем информацию о продукте и проверяем доступное количество
+        is_available, product_info = await product_api.check_stock(product_id, quantity)
+        
+        if not is_available:
+            if not product_info:
+                logger.error(f"Товар с ID {product_id} не найден")
+                raise ValueError(f"Товар с ID {product_id} не найден")
+            else:
+                logger.error(f"Недостаточное количество товара {product_id}: запрошено {quantity}, доступно {product_info.stock}")
+                raise ValueError(f"Недостаточное количество товара '{product_info.name}': запрошено {quantity}, доступно {product_info.stock}")
+    
     # Создаем заказ
     total_price = 0  # Будет рассчитано на основе товаров
     

@@ -3,12 +3,13 @@
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useCategories } from "../../context/CategoryContext";
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import ProductSearch from "../ProductSearch";
 import CartIcon from "../cart/CartIcon";
 import { CartProvider } from "../../context/CartContext";
 import ScrollToTopButton from "./ScrollToTopButton";
 import OfflineIndicator from "../common/OfflineIndicator";
+import Toast from "../common/Toast";
 import "../../styles/Layout.css"; // Обновленный путь к стилям
 
 const Layout = () => {
@@ -16,6 +17,27 @@ const Layout = () => {
   const { categories, loading: isLoadingCategories } = useCategories();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const [alert, setAlert] = useState({ show: false, message: '', type: '' });
+  
+  // Обработчик для показа уведомления через Alert
+  useEffect(() => {
+    const handleAlert = (event) => {
+      const { message, type } = event.detail;
+      setAlert({ show: true, message, type });
+      
+      // Автоматически скрываем через 3 секунды
+      setTimeout(() => {
+        setAlert({ show: false, message: '', type: '' });
+      }, 3000);
+    };
+    
+    window.addEventListener('show:toast', handleAlert);
+    
+    return () => {
+      window.removeEventListener('show:toast', handleAlert);
+    };
+  }, []);
 
   useEffect(() => {
     if (!loading) {
@@ -41,6 +63,32 @@ const Layout = () => {
       <div className="d-flex flex-column min-vh-100">
         {/* Индикатор отсутствия подключения */}
         <OfflineIndicator />
+        
+        {/* Bootstrap Alert для критических уведомлений */}
+        {alert.show && (
+          <div 
+            className={`alert alert-${alert.type} alert-dismissible fade show m-3`} 
+            role="alert"
+            style={{ 
+              position: 'fixed', 
+              top: '10px', 
+              right: '10px', 
+              zIndex: 9999,
+              maxWidth: '400px'
+            }}
+          >
+            {alert.message}
+            <button 
+              type="button" 
+              className="btn-close" 
+              onClick={() => setAlert({ show: false, message: '', type: '' })}
+              aria-label="Close"
+            ></button>
+          </div>
+        )}
+        
+        {/* Компонент для всплывающих уведомлений */}
+        <Toast />
         
         <header>
           <nav className="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">

@@ -20,11 +20,20 @@ const AddToCartButton = ({ productId, stock, className = '' }) => {
     }
   };
 
+  // Функция для создания всплывающего уведомления
+  const showToast = (message, type) => {
+    // Создаем и отправляем событие для отображения уведомления
+    window.dispatchEvent(
+      new CustomEvent('show:toast', {
+        detail: { message, type }
+      })
+    );
+  };
+
   // Обработчик добавления в корзину
   const handleAddToCart = async () => {
     if (stock <= 0) {
-      setMessage({ type: 'danger', text: 'Товар отсутствует на складе' });
-      setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+      showToast('Товар отсутствует на складе', 'danger');
       return;
     }
 
@@ -37,17 +46,22 @@ const AddToCartButton = ({ productId, stock, className = '' }) => {
       if (result.success) {
         setMessage({ type: 'success', text: 'Товар добавлен в корзину' });
       } else {
-        setMessage({ type: 'danger', text: result.message });
+        // Показываем ошибку как всплывающее уведомление
+        showToast(result.message, 'danger');
+        
+        // Для ошибок о недостаточном количестве товара не показываем сообщение под кнопкой
+        if (result.message.includes('Недостаточно товара') || 
+            result.message.includes('максимально доступное количество')) {
+          setMessage({ type: '', text: '' });
+        } else {
+          // Для других ошибок оставляем сообщение под кнопкой
+          setMessage({ type: 'danger', text: result.message });
+        }
       }
     } catch (err) {
-      setMessage({ type: 'danger', text: 'Ошибка при добавлении товара в корзину' });
+      showToast('Ошибка при добавлении товара в корзину', 'danger');
     } finally {
       setLoading(false);
-      
-      // Сбрасываем сообщение через 3 секунды
-      setTimeout(() => {
-        setMessage({ type: '', text: '' });
-      }, 3000);
     }
   };
 

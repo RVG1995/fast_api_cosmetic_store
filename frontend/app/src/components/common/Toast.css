@@ -1,0 +1,131 @@
+/* Контейнер для тостов */
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  max-width: 350px;
+  width: auto;
+  pointer-events: auto;
+}
+
+/* Анимация для тостов */
+@keyframes toast-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes toast-slide-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Стиль для отдельного тоста */
+.toast {
+  position: relative;
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 0.5rem;
+  border-radius: 0.25rem;
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1);
+  background-color: white;
+  max-width: 100%;
+  overflow: hidden;
+  animation: toast-slide-in 0.3s ease-out forwards;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.toast.toast-exit {
+  animation: toast-slide-out 0.3s ease-in forwards;
+}
+
+/* Иконки для разных типов тостов */
+.toast-icon {
+  margin-right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Кнопка закрытия */
+.toast-close {
+  background: transparent;
+  border: none;
+  color: #999;
+  font-size: 1.1rem;
+  cursor: pointer;
+  margin-left: 10px;
+  padding: 0;
+  line-height: 1;
+}
+
+.toast-close:hover {
+  color: #333;
+}
+
+/* Стили для разных типов тостов */
+.toast-success {
+  border-left: 4px solid #28a745;
+}
+
+.toast-success .toast-icon {
+  color: #28a745;
+}
+
+.toast-danger {
+  border-left: 4px solid #dc3545;
+}
+
+.toast-danger .toast-icon {
+  color: #dc3545;
+}
+
+.toast-warning {
+  border-left: 4px solid #ffc107;
+}
+
+.toast-warning .toast-icon {
+  color: #ffc107;
+}
+
+.toast-info {
+  border-left: 4px solid #17a2b8;
+}
+
+.toast-info .toast-icon {
+  color: #17a2b8;
+}
+
+.toast-body {
+  flex: 1;
+  word-break: break-word;
+}
+
+/* Адаптивность для маленьких экранов */
+@media (max-width: 576px) {
+  .toast-container {
+    right: 0;
+    left: 0;
+    max-width: 100%;
+    padding: 0 10px;
+  }
+  
+  .toast {
+    width: 100%;
+  }
+} 

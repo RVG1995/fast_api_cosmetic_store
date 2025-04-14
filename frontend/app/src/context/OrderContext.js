@@ -7,7 +7,6 @@ import { API_URLS } from '../utils/constants';
 const ORDER_SERVICE_URL = API_URLS.ORDER_SERVICE;
 // Префикс API не используется, так как пути уже определены в роутерах бэкенда
 // Корректные пути: /orders, /admin/orders, /order-statuses
-const API_PREFIX = '';
 
 // Создаем контекст для заказов
 const OrderContext = createContext();
@@ -857,7 +856,7 @@ export const OrderProvider = ({ children }) => {
       setLoading(false);
       return null;
     }
-  }, [user, ORDER_SERVICE_URL, getConfig, setCurrentOrder]);
+  }, [user, getConfig, setCurrentOrder]);
 
   // Значение контекста
   const contextValue = {

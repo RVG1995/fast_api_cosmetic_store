@@ -8,11 +8,22 @@ const SimpleAddToCartButton = ({ productId, stock, className = '' }) => {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
 
+  // Функция для создания всплывающего уведомления
+  const showToast = (message, type) => {
+    console.log('Показываю toast:', message, type);
+    // Создаем и отправляем событие для отображения уведомления
+    window.dispatchEvent(
+      new CustomEvent('show:toast', {
+        detail: { message, type }
+      })
+    );
+    console.log('Toast событие отправлено');
+  };
+
   // Обработчик добавления в корзину
   const handleAddToCart = async () => {
     if (stock <= 0) {
-      setError('Товар отсутствует на складе');
-      setTimeout(() => setError(''), 3000);
+      showToast('Товар отсутствует на складе', 'danger');
       return;
     }
 
@@ -27,8 +38,9 @@ const SimpleAddToCartButton = ({ productId, stock, className = '' }) => {
         // Показываем индикатор успеха на короткое время
         setSuccess(true);
         setTimeout(() => setSuccess(false), 1500);
+        // Успешное добавление - показываем toast
+        showToast('Товар добавлен в корзину', 'success');
       } else {
-        // Показываем сообщение об ошибке
         // Проверяем сообщение об ошибке на наличие ключевых слов, связанных с наличием товара
         const errorMsg = result.message || '';
         const stockRelatedError = 
@@ -39,10 +51,15 @@ const SimpleAddToCartButton = ({ productId, stock, className = '' }) => {
           errorMsg.includes('количество');
         
         if (stockRelatedError) {
-          setError('Недостаточно товара на складе');
+          // Показываем ошибку о недостатке товара как toast
+          showToast('Недостаточно товара на складе', 'danger');
+          setError('');
         } else if (result.error) {
+          // Другие ошибки также показываем как toast
+          showToast(result.error, 'danger');
           setError(result.error);
         } else {
+          showToast('Ошибка при добавлении товара', 'danger');
           setError('Ошибка при добавлении товара');
         }
         
@@ -50,6 +67,7 @@ const SimpleAddToCartButton = ({ productId, stock, className = '' }) => {
       }
     } catch (err) {
       console.error('Ошибка при добавлении товара в корзину:', err);
+      showToast('Ошибка при добавлении товара в корзину', 'danger');
       setError('Ошибка при добавлении товара');
       setTimeout(() => setError(''), 3000);
     } finally {
@@ -78,9 +96,10 @@ const SimpleAddToCartButton = ({ productId, stock, className = '' }) => {
         ) : 'Нет в наличии'}
       </button>
       
-      {error && (
+      {/* Убираем отображение ошибки под кнопкой, так как теперь используем Toast */}
+      {/* {error && (
         <div className="error-tooltip">{error}</div>
-      )}
+      )} */}
     </div>
   );
 };

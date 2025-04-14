@@ -603,17 +603,29 @@ async def add_item_to_cart(
     
     if not stock_check["success"]:
         logger.warning(f"Ошибка проверки наличия товара: product_id={item.product_id}, quantity={item.quantity}, error={stock_check.get('error')}")
-        return {
-            "success": False,
-            "message": "Ошибка при добавлении товара в корзину",
-            "error": stock_check["error"]
-        }
+        
+        # Если товара на складе недостаточно, но он есть в наличии, добавляем максимально возможное количество
+        available_stock = stock_check.get("available_stock", 0)
+        if available_stock > 0:
+            logger.info(f"Недостаточно товара, добавляем доступное количество: product_id={item.product_id}, requested={item.quantity}, available={available_stock}")
+            # Изменяем количество на максимально доступное
+            item.quantity = available_stock
+        else:
+            # Если товара нет в наличии совсем, возвращаем ошибку
+            return {
+                "success": False,
+                "message": "Ошибка при добавлении товара в корзину",
+                "error": stock_check["error"]
+            }
     
     try:
         # Для авторизованных пользователей используем БД
         if user:
             # Ищем или создаем корзину
             cart = await get_cart_with_items(db, user)
+            
+            # Флаг для отслеживания частичного добавления товара
+            partial_add = False
             
             if not cart:
                 # Создаем новую корзину
@@ -636,10 +648,37 @@ async def add_item_to_cart(
             existing_item = await CartItemModel.get_item_by_product(db, cart.id, item.product_id)
             
             if existing_item:
-                # Увеличиваем количество
-                logger.info(f"Обновление существующего товара в корзине: id={existing_item.id}, новое количество={existing_item.quantity + item.quantity}")
-                existing_item.quantity += item.quantity
-                existing_item.updated_at = datetime.now()
+                # Проверяем, хватает ли на складе товара с учетом уже имеющегося в корзине
+                total_quantity = existing_item.quantity + item.quantity
+                stock_check = await product_api.check_product_stock(item.product_id, total_quantity)
+                
+                if not stock_check["success"]:
+                    available_stock = stock_check.get("available_stock", existing_item.quantity)
+                    
+                    # Если доступно меньше чем уже в корзине, оставляем как есть
+                    if available_stock <= existing_item.quantity:
+                        return {
+                            "success": False,
+                            "message": f"В корзине уже максимально доступное количество товара ({existing_item.quantity})",
+                            "error": f"Недостаточно товара на складе. Доступно: {available_stock}"
+                        }
+                    
+                    # Если можно добавить хотя бы часть, добавляем сколько можно
+                    new_quantity = available_stock
+                    logger.info(f"Недостаточно товара для добавления всего количества: current={existing_item.quantity}, requested={item.quantity}, new_total={new_quantity}")
+                    
+                    # Обновляем количество до максимально возможного
+                    existing_item.quantity = new_quantity
+                    existing_item.updated_at = datetime.now()
+                    
+                    # Флаг для сообщения о частичном добавлении
+                    partial_add = True
+                else:
+                    # Увеличиваем количество
+                    logger.info(f"Обновление существующего товара в корзине: id={existing_item.id}, новое количество={existing_item.quantity + item.quantity}")
+                    existing_item.quantity += item.quantity
+                    existing_item.updated_at = datetime.now()
+                    partial_add = False
             else:
                 # Добавляем новый товар
                 logger.info(f"Добавление нового товара в корзину: product_id={item.product_id}, quantity={item.quantity}")
@@ -677,9 +716,13 @@ async def add_item_to_cart(
             # Инвалидируем кэш корзины
             await invalidate_user_cart_cache(user.id)
             
+            success_message = "Товар успешно добавлен в корзину"
+            if partial_add:
+                success_message = "Товар добавлен в корзину в максимально доступном количестве"
+            
             return {
                 "success": True,
-                "message": "Товар успешно добавлен в корзину",
+                "message": success_message,
                 "cart": enriched_cart
             }
         
@@ -690,12 +733,36 @@ async def add_item_to_cart(
             if cart_cookie:
                 current_cart = await deserialize_cart_from_cookie(cart_cookie)
             
+            # Флаг для отслеживания частичного добавления товара
+            partial_add = False
+            
             # Проверяем, есть ли уже такой товар в корзине
             found = False
             for cart_item in current_cart["items"]:
                 if cart_item["product_id"] == item.product_id:
-                    # Увеличиваем количество
-                    cart_item["quantity"] += item.quantity
+                    # Проверяем доступность с учетом уже имеющегося количества
+                    total_quantity = cart_item["quantity"] + item.quantity
+                    stock_check = await product_api.check_product_stock(item.product_id, total_quantity)
+                    
+                    if not stock_check["success"]:
+                        available_stock = stock_check.get("available_stock", cart_item["quantity"])
+                        
+                        # Если доступно меньше чем уже в корзине, оставляем как есть
+                        if available_stock <= cart_item["quantity"]:
+                            return {
+                                "success": False,
+                                "message": f"В корзине уже максимально доступное количество товара ({cart_item['quantity']})",
+                                "error": f"Недостаточно товара на складе. Доступно: {available_stock}"
+                            }
+                        
+                        # Если можно добавить хотя бы часть, добавляем сколько можно
+                        cart_item["quantity"] = available_stock
+                        partial_add = True
+                    else:
+                        # Увеличиваем количество
+                        cart_item["quantity"] += item.quantity
+                        partial_add = False
+                    
                     found = True
                     logger.info(f"Обновление существующего товара в корзине (куки): product_id={item.product_id}, новое количество={cart_item['quantity']}")
                     break
@@ -721,9 +788,13 @@ async def add_item_to_cart(
                 secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
             )
             
+            success_message = "Товар успешно добавлен в корзину"
+            if partial_add:
+                success_message = "Товар добавлен в корзину в максимально доступном количестве"
+            
             return {
                 "success": True,
-                "message": "Товар успешно добавлен в корзину",
+                "message": success_message,
                 "cart": enriched_cart
             }
             

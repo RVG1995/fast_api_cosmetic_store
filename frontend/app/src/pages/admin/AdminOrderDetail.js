@@ -636,7 +636,6 @@ const AdminOrderDetail = () => {
   const navigate = useNavigate();
   const { 
     getAdminOrderById, 
-    getOrderStatuses, 
     updateOrderStatus,
     updateOrderPaymentStatus,
     loading: contextLoading, 

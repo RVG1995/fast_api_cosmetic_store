@@ -5,14 +5,13 @@ from sqlalchemy import text
 import logging
 import os
 from dotenv import load_dotenv
-from pydantic import BaseModel
 from datetime import datetime
 
 from database import get_db
 from models import OrderModel, OrderStatusModel, OrderStatusHistoryModel
 from schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderDetailResponse, 
-    OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics
+    OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics, BatchStatusUpdate
 )
 from services import (
     create_order, get_order_by_id, get_orders, update_order, 
@@ -821,11 +820,6 @@ async def update_order_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Произошла ошибка при обновлении статуса заказа: {str(e)}",
         )
-
-class BatchStatusUpdate(BaseModel):
-    order_ids: List[int]
-    status_id: int
-    notes: Optional[str] = None
 
 @admin_router.post("/batch-status", response_model=List[OrderResponse])
 async def update_batch_status(

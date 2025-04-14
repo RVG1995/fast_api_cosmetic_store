@@ -44,9 +44,6 @@ const setupInterceptors = (api, serviceName) => {
       // Гарантируем передачу куки для каждого запроса
       config.withCredentials = true;
       
-      // Добавляем токен из localStorage для микросервисов, если он есть
-    
-      
       return config;
     },
     (error) => {
@@ -81,8 +78,14 @@ const setupInterceptors = (api, serviceName) => {
       
       // Обработка ошибок авторизации (401)
       if (error.response && error.response.status === 401) {
-        console.log('Ошибка авторизации, перенаправление на страницу входа');
-        // Больше не нужно удалять токен из localStorage
+        console.log('Ошибка авторизации (401): Токен истек или недействителен, перенаправление на страницу входа');
+        
+        // Проверяем, не находимся ли мы уже на странице логина
+        const currentPath = window.location.pathname;
+        if (currentPath !== '/login' && currentPath !== '/register') {
+          // Перенаправляем на страницу входа с указанием причины
+          window.location.href = '/login?expired=true';
+        }
       }
       return Promise.reject(error);
     }

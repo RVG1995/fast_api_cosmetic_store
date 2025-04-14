@@ -249,6 +249,11 @@ class OrderStatistics(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
+class BatchStatusUpdate(BaseModel):
+    order_ids: List[int]
+    status_id: int
+    notes: Optional[str] = None
+
 # Схемы для статусов оплаты
 class PaymentStatusBase(BaseModel):
     name: str

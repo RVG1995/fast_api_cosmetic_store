@@ -15,7 +15,7 @@ const CheckoutPage = () => {
   const { user } = useAuth();
   
   // Определяем статус авторизации
-  const isAuthenticated = Boolean(user || localStorage.getItem('access_token'));
+  const isAuthenticated = Boolean(user);
   
   // Состояния формы
   const [formData, setFormData] = useState({

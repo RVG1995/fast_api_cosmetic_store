@@ -1,16 +1,25 @@
 // src/pages/auth/LoginPage.jsx
 
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   // Состояние для хранения ошибок по каждому полю
   const [errors, setErrors] = useState({});
   const { login } = useAuth(); 
+
+  // Проверяем URL на наличие параметра expired=true при загрузке компонента
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('expired') === 'true') {
+      setErrors({ general: 'Ваша сессия истекла. Пожалуйста, войдите снова.' });
+    }
+  }, [location.search]);
 
   const handleLogin = async (e) => {
     e.preventDefault();

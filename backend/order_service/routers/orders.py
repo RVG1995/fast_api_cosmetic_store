@@ -206,17 +206,25 @@ async def list_my_orders(
 
 @router.get("/statistics", response_model=OrderStatistics)
 async def get_user_statistics(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
     """
     Получение статистики по заказам текущего пользователя
     """
+    # Проверяем, авторизован ли пользователь
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Для получения статистики необходима авторизация",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
     user_id = current_user.get("user_id")
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Для получения статистики необходима авторизация"
+            detail="Не удалось определить пользователя"
         )
     
     try:

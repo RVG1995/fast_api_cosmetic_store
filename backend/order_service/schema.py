@@ -3,11 +3,6 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
-class BatchStatusUpdate(BaseModel):
-    order_ids: List[int]
-    status_id: int
-    notes: Optional[str] = None
-
 class ProductInfoSchema(BaseModel):
     """Схема с базовой информацией о продукте"""
     id: int

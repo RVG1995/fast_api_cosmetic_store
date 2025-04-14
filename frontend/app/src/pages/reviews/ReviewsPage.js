@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Container, Row, Col, Card, Tab, Nav } from 'react-bootstrap';
+import { Container, Row, Col, Card } from 'react-bootstrap';
 import ReviewList from '../../components/reviews/ReviewList';
 import ReviewForm from '../../components/reviews/ReviewForm';
 import { useAuth } from '../../context/AuthContext';
@@ -65,19 +65,14 @@ const ReviewsPage = () => {
         </Col>
         
         <Col lg={8}>
-          <Card className="shadow-sm mb-4">
-            <Card.Header>
-              <h5 className="mb-0">Отзывы наших клиентов</h5>
-            </Card.Header>
-            <Card.Body>
-              {/* Ключ reloadKey используется для принудительной перезагрузки списка при добавлении нового отзыва */}
-              <ReviewList 
-                key={reloadKey}
-                currentPage={currentPage}
-                onPageChange={handlePageChange}
-              />
-            </Card.Body>
-          </Card>
+          <h4 className="mb-3">Отзывы наших клиентов</h4>
+          
+          {/* Ключ reloadKey используется для принудительной перезагрузки списка при добавлении нового отзыва */}
+          <ReviewList 
+            key={reloadKey}
+            currentPage={currentPage}
+            onPageChange={handlePageChange}
+          />
         </Col>
       </Row>
     </Container>

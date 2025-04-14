@@ -119,8 +119,8 @@ const CartIcon = () => {
     navigate('/cart');
   };
 
-  // Получаем количество товаров из cartSummary или cart
-  const itemsCount = cartSummary?.total_items || (cart?.items?.length || 0);
+  // Получаем количество уникальных товаров в корзине
+  const itemsCount = cart?.items?.length || 0;
 
   return (
     <div 

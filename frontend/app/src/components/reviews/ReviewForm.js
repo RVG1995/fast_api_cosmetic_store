@@ -28,6 +28,8 @@ const ReviewForm = ({
     has_reviewed_store: false
   });
   const [isReviewSubmitted, setIsReviewSubmitted] = useState(false);
+  const [canReview, setCanReview] = useState(true);
+  const [reasonMessage, setReasonMessage] = useState('');
 
   // Логируем начальное состояние при монтировании компонента
   useEffect(() => {
@@ -36,7 +38,7 @@ const ReviewForm = ({
       user: user ? `User ID: ${user.id}` : 'No user', 
       productId 
     });
-  }, []);
+  }, [isAuthenticated, productId, user]);
 
   useEffect(() => {
     // Проверяем права на оставление отзыва при монтировании компонента
@@ -63,12 +65,39 @@ const ReviewForm = ({
     } else {
       console.log('Пользователь не аутентифицирован, пропускаем проверку прав');
     }
-  }, [productId, isAuthenticated]);
+  }, [isAuthenticated, productId, user]);
 
   // Следим за изменениями в статусе аутентификации
   useEffect(() => {
     console.log('Изменился статус аутентификации:', { isAuthenticated });
   }, [isAuthenticated]);
+
+  // Проверка, может ли пользователь оставить отзыв
+  useEffect(() => {
+    const checkCanReview = async () => {
+      // Если пользователь не авторизован или это не страница товара - нельзя оставить отзыв
+      if (!isAuthenticated || !productId) {
+        setCanReview(false);
+        return;
+      }
+      
+      // Проверяем, не оставлял ли уже пользователь отзыв на этот товар
+      try {
+        const response = await reviewAPI.checkCanReviewProduct(productId);
+        setCanReview(response.can_review);
+        
+        if (!response.can_review && response.reason) {
+          setReasonMessage(response.reason);
+        }
+      } catch (error) {
+        console.error('Ошибка при проверке возможности оставить отзыв:', error);
+        setCanReview(false);
+        setReasonMessage('Не удалось проверить возможность оставить отзыв. Попробуйте позже.');
+      }
+    };
+    
+    checkCanReview();
+  }, [isAuthenticated, productId, user]);
 
   // Обработчик изменения значения поля
   const handleInputChange = (e) => {
@@ -200,6 +229,12 @@ const ReviewForm = ({
       return (
         <Alert variant="warning">
           Для оставления отзыва на этот товар вам необходимо приобрести его и получить заказ.
+        </Alert>
+      );
+    } else if (!canReview) {
+      return (
+        <Alert variant="warning">
+          {reasonMessage || 'Вы не можете оставить отзыв на этот товар.'}
         </Alert>
       );
     }

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 import { reviewAPI } from '../utils/api';
 
 // Создаем контекст для управления рейтингами товаров

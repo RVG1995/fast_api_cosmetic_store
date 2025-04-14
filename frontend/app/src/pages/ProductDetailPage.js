@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Alert, Badge, Spinner } from 'react-bootstrap';
 import { productAPI } from '../utils/api';
 import { API_URLS } from '../utils/constants';
 import AddToCartButton from '../components/cart/AddToCartButton';
@@ -11,7 +10,6 @@ import ReviewForm from '../components/reviews/ReviewForm';
 import ReviewStats from '../components/reviews/ReviewStats';
 import { useAuth } from '../context/AuthContext';
 import { useReviews } from '../context/ReviewContext';
-import ProductRating from '../components/reviews/ProductRating';
 
 const ProductDetailPage = () => {
   const { productId } = useParams();
@@ -297,9 +295,9 @@ const ProductDetailPage = () => {
         
         {/* Список отзывов */}
         <ReviewList 
-          key={`reviews-${reviewReloadKey}`}
+          key={`review-list-${reviewReloadKey}`}
           productId={productId}
-          currentPage={reviewPage}
+          page={reviewPage}
           onPageChange={setReviewPage}
         />
       </div>

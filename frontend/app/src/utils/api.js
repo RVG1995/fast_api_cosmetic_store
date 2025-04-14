@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { API_URLS, STORAGE_KEYS } from './constants';
+import { API_URLS } from './constants';
 
 /**
  * Создает экземпляр axios с настройками для указанного сервиса

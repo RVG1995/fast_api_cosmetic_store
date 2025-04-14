@@ -5,7 +5,6 @@ import { useOrders } from '../context/OrderContext';
 import { useAuth } from '../context/AuthContext';
 import { Alert, Button, Form, Card, Row, Col, Spinner } from 'react-bootstrap';
 import { formatPrice } from '../utils/helpers';
-import { API_URLS } from '../utils/constants';
 import './CheckoutPage.css';
 
 const CheckoutPage = () => {
@@ -13,9 +12,6 @@ const CheckoutPage = () => {
   const { cart, clearCart } = useCart();
   const { createOrder, loading, error, setError } = useOrders();
   const { user } = useAuth();
-  
-  // Определяем статус авторизации
-  const isAuthenticated = Boolean(user);
   
   // Состояния формы
   const [formData, setFormData] = useState({

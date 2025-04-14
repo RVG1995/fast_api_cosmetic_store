@@ -11,11 +11,13 @@ from database import get_db
 from models import OrderModel, OrderStatusModel, OrderStatusHistoryModel
 from schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderDetailResponse, 
-    OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics, BatchStatusUpdate
+    OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics, BatchStatusUpdate,
+    OrderItemsUpdate, OrderItemsUpdateResponse
 )
 from services import (
     create_order, get_order_by_id, get_orders, update_order, 
-    change_order_status, cancel_order, get_order_statistics, get_user_order_statistics
+    change_order_status, cancel_order, get_order_statistics, get_user_order_statistics,
+    update_order_items
 )
 from dependencies import (
     get_current_user, get_admin_user, get_order_filter_params,
@@ -828,6 +830,52 @@ async def update_order_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Произошла ошибка при обновлении статуса заказа: {str(e)}",
         )
+
+@admin_router.post("/{order_id}/items", response_model=OrderItemsUpdateResponse)
+async def update_order_items_endpoint(
+    order_id: int,
+    items_data: OrderItemsUpdate,
+    session: AsyncSession = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_admin_user)
+):
+    """Обновление товаров в заказе (админский доступ)"""
+    logger.info(f"Запрос на обновление элементов заказа {order_id}: items_to_add={items_data.items_to_add} items_to_update={items_data.items_to_update} items_to_remove={items_data.items_to_remove}")
+    
+    # Получаем текущий статус заказа
+    order = await get_order_by_id(session, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+        
+    # Проверка статуса заказа - запрещаем редактировать товары для определенных статусов
+    non_editable_statuses = ["Отправлен", "Доставлен", "Отменен", "Оплачен"]
+    if order.status and order.status.name in non_editable_statuses:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Редактирование товаров невозможно для заказа в статусе '{order.status.name}'"
+        )
+    
+    # Получаем токен из объекта current_user
+    token = current_user.get("token")
+    
+    # Формируем данные для обновления
+    items_dict = {
+        "items_to_add": [item.dict() for item in items_data.items_to_add] if items_data.items_to_add else [],
+        "items_to_update": items_data.items_to_update if items_data.items_to_update else {},
+        "items_to_remove": items_data.items_to_remove if items_data.items_to_remove else []
+    }
+    
+    # Вызываем сервисную функцию из services.py
+    success, updated_order, errors = await update_order_items(
+        session, order_id, items_dict, current_user["user_id"], token
+    )
+    
+    if not success:
+        raise HTTPException(status_code=400, detail=errors)
+    
+    if errors:
+        return {"success": True, "order": updated_order, "errors": errors}
+    else:
+        return {"success": True, "order": updated_order, "errors": None}
 
 @admin_router.post("/batch-status", response_model=List[OrderResponse])
 async def update_batch_status(

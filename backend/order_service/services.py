@@ -1,6 +1,6 @@
 from typing import List, Optional, Tuple, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, asc
+from sqlalchemy import select, func, desc, asc, text
 from sqlalchemy.orm import selectinload
 import logging
 from datetime import datetime
@@ -362,6 +362,228 @@ async def change_order_status(
     logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после изменения статуса")
     
     return order
+
+async def update_order_items(
+    session: AsyncSession,
+    order_id: int,
+    items_data: dict,
+    user_id: int,
+    token: Optional[str] = None
+) -> Tuple[bool, Optional[OrderModel], Optional[Dict[str, str]]]:
+    """
+    Обновление элементов заказа (добавление, изменение количества, удаление)
+    
+    Args:
+        session: Сессия базы данных
+        order_id: ID заказа
+        items_data: Данные для обновления элементов заказа
+        user_id: ID пользователя, выполняющего операцию
+        token: Токен авторизации для запросов к другим сервисам
+        
+    Returns:
+        Tuple[bool, Optional[OrderModel], Optional[Dict[str, str]]]: 
+            (успех операции, обновленный заказ, словарь с ошибками)
+    """
+    # Получаем заказ по ID
+    order = await OrderModel.get_by_id(session, order_id)
+    if not order:
+        return False, None, {"error": f"Заказ с ID {order_id} не найден"}
+    
+    # Получаем API для работы с товарами
+    product_api = await get_product_api()
+    
+    errors = {}
+    updated = False
+    
+    # Обработка удаления товаров из заказа
+    if "items_to_remove" in items_data and items_data["items_to_remove"]:
+        for item_id in items_data["items_to_remove"]:
+            # Ищем элемент заказа
+            item = next((item for item in order.items if item.id == item_id), None)
+            if not item:
+                errors[f"remove_{item_id}"] = f"Товар с ID {item_id} не найден в заказе"
+                continue
+            
+            try:
+                # Возвращаем количество товара на склад
+                success = await product_api.update_stock(item.product_id, item.quantity, token)
+                if not success:
+                    errors[f"remove_{item_id}"] = f"Не удалось обновить остаток товара {item.product_id}"
+                    continue
+                
+                # Удаляем элемент из заказа
+                await session.delete(item)
+                updated = True
+                logger.info(f"Товар {item.product_id} (ID: {item_id}) удален из заказа {order_id}")
+            except Exception as e:
+                errors[f"remove_{item_id}"] = f"Ошибка при удалении товара: {str(e)}"
+    
+    # Обработка обновления количества товаров
+    if "items_to_update" in items_data and items_data["items_to_update"]:
+        for item_id, new_quantity in items_data["items_to_update"].items():
+            # Ищем элемент заказа
+            item = next((item for item in order.items if item.id == item_id), None)
+            if not item:
+                errors[f"update_{item_id}"] = f"Товар с ID {item_id} не найден в заказе"
+                continue
+            
+            if new_quantity <= 0:
+                errors[f"update_{item_id}"] = "Количество товара должно быть положительным"
+                continue
+            
+            # Рассчитываем изменение количества
+            quantity_change = new_quantity - item.quantity
+            
+            if quantity_change == 0:
+                continue  # Нет изменений, пропускаем
+            
+            try:
+                # Если уменьшаем количество, возвращаем излишки на склад
+                if quantity_change < 0:
+                    success = await product_api.update_stock(item.product_id, abs(quantity_change), token)
+                    if not success:
+                        errors[f"update_{item_id}"] = f"Не удалось обновить остаток товара {item.product_id}"
+                        continue
+                else:
+                    # Если увеличиваем количество, проверяем наличие на складе
+                    is_available, product_info = await product_api.check_stock(item.product_id, quantity_change)
+                    if not is_available:
+                        errors[f"update_{item_id}"] = f"Недостаточно товара на складе (доступно: {product_info.stock if product_info else 0})"
+                        continue
+                    
+                    # Обновляем остаток на складе
+                    success = await product_api.update_stock(item.product_id, -quantity_change, token)
+                    if not success:
+                        errors[f"update_{item_id}"] = f"Не удалось обновить остаток товара {item.product_id}"
+                        continue
+                
+                # Обновляем элемент заказа
+                old_quantity = item.quantity
+                item.quantity = new_quantity
+                item.total_price = item.product_price * new_quantity
+                updated = True
+                logger.info(f"Обновлено количество товара {item.product_id} в заказе {order_id}: {old_quantity} -> {new_quantity}")
+            except Exception as e:
+                errors[f"update_{item_id}"] = f"Ошибка при обновлении количества товара: {str(e)}"
+    
+    # Обработка добавления новых товаров
+    if "items_to_add" in items_data and items_data["items_to_add"]:
+        # Получаем информацию о всех товарах сразу
+        product_ids = [item["product_id"] for item in items_data["items_to_add"]]
+        products_info = await get_products_info(product_ids, token)
+        
+        for item_data in items_data["items_to_add"]:
+            product_id = item_data["product_id"]
+            quantity = item_data["quantity"]
+            
+            # Проверяем, есть ли такой товар в заказе
+            existing_item = next((item for item in order.items if item.product_id == product_id), None)
+            if existing_item:
+                errors[f"add_{product_id}"] = f"Товар с ID {product_id} уже есть в заказе. Используйте обновление количества."
+                continue
+            
+            # Получаем информацию о товаре
+            product_info = products_info.get(product_id)
+            if not product_info:
+                errors[f"add_{product_id}"] = f"Не удалось получить информацию о товаре {product_id}"
+                continue
+            
+            # Проверяем наличие на складе
+            is_available, product_detail = await product_api.check_stock(product_id, quantity)
+            if not is_available:
+                errors[f"add_{product_id}"] = f"Недостаточно товара на складе (доступно: {product_detail.stock if product_detail else 0})"
+                continue
+            
+            try:
+                # Обновляем остаток на складе
+                success = await product_api.update_stock(product_id, -quantity, token)
+                if not success:
+                    errors[f"add_{product_id}"] = f"Не удалось обновить остаток товара {product_id}"
+                    continue
+                
+                # Создаем новый элемент заказа
+                order_item = OrderItemModel(
+                    order_id=order.id,
+                    product_id=product_id,
+                    product_name=product_info["name"],
+                    product_price=product_info["price"],
+                    quantity=quantity,
+                    total_price=product_info["price"] * quantity
+                )
+                session.add(order_item)
+                updated = True
+                logger.info(f"Добавлен товар {product_id} в заказ {order_id} в количестве {quantity}")
+            except Exception as e:
+                errors[f"add_{product_id}"] = f"Ошибка при добавлении товара: {str(e)}"
+    
+    if updated:
+        try:
+            # Фиксируем изменения в БД
+            await session.flush()
+            
+            # Принудительно получаем актуальный список товаров в заказе
+            query_items = text("""
+                SELECT product_price, quantity, total_price 
+                FROM order_items 
+                WHERE order_id = :order_id
+            """)
+            result = await session.execute(query_items, {"order_id": order.id})
+            items = result.fetchall()
+            
+            # Расчет общей стоимости на основе актуальных данных из БД
+            total_price = sum(item[2] for item in items)
+            logger.info(f"Расчет общей стоимости для заказа {order_id}: {total_price} (на основе {len(items)} товаров)")
+            
+            # Обновляем общую стоимость в отдельном запросе
+            update_query = text("""
+                UPDATE orders 
+                SET updated_at = now(), 
+                    total_price = :total_price 
+                WHERE id = :order_id
+                RETURNING id, total_price
+            """)
+            result = await session.execute(update_query, {"total_price": total_price, "order_id": order.id})
+            updated_row = result.fetchone()
+            if updated_row:
+                logger.info(f"Заказ обновлен: id={updated_row[0]}, total_price={updated_row[1]}")
+            
+            # Выполняем коммит изменений
+            await session.commit()
+            
+            # Принудительно обновляем объект заказа, чтобы он содержал актуальные данные
+            refresh_query = text("""
+                SELECT o.id, o.total_price, 
+                       COUNT(oi.id) as item_count, 
+                       SUM(oi.total_price) as items_total 
+                FROM orders o
+                LEFT JOIN order_items oi ON o.id = oi.order_id
+                WHERE o.id = :order_id
+                GROUP BY o.id
+            """)
+            result = await session.execute(refresh_query, {"order_id": order.id})
+            refresh_row = result.fetchone()
+            if refresh_row:
+                logger.info(f"Верификация заказа после обновления: id={refresh_row[0]}, total_price={refresh_row[1]}, items_count={refresh_row[2]}, items_total={refresh_row[3]}")
+                # Обновляем значение в объекте
+                order.total_price = refresh_row[1]
+            
+            # Полностью обновляем объект из БД, включая все связи
+            await session.refresh(order, ["items", "status", "status_history"])
+            
+            # Инвалидируем кэш заказа
+            await invalidate_order_cache(order.id)
+            await invalidate_statistics_cache()
+            logger.info(f"Обновлен заказ {order_id}, новая стоимость: {order.total_price}")
+            
+            return True, order, errors if errors else None
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Ошибка при обновлении заказа: {str(e)}")
+            return False, None, {"error": f"Ошибка при обновлении заказа: {str(e)}"}
+    else:
+        if errors:
+            return False, order, errors
+        return True, order, None
 
 async def cancel_order(
     session: AsyncSession,

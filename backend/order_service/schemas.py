@@ -136,6 +136,29 @@ class OrderItemResponse(OrderItemBase):
     
     model_config = ConfigDict(from_attributes=True)
 
+# Схемы для редактирования товаров в заказе
+class OrderItemUpdate(BaseModel):
+    """Схема для обновления количества товара в заказе"""
+    quantity: int = Field(..., gt=0)
+
+class OrderItemAdd(BaseModel):
+    """Схема для добавления товара в заказ"""
+    product_id: int = Field(..., gt=0)
+    quantity: int = Field(..., gt=0)
+
+class OrderItemsUpdate(BaseModel):
+    """Схема для массового обновления элементов заказа"""
+    items_to_add: Optional[List[OrderItemAdd]] = Field(None, description="Товары для добавления в заказ")
+    items_to_update: Optional[Dict[int, int]] = Field(None, description="Словарь {id_товара_в_заказе: новое_количество}")
+    items_to_remove: Optional[List[int]] = Field(None, description="ID товаров в заказе для удаления")
+
+# Схема ответа об изменении товаров в заказе
+class OrderItemsUpdateResponse(BaseModel):
+    """Ответ об изменении товаров в заказе"""
+    success: bool
+    order: Optional["OrderResponse"] = None
+    errors: Optional[Dict[str, str]] = None
+
 class OrderStatusResponse(BaseModel):
     id: int
     name: str

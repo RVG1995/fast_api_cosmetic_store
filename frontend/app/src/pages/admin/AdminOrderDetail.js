@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Row, Col, Table, Badge, Button, Form, Alert, Spinner, Modal } from 'react-bootstrap';
 import { useOrders } from '../../context/OrderContext';
@@ -8,6 +8,628 @@ import { formatPrice } from '../../utils/helpers';
 import OrderStatusBadge from '../../components/OrderStatusBadge';
 import axios from 'axios';
 import { API_URLS } from '../../utils/constants';
+
+// Компонент для редактирования товаров в заказе
+const OrderItemsEditor = ({ order, onOrderUpdated }) => {
+  const { updateOrderItems } = useOrders();
+  const [availableProducts, setAvailableProducts] = useState([]);
+  const [dropdownProducts, setDropdownProducts] = useState([]);  // Продукты для выпадающего списка
+  const [searchResults, setSearchResults] = useState([]);       // Результаты текстового поиска
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const [error, setError] = useState(null);
+  const debounceTimeoutRef = useRef(null);
+  const searchContainerRef = useRef(null);
+  
+  // Локальное состояние для редактирования товаров
+  const [itemsToAdd, setItemsToAdd] = useState([]);
+  const [itemsToUpdate, setItemsToUpdate] = useState({});
+  const [itemsToRemove, setItemsToRemove] = useState([]);
+  
+  // Состояние для нового товара
+  const [newProduct, setNewProduct] = useState({
+    product_id: "",
+    quantity: 1
+  });
+  
+  // Загрузка списка доступных товаров
+  const loadAvailableProducts = useCallback(async () => {
+    try {
+      setLoadingProducts(true);
+      const response = await axios.get(`${API_URLS.PRODUCT_SERVICE}/products/admin`, {
+        params: { page: 1, limit: 100 },
+        withCredentials: true
+      });
+      
+      // Фильтруем все продукты сразу:
+      // 1. Исключаем товары, которых нет в наличии (stock === 0)
+      // 2. Исключаем товары, которые уже есть в заказе
+      const products = response.data.items || [];
+      const filteredProducts = products.filter(product => 
+        product.stock > 0 && !order.items.some(item => item.product_id === product.id)
+      );
+      
+      setAvailableProducts(filteredProducts);
+      setDropdownProducts(filteredProducts);
+    } catch (err) {
+      console.error("Ошибка при загрузке товаров:", err);
+      setError("Не удалось загрузить список доступных товаров");
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, [order.items]);
+  
+  // Локальная фильтрация товаров
+  const filterProductsLocally = useCallback((query) => {
+    if (availableProducts.length === 0) return [];
+    
+    const lowercaseQuery = query.toLowerCase();
+    return availableProducts.filter(product => 
+      product.name.toLowerCase().includes(lowercaseQuery) || 
+      (product.sku && product.sku.toLowerCase().includes(lowercaseQuery)) ||
+      product.id.toString().includes(lowercaseQuery)
+    );
+  }, [availableProducts]);
+  
+  // Поиск товаров через API
+  const searchProductsFromApi = useCallback(async (query) => {
+    setLoadingProducts(true);
+    try {
+      const response = await axios.get(`${API_URLS.PRODUCT_SERVICE}/products/search`, {
+        params: { name: query },
+        withCredentials: true
+      });
+      
+      const apiProducts = response.data || [];
+      
+      // Фильтруем продукты:
+      // 1. Исключаем товары, которых нет в наличии (stock === 0)
+      // 2. Исключаем товары, которые уже есть в заказе
+      const filteredApiProducts = apiProducts.filter(apiProduct => 
+        apiProduct.stock > 0 && !order.items.some(item => item.product_id === apiProduct.id)
+      );
+      
+      setSearchResults(filteredApiProducts);
+      setShowSearchResults(true);
+    } catch (error) {
+      console.error('Ошибка при поиске товаров через API:', error);
+      // Если API не отвечает, используем локальную фильтрацию
+      const localResults = filterProductsLocally(query);
+      setSearchResults(localResults);
+      setShowSearchResults(localResults.length > 0);
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, [order.items, filterProductsLocally]);
+  
+  // Загрузка доступных товаров при открытии редактора
+  useEffect(() => {
+    if (showEditor) {
+      loadAvailableProducts();
+    }
+  }, [showEditor, loadAvailableProducts]);
+  
+  // Обработчик клика вне компонента поиска
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setShowSearchResults(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+  
+  // Обработчик изменения поискового запроса
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    
+    // Очищаем предыдущий timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+    
+    // Если поле пустое, скрываем результаты
+    if (!value.trim()) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+    
+    // Устанавливаем новый timeout для debounce эффекта
+    debounceTimeoutRef.current = setTimeout(() => {
+      if (value.length >= 3) {
+        // Если строка достаточной длины, запрашиваем API
+        searchProductsFromApi(value);
+      } else {
+        // Иначе фильтруем локально
+        const localResults = filterProductsLocally(value);
+        setSearchResults(localResults);
+        setShowSearchResults(localResults.length > 0);
+      }
+    }, 300);
+  };
+  
+  // Обработчик выбора товара из результатов поиска
+  const handleSelectSearchResult = (product) => {
+    setNewProduct({
+      ...newProduct,
+      product_id: product.id.toString()
+    });
+    
+    setSearchQuery(product.name);
+    setShowSearchResults(false);
+  };
+  
+  // Очистка поискового поля
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearchResults(false);
+  };
+
+  // Обработчик изменения количества товара
+  const handleQuantityChange = (itemId, newQuantity) => {
+    // Проверяем, что количество корректное
+    if (newQuantity <= 0) return;
+    
+    // Находим оригинальное количество
+    const originalItem = order.items.find(item => item.id === itemId);
+    if (!originalItem) return;
+    
+    // Если количество не изменилось, удаляем из списка обновлений
+    if (originalItem.quantity === newQuantity) {
+      const updatedItems = { ...itemsToUpdate };
+      delete updatedItems[itemId];
+      setItemsToUpdate(updatedItems);
+    } else {
+      // Иначе добавляем в список обновлений
+      setItemsToUpdate({
+        ...itemsToUpdate,
+        [itemId]: newQuantity
+      });
+    }
+  };
+  
+  // Обработчик удаления товара
+  const handleRemoveItem = (itemId) => {
+    // Проверяем, был ли товар добавлен в рамках текущего редактирования
+    if (itemsToAdd.some(item => item.temp_id === itemId)) {
+      // Если да, просто удаляем из списка добавлений
+      setItemsToAdd(itemsToAdd.filter(item => item.temp_id !== itemId));
+    } else {
+      // Если это существующий товар, добавляем в список удалений и удаляем из обновлений, если там есть
+      setItemsToRemove([...itemsToRemove, itemId]);
+      const updatedItems = { ...itemsToUpdate };
+      delete updatedItems[itemId];
+      setItemsToUpdate(updatedItems);
+    }
+  };
+  
+  // Обработчик добавления нового товара
+  const handleAddNewProduct = () => {
+    if (!newProduct.product_id || newProduct.quantity <= 0) {
+      setError("Выберите товар и укажите корректное количество");
+      return;
+    }
+    
+    // Проверяем, выбран ли продукт
+    let selectedProduct;
+    
+    // Сначала ищем в результатах поиска
+    if (searchResults.length > 0) {
+      selectedProduct = searchResults.find(p => p.id.toString() === newProduct.product_id);
+    }
+    
+    // Если не найден в результатах поиска, ищем в общем списке
+    if (!selectedProduct) {
+      selectedProduct = availableProducts.find(p => p.id.toString() === newProduct.product_id);
+    }
+    
+    if (!selectedProduct) {
+      setError("Выбранный товар не найден");
+      return;
+    }
+    
+    // Проверяем, есть ли товар в заказе
+    const existingInOrder = order.items.find(item => item.product_id === parseInt(newProduct.product_id));
+    if (existingInOrder) {
+      setError(`Товар "${selectedProduct.name}" уже есть в заказе`);
+      return;
+    }
+    
+    // Проверяем, есть ли товар в списке добавлений
+    const existingInAdd = itemsToAdd.find(item => item.product_id === parseInt(newProduct.product_id));
+    if (existingInAdd) {
+      setError(`Товар "${selectedProduct.name}" уже добавлен в список`);
+      return;
+    }
+    
+    // Проверка наличия товара на складе
+    if (selectedProduct.stock < newProduct.quantity) {
+      setError(`Недостаточно товара на складе. Доступно: ${selectedProduct.stock}`);
+      return;
+    }
+    
+    // Создаем временный ID для нового товара
+    const tempId = `temp_${Date.now()}`;
+    
+    // Добавляем товар в список добавлений
+    setItemsToAdd([
+      ...itemsToAdd,
+      {
+        temp_id: tempId,
+        product_id: parseInt(newProduct.product_id),
+        quantity: parseInt(newProduct.quantity),
+        product_name: selectedProduct.name,
+        product_price: selectedProduct.price,
+        total_price: selectedProduct.price * parseInt(newProduct.quantity)
+      }
+    ]);
+    
+    // Сбрасываем форму
+    setNewProduct({
+      product_id: "",
+      quantity: 1
+    });
+    
+    // Сбрасываем поиск
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowSearchResults(false);
+    
+    // Сбрасываем ошибку
+    setError(null);
+  };
+  
+  // Обработчик сохранения изменений
+  const handleSaveChanges = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Формируем данные для запроса
+      const updateData = {
+        items_to_add: itemsToAdd.map(item => ({
+          product_id: item.product_id,
+          quantity: item.quantity
+        })),
+        items_to_update: itemsToUpdate,
+        items_to_remove: itemsToRemove
+      };
+      
+      // Проверяем, есть ли изменения
+      const hasChanges = 
+        updateData.items_to_add.length > 0 || 
+        Object.keys(updateData.items_to_update).length > 0 || 
+        updateData.items_to_remove.length > 0;
+      
+      if (!hasChanges) {
+        setError("Нет изменений для сохранения");
+        setLoading(false);
+        return;
+      }
+      
+      // Отправляем запрос
+      const result = await updateOrderItems(order.id, updateData);
+      
+      if (result && result.success) {
+        // Закрываем редактор и уведомляем родительский компонент
+        setShowEditor(false);
+        
+        // Очищаем состояние
+        setItemsToAdd([]);
+        setItemsToUpdate({});
+        setItemsToRemove([]);
+        
+        // Уведомляем родительский компонент об обновлении
+        if (onOrderUpdated) {
+          onOrderUpdated(result.order);
+        }
+      } else {
+        // Если есть ошибки в ответе
+        if (result && result.errors) {
+          setError(Object.values(result.errors).join("\n"));
+        } else {
+          setError("Не удалось обновить товары в заказе");
+        }
+      }
+    } catch (err) {
+      console.error("Ошибка при обновлении товаров:", err);
+      setError(err.message || "Произошла ошибка при обновлении товаров");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Отображаем кнопку открытия редактора
+  if (!showEditor) {
+    return (
+      <Button 
+        variant="primary" 
+        className="mb-3" 
+        onClick={() => setShowEditor(true)}
+      >
+        Редактировать товары
+      </Button>
+    );
+  }
+  
+  return (
+    <div className="order-items-editor mb-4">
+      <h5 className="mb-3">Редактирование товаров в заказе</h5>
+      
+      {error && (
+        <Alert variant="danger" className="mb-3">
+          {error}
+        </Alert>
+      )}
+      
+      {/* Форма добавления нового товара */}
+      <Card className="mb-3">
+        <Card.Header>Добавить товар</Card.Header>
+        <Card.Body>
+          <Row>
+            <Col md={7}>
+              <Form.Group className="mb-2">
+                <Form.Label>Поиск товара</Form.Label>
+                <div className="position-relative" ref={searchContainerRef}>
+                  <Form.Control
+                    type="text"
+                    placeholder="Введите название товара, SKU или ID"
+                    value={searchQuery}
+                    onChange={handleSearchChange}
+                    disabled={loadingProducts}
+                  />
+                  
+                  {searchQuery && (
+                    <button 
+                      className="btn btn-sm position-absolute end-0 top-50 translate-middle-y bg-transparent border-0"
+                      onClick={handleClearSearch}
+                      style={{ zIndex: 5, right: "30px" }}
+                    >
+                      <i className="bi bi-x-circle"></i>
+                    </button>
+                  )}
+                  
+                  {loadingProducts && (
+                    <div className="position-absolute end-0 top-50 translate-middle-y me-2">
+                      <Spinner animation="border" size="sm" />
+                    </div>
+                  )}
+                  
+                  {/* Результаты поиска в виде выпадающего списка */}
+                  {showSearchResults && searchResults.length > 0 && (
+                    <div className="position-absolute w-100 mt-1 border rounded bg-white shadow-sm" style={{ zIndex: 1000, maxHeight: "300px", overflowY: "auto" }}>
+                      {searchResults.map(product => (
+                        <div 
+                          key={product.id} 
+                          className="p-2 border-bottom search-result-item" 
+                          onClick={() => handleSelectSearchResult(product)}
+                          style={{ cursor: "pointer" }}
+                        >
+                          <div className="d-flex align-items-center">
+                            <div className="me-2" style={{ width: "40px", height: "40px" }}>
+                              {product.image ? (
+                                <img 
+                                  src={`${API_URLS.PRODUCT_SERVICE}${product.image}`} 
+                                  alt={product.name}
+                                  className="img-fluid"
+                                  style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+                                />
+                              ) : (
+                                <div className="bg-light d-flex align-items-center justify-content-center" style={{ width: "100%", height: "100%" }}>
+                                  <i className="bi bi-image"></i>
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="fw-bold">{product.name}</div>
+                              <div className="small text-muted">
+                                ID: {product.id} | {formatPrice(product.price)} | Остаток: {product.stock}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {showSearchResults && searchQuery && searchResults.length === 0 && !loadingProducts && (
+                    <div className="position-absolute w-100 mt-1 border rounded bg-white shadow-sm p-3 text-center text-muted">
+                      <i className="bi bi-search me-2"></i>
+                      Товары не найдены
+                    </div>
+                  )}
+                </div>
+              </Form.Group>
+              
+              <Form.Group className="mb-2">
+                <Form.Label>Выбор из списка</Form.Label>
+                <Form.Select
+                  value={newProduct.product_id}
+                  onChange={(e) => setNewProduct({...newProduct, product_id: e.target.value})}
+                  disabled={loadingProducts}
+                >
+                  <option value="">Выберите товар</option>
+                  {dropdownProducts.map(product => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} (ID: {product.id}, {formatPrice(product.price)}, остаток: {product.stock})
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            </Col>
+            <Col md={3}>
+              <Form.Group className="mb-2">
+                <Form.Label>Количество</Form.Label>
+                <Form.Control
+                  type="number"
+                  min="1"
+                  value={newProduct.quantity}
+                  onChange={(e) => setNewProduct({...newProduct, quantity: parseInt(e.target.value) || 1})}
+                />
+              </Form.Group>
+            </Col>
+            <Col md={2} className="d-flex align-items-end">
+              <Button 
+                variant="success" 
+                className="mb-2 w-100"
+                onClick={handleAddNewProduct}
+                disabled={!newProduct.product_id || newProduct.quantity <= 0 || loadingProducts}
+              >
+                Добавить
+              </Button>
+            </Col>
+          </Row>
+        </Card.Body>
+      </Card>
+      
+      {/* Таблица текущих товаров и добавленных товаров */}
+      <Table responsive hover>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Наименование</th>
+            <th>Цена</th>
+            <th>Количество</th>
+            <th>Сумма</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          {/* Существующие товары в заказе */}
+          {order.items.filter(item => !itemsToRemove.includes(item.id)).map(item => (
+            <tr key={item.id} className={itemsToRemove.includes(item.id) ? 'd-none' : ''}>
+              <td>{item.product_id}</td>
+              <td>{item.product_name}</td>
+              <td>{formatPrice(item.product_price)}</td>
+              <td>
+                <Form.Control
+                  type="number"
+                  min="1"
+                  value={itemsToUpdate[item.id] || item.quantity}
+                  onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
+                  style={{ width: '80px' }}
+                />
+              </td>
+              <td>{formatPrice((itemsToUpdate[item.id] || item.quantity) * item.product_price)}</td>
+              <td>
+                <Button 
+                  variant="danger" 
+                  size="sm"
+                  onClick={() => handleRemoveItem(item.id)}
+                >
+                  Удалить
+                </Button>
+              </td>
+            </tr>
+          ))}
+          
+          {/* Новые товары для добавления */}
+          {itemsToAdd.map(item => (
+            <tr key={item.temp_id} className="table-success">
+              <td>{item.product_id}</td>
+              <td>{item.product_name} <Badge bg="success">Новый</Badge></td>
+              <td>{formatPrice(item.product_price)}</td>
+              <td>
+                <Form.Control
+                  type="number"
+                  min="1"
+                  value={item.quantity}
+                  onChange={(e) => {
+                    const newQty = parseInt(e.target.value) || 1;
+                    setItemsToAdd(itemsToAdd.map(i => 
+                      i.temp_id === item.temp_id 
+                        ? {...i, quantity: newQty, total_price: newQty * i.product_price} 
+                        : i
+                    ));
+                  }}
+                  style={{ width: '80px' }}
+                />
+              </td>
+              <td>{formatPrice(item.quantity * item.product_price)}</td>
+              <td>
+                <Button 
+                  variant="danger" 
+                  size="sm"
+                  onClick={() => handleRemoveItem(item.temp_id)}
+                >
+                  Удалить
+                </Button>
+              </td>
+            </tr>
+          ))}
+          
+          {/* Отображаем удаленные товары */}
+          {order.items.filter(item => itemsToRemove.includes(item.id)).map(item => (
+            <tr key={`removed_${item.id}`} className="table-danger">
+              <td>{item.product_id}</td>
+              <td>{item.product_name} <Badge bg="danger">Удален</Badge></td>
+              <td>{formatPrice(item.product_price)}</td>
+              <td>{item.quantity}</td>
+              <td>{formatPrice(item.quantity * item.product_price)}</td>
+              <td>
+                <Button 
+                  variant="secondary" 
+                  size="sm"
+                  onClick={() => setItemsToRemove(itemsToRemove.filter(id => id !== item.id))}
+                >
+                  Восстановить
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      
+      {/* Кнопки действий */}
+      <div className="d-flex justify-content-end mt-3">
+        <Button 
+          variant="secondary" 
+          className="me-2"
+          onClick={() => {
+            setShowEditor(false);
+            setItemsToAdd([]);
+            setItemsToUpdate({});
+            setItemsToRemove([]);
+            setError(null);
+          }}
+          disabled={loading}
+        >
+          Отмена
+        </Button>
+        <Button 
+          variant="primary"
+          onClick={handleSaveChanges}
+          disabled={loading}
+        >
+          {loading ? (
+            <>
+              <Spinner
+                as="span"
+                animation="border"
+                size="sm"
+                role="status"
+                aria-hidden="true"
+              />
+              <span className="ms-2">Сохранение...</span>
+            </>
+          ) : (
+            'Сохранить изменения'
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 const AdminOrderDetail = () => {
   const { orderId } = useParams();
@@ -261,6 +883,14 @@ const AdminOrderDetail = () => {
     }
   };
   
+  // Проверка, можно ли редактировать товары в заказе
+  const canEditItems = () => {
+    if (!order || !order.status) return false;
+    
+    const nonEditableStatuses = ['Отправлен', 'Доставлен', 'Отменен', 'Оплачен'];
+    return !nonEditableStatuses.includes(order.status.name);
+  };
+  
   // Если заказ не загружен, показываем индикатор загрузки
   if ((loading || contextLoading) && !order) {
     return (
@@ -366,8 +996,13 @@ const AdminOrderDetail = () => {
           
           {/* Товары в заказе */}
           <Card className="mb-4">
-            <Card.Header>
+            <Card.Header className="d-flex justify-content-between align-items-center">
               <h5 className="mb-0">Товары в заказе</h5>
+              {canEditItems() ? (
+                <OrderItemsEditor order={order} onOrderUpdated={setOrder} />
+              ) : (
+                <Badge bg="secondary">Редактирование недоступно для заказов в статусе "{order.status.name}"</Badge>
+              )}
             </Card.Header>
             <Card.Body>
               <Table responsive hover>

@@ -719,6 +719,73 @@ export const OrderProvider = ({ children }) => {
     }
   }, [getConfig, user]);
 
+  // Обновление товаров в заказе (для администраторов)
+  const updateOrderItems = useCallback(async (orderId, itemsData) => {
+    console.log('Запрос на обновление товаров в заказе:', { orderId, itemsData });
+    
+    // Проверяем права администратора
+    const userData = user;
+    const isAdmin = userData?.is_admin || userData?.is_super_admin;
+    console.log('Проверка прав администратора:', { isAdmin, userData });
+    
+    if (!isAdmin) {
+      console.error('Попытка обновить товары в заказе без прав администратора');
+      setError('Для обновления товаров в заказе необходимы права администратора');
+      return null;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Используем POST эндпоинт для обновления товаров в заказе
+      const url = `${ORDER_SERVICE_URL}/admin/orders/${orderId}/items`;
+      const config = getConfig();
+      
+      console.log('Отправка запроса на обновление товаров в заказе:', { url, itemsData, config: { headers: config.headers } });
+      
+      // Отправляем POST запрос
+      const response = await axios.post(url, itemsData, config);
+      console.log('Ответ на запрос обновления товаров в заказе:', { status: response.status, data: response.data });
+      
+      if (response.status >= 200 && response.status < 300) {
+        return response.data;
+      } else {
+        console.error('Неожиданный статус ответа:', response.status);
+        setError(`Неожиданный статус ответа: ${response.status}`);
+        return null;
+      }
+    } catch (err) {
+      console.error('Ошибка при обновлении товаров в заказе:', err);
+      let errorMessage = 'Не удалось обновить товары в заказе';
+      
+      if (err.response) {
+        errorMessage = err.response.data.detail || errorMessage;
+        
+        // Обработка валидационных ошибок
+        if (err.response.data.errors) {
+          const errors = err.response.data.errors;
+          const errorMessages = [];
+          
+          for (const key in errors) {
+            errorMessages.push(`${key}: ${errors[key]}`);
+          }
+          
+          errorMessage = errorMessages.join('\n');
+        }
+      } else if (err.request) {
+        errorMessage = 'Сервер не отвечает. Проверьте соединение с интернетом.';
+      } else {
+        errorMessage = err.message || errorMessage;
+      }
+      
+      setError(errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [getConfig, user]);
+
   // Получение одного заказа по ID (для администраторов)
   const getAdminOrderById = useCallback(async (orderId) => {
     console.log('Вызов getAdminOrderById с ID:', orderId);
@@ -804,6 +871,7 @@ export const OrderProvider = ({ children }) => {
     getOrderStatuses: fetchOrderStatuses,
     updateOrderStatus,
     updateOrderPaymentStatus,
+    updateOrderItems,
     cancelOrder,
     createOrder,
     getUserOrders,

@@ -119,11 +119,11 @@ class ProductAPI:
                 
                 # Настраиваем заголовки с секретным ключом и авторизацией, если доступна
                 headers = {
-                    "Service-Key": INTERNAL_SERVICE_KEY  # Добавляем секретный ключ (с маленькой буквы!)
+                    "service-key": INTERNAL_SERVICE_KEY  # Добавляем секретный ключ (с маленькой буквы!)
                 }
                 
                 admin_headers = {
-                    "Service-Key": INTERNAL_SERVICE_KEY
+                    "service-key": INTERNAL_SERVICE_KEY
                 }
                 
                 # Добавляем токен авторизации если он предоставлен

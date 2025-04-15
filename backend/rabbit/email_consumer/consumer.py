@@ -164,6 +164,35 @@ def create_order_email_content(order_data):
             logger.warning(f"Ошибка при форматировании даты: {e}")
             formatted_date = created_at.split('T')[0] if 'T' in created_at else created_at
     
+    # Информация о промокоде и скидке
+    discount_info = ""
+    promo_code = order_data.get('promo_code')
+    discount_amount = order_data.get('discount_amount', 0)
+    
+    if promo_code and discount_amount > 0:
+        discount_percent = promo_code.get('discount_percent')
+        if discount_percent:
+            discount_info = f"""
+            <tr>
+                <td colspan="3" style="padding: 10px; text-align: right; font-style: italic;">Скидка по промокоду {promo_code.get('code')} ({discount_percent}%):</td>
+                <td style="padding: 10px; text-align: right; font-style: italic;">-{discount_amount:.2f} ₽</td>
+            </tr>
+            """
+        else:
+            discount_info = f"""
+            <tr>
+                <td colspan="3" style="padding: 10px; text-align: right; font-style: italic;">Скидка по промокоду {promo_code.get('code')}:</td>
+                <td style="padding: 10px; text-align: right; font-style: italic;">-{discount_amount:.2f} ₽</td>
+            </tr>
+            """
+    elif discount_amount > 0:
+        discount_info = f"""
+        <tr>
+            <td colspan="3" style="padding: 10px; text-align: right; font-style: italic;">Скидка:</td>
+            <td style="padding: 10px; text-align: right; font-style: italic;">-{discount_amount:.2f} ₽</td>
+        </tr>
+        """
+    
     # Формируем HTML-шаблон
     html = f"""
     <!DOCTYPE html>
@@ -204,6 +233,7 @@ def create_order_email_content(order_data):
                     <td style="padding: 5px 0;"><strong>Способ доставки:</strong></td>
                     <td>{order_data.get('delivery_method', 'Н/Д')}</td>
                 </tr>
+                {f'<tr><td style="padding: 5px 0;"><strong>Промокод:</strong></td><td>{promo_code.get("code")}</td></tr>' if promo_code else ''}
             </table>
             
             <h2 style="color: #4a5568; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">Список товаров:</h2>
@@ -220,6 +250,7 @@ def create_order_email_content(order_data):
                     {items_html}
                 </tbody>
                 <tfoot>
+                    {discount_info}
                     <tr>
                         <td colspan="3" style="padding: 10px; text-align: right; font-weight: bold;">Итого:</td>
                         <td style="padding: 10px; text-align: right; font-weight: bold;">{order_data.get('total_price', total):.2f} ₽</td>
@@ -271,7 +302,6 @@ def create_status_update_email_content(order_data):
     
     Args:
         order_data (dict): Данные о заказе
-        new_status (str): Новый статус заказа
         
     Returns:
         str: HTML-содержимое письма
@@ -280,6 +310,17 @@ def create_status_update_email_content(order_data):
     status = order_data.get('status', 'Новый')
     if isinstance(status, dict):
         status = status.get('name', 'Новый')
+
+    # Отладочное логирование для промокода и скидки
+    promo_code = order_data.get('promo_code')
+    discount_amount = order_data.get('discount_amount', 0)
+    
+    if promo_code:
+        logger.info(f"Промокод в create_status_update_email_content: {promo_code}")
+    else:
+        logger.warning(f"Промокод отсутствует в create_status_update_email_content для заказа {order_data.get('order_number')}")
+        
+    logger.info(f"Сумма скидки в create_status_update_email_content: {discount_amount}")
 
     # Формируем таблицу с товарами
     items_html = ""
@@ -320,6 +361,33 @@ def create_status_update_email_content(order_data):
         except Exception as e:
             logger.warning(f"Ошибка при форматировании даты: {e}")
             formatted_date = created_at.split('T')[0] if 'T' in created_at else created_at
+
+    # Информация о промокоде и скидке
+    discount_info = ""
+    
+    if promo_code and discount_amount > 0:
+        discount_percent = promo_code.get('discount_percent')
+        if discount_percent:
+            discount_info = f"""
+            <tr>
+                <td colspan="3" style="padding: 10px; text-align: right; font-style: italic;">Скидка по промокоду {promo_code.get('code')} ({discount_percent}%):</td>
+                <td style="padding: 10px; text-align: right; font-style: italic;">-{discount_amount:.2f} ₽</td>
+            </tr>
+            """
+        else:
+            discount_info = f"""
+            <tr>
+                <td colspan="3" style="padding: 10px; text-align: right; font-style: italic;">Скидка по промокоду {promo_code.get('code')}:</td>
+                <td style="padding: 10px; text-align: right; font-style: italic;">-{discount_amount:.2f} ₽</td>
+            </tr>
+            """
+    elif discount_amount > 0:
+        discount_info = f"""
+        <tr>
+            <td colspan="3" style="padding: 10px; text-align: right; font-style: italic;">Скидка:</td>
+            <td style="padding: 10px; text-align: right; font-style: italic;">-{discount_amount:.2f} ₽</td>
+        </tr>
+        """
         
     # Формируем HTML-шаблон
     html = f"""
@@ -357,6 +425,7 @@ def create_status_update_email_content(order_data):
                     <td style="padding: 5px 0;"><strong>Сумма заказа:</strong></td>
                     <td>{order_data.get('total_price', 0):.2f} ₽</td>
                 </tr>
+                {f'<tr><td style="padding: 5px 0;"><strong>Промокод:</strong></td><td>{promo_code.get("code")}</td></tr>' if promo_code else ''}
             </table>
             
             <h2 style="color: #4a5568; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">Список товаров:</h2>
@@ -373,6 +442,7 @@ def create_status_update_email_content(order_data):
                     {items_html}
                 </tbody>
                 <tfoot>
+                    {discount_info}
                     <tr>
                         <td colspan="3" style="padding: 10px; text-align: right; font-weight: bold;">Итого:</td>
                         <td style="padding: 10px; text-align: right; font-weight: bold;">{order_data.get('total_price', total):.2f} ₽</td>
@@ -662,6 +732,15 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
         else:
             logger.info(f"Получено сообщение update_message: {message_body}")
         
+        # Добавляем отладочное логирование для промокода
+        if 'promo_code' in message_body:
+            logger.info(f"Промокод в update_message: {message_body['promo_code']}")
+        else:
+            logger.warning(f"Промокод отсутствует в update_message для заказа {message_body.get('order_number')}")
+            
+        if 'discount_amount' in message_body:
+            logger.info(f"Сумма скидки в update_message: {message_body['discount_amount']}")
+            
         # Извлекаем необходимые данные
         email = message_body["email"]
         order_number = message_body["order_number"]

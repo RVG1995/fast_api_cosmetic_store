@@ -109,12 +109,24 @@ async def create_new_order(
         # Вручную запрашиваем заказ со всеми связанными данными
         loaded_order = await get_order_by_id(session, order.id)
         
+        # Если у заказа есть промокод, загружаем его
+        if loaded_order.promo_code_id:
+            # Загружаем промокод
+            promo_code = await session.get(PromoCodeModel, loaded_order.promo_code_id)
+            if promo_code:
+                # Создаем словарь с данными промокода для передачи в RabbitMQ
+                loaded_order.promo_code_dict = {
+                    "code": promo_code.code,
+                    "discount_percent": promo_code.discount_percent or 0
+                }
+                logger.info(f"Для нового заказа {loaded_order.id} загружен промокод {promo_code.code}")
+        
         # Отправляем подтверждение заказа на email
         from app.services.order_service import send_email_message
         if order_data.email:
             logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
             task_id = await send_email_message(loaded_order)
-            logger.info(f"Задача подтверждения заказа {order.id} отправлена в RabbitMQ, task_id: {task_id}")
+            logger.info(f"Задача подтверждения заказа {loaded_order.id} отправлена в RabbitMQ, task_id: {task_id}")
         
         # Явно инвалидируем кэш заказов перед возвратом ответа
         await invalidate_order_cache(order.id)
@@ -879,16 +891,26 @@ async def update_order_status(
         await invalidate_statistics_cache()
         logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после изменения статуса с '{old_status_name}' на '{new_status_name}'")
         
-        # Отправляем уведомление об изменении статуса
-        from app.services.order_service import update_order_status        
         # Обновляем заказ в сессии
         updated_order = await get_order_by_id(session, order_id)
 
+        # Если у заказа есть промокод, загружаем его ПЕРЕД отправкой уведомления
+        if updated_order.promo_code_id:
+            # Загружаем промокод
+            promo_code = await session.get(PromoCodeModel, updated_order.promo_code_id)
+            if promo_code:
+                # Создаем словарь с данными промокода для передачи в RabbitMQ
+                updated_order.promo_code_dict = {
+                    "code": promo_code.code,
+                    "discount_percent": promo_code.discount_percent or 0
+                }
+                logger.info(f"Для заказа {updated_order.id} загружен промокод {promo_code.code} (при обновлении статуса)")
+        
+        # Отправляем уведомление об изменении статуса ПОСЛЕ того, как загрузили промокод
+        from app.services.order_service import update_order_status
         if order.email:
             await update_order_status(updated_order, new_status_name)
             logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
-        
-
         
         return OrderResponse.model_validate(updated_order)
     except HTTPException:

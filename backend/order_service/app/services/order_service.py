@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 def create_order_email_content(order_data, new_status_name=None, stock=None):
     if new_status_name:
+        # Создаем словарь для сообщения, используя только данные, которые точно не требуют lazy loading
         message_body = {
             "order_number": order_data.order_number,
             "full_name": order_data.full_name,
@@ -20,15 +21,33 @@ def create_order_email_content(order_data, new_status_name=None, stock=None):
             "region": order_data.region,
             "city": order_data.city,
             "street": order_data.street,
-            "items": [
-                    {
-                        "product_name": item.product_name,
-                        "quantity": item.quantity,
-                        "product_price": item.product_price,
-                        "total_price": item.total_price
-                    } for item in order_data.items
-                ] if order_data.items else []
+            "discount_amount": 0,
+            "promo_code": None,
+            "items": []
         }
+        
+        # Безопасно добавляем скидку
+        discount_amount = getattr(order_data, 'discount_amount', 0)
+        if discount_amount is not None:
+            message_body["discount_amount"] = discount_amount
+        
+        # Безопасно добавляем информацию о промокоде
+        # Не обращаемся напрямую к order_data.promo_code, так как это может вызвать lazy loading
+        # Вместо этого проверим, есть ли в объекте заказа словарь с данными о промокоде
+        if hasattr(order_data, 'promo_code_dict') and order_data.promo_code_dict:
+            message_body["promo_code"] = order_data.promo_code_dict
+        
+        # Добавляем товары, если они уже загружены
+        if hasattr(order_data, 'items') and order_data.items:
+            items = []
+            for item in order_data.items:
+                items.append({
+                    "product_name": item.product_name,
+                    "quantity": item.quantity,
+                    "product_price": item.product_price,
+                    "total_price": item.total_price
+                })
+            message_body["items"] = items
     elif isinstance(order_data, list):
         # Случай для списка товаров с низким остатком
         message_body = {
@@ -41,11 +60,12 @@ def create_order_email_content(order_data, new_status_name=None, stock=None):
             "stock": stock
         }
     else:
+        # Создаем словарь для сообщения, используя только данные, которые точно не требуют lazy loading
         message_body = {
             "order_number": order_data.order_number,
             "full_name": order_data.full_name,
             "created_at": order_data.created_at.isoformat() if order_data.created_at else None,
-            "status": order_data.status.name if order_data.status else "Неизвестно",
+            "status": order_data.status.name if hasattr(order_data, 'status') and order_data.status else "Неизвестно",
             "total_price": order_data.total_price,
             "is_paid": order_data.is_paid,
             "email": order_data.email,
@@ -53,15 +73,34 @@ def create_order_email_content(order_data, new_status_name=None, stock=None):
             "region": order_data.region,
             "city": order_data.city,
             "street": order_data.street,
-            "items": [
-                    {
-                        "product_name": item.product_name,
-                        "quantity": item.quantity,
-                        "product_price": item.product_price,
-                        "total_price": item.total_price
-                    } for item in order_data.items
-                ] if order_data.items else []
+            "discount_amount": 0,
+            "promo_code": None,
+            "items": []
         }
+        
+        # Безопасно добавляем скидку
+        discount_amount = getattr(order_data, 'discount_amount', 0)
+        if discount_amount is not None:
+            message_body["discount_amount"] = discount_amount
+        
+        # Безопасно добавляем информацию о промокоде
+        # Не обращаемся напрямую к order_data.promo_code, так как это может вызвать lazy loading
+        # Вместо этого проверим, есть ли в объекте заказа словарь с данными о промокоде
+        if hasattr(order_data, 'promo_code_dict') and order_data.promo_code_dict:
+            message_body["promo_code"] = order_data.promo_code_dict
+        
+        # Добавляем товары, если они уже загружены
+        if hasattr(order_data, 'items') and order_data.items:
+            items = []
+            for item in order_data.items:
+                items.append({
+                    "product_name": item.product_name,
+                    "quantity": item.quantity,
+                    "product_price": item.product_price,
+                    "total_price": item.total_price
+                })
+            message_body["items"] = items
+            
     return message_body
 
 
@@ -120,8 +159,23 @@ async def update_order_status(
         # Объявляем очередь с использованием общей функции
         queue = await declare_queue(channel, "update_message")
         
+        # Логируем информацию о промокоде для отладки
+        if hasattr(order_data, 'promo_code_dict'):
+            logger.info(f"Для заказа {order_data.id} перед отправкой update_message найден promo_code_dict: {order_data.promo_code_dict}")
+        else:
+            logger.warning(f"Для заказа {order_data.id} перед отправкой update_message отсутствует promo_code_dict")
+            
+        if hasattr(order_data, 'promo_code_id') and order_data.promo_code_id:
+            logger.info(f"Для заказа {order_data.id} найден promo_code_id: {order_data.promo_code_id}")
+        
         # Создаем сообщение
         message_body = create_order_email_content(order_data, new_status_name)  
+        
+        # Проверяем, что промокод есть в сообщении
+        if 'promo_code' in message_body and message_body['promo_code']:
+            logger.info(f"Промокод успешно добавлен в сообщение: {message_body['promo_code']}")
+        else:
+            logger.warning(f"Промокод отсутствует в сообщении для заказа {order_data.id}")
         
         # Отправляем сообщение
         await channel.default_exchange.publish(

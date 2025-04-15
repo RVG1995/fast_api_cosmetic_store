@@ -396,6 +396,34 @@ const OrderDetailPage = () => {
                 </Col>
               </Row>
               
+              {/* Информация о промокоде и скидке */}
+              {(order.promo_code || order.discount_amount > 0) && (
+                <Row className="mb-4">
+                  {order.promo_code && (
+                    <Col md={6}>
+                      <div className="order-info-item">
+                        <div className="order-info-label">Промокод:</div>
+                        <div className="order-info-value">
+                          <Badge bg="success">{order.promo_code.code}</Badge>
+                         
+                        </div>
+                      </div>
+                    </Col>
+                  )}
+                  {order.discount_amount > 0 && (
+                    <Col md={6}>
+                      <div className="order-info-item">
+                        <div className="order-info-label">Скидка:</div>
+                        <div className="order-info-value"> {order.promo_code.discount_percent && 
+                            <span className="ms-1">{order.promo_code.discount_percent}%</span>}
+                          {!order.promo_code.discount_percent && order.promo_code.discount_amount && 
+                            <span className="ms-1">{formatPrice(order.promo_code.discount_amount)}</span>}</div>
+                      </div>
+                    </Col>
+                  )}
+                </Row>
+              )}
+              
               {order.comment && (
                 <div className="order-notes mb-4">
                   <h5>Комментарий к заказу:</h5>
@@ -433,6 +461,19 @@ const OrderDetailPage = () => {
                       {formatPrice(order.total_price)}
                     </td>
                   </tr>
+                  {order.discount_amount > 0 && (
+                    <tr>
+                      <td colSpan="3" className="text-end fst-italic">
+                        Скидка по промокоду {order.promo_code?.code && (
+                          <span>
+                            ({order.promo_code.code}
+                            {order.promo_code.discount_percent && <span> - {order.promo_code.discount_percent}%</span>})
+                          </span>
+                        )}:
+                      </td>
+                      <td className="text-end fst-italic">-{formatPrice(order.discount_amount)}</td>
+                    </tr>
+                  )}
                 </tfoot>
               </Table>
               

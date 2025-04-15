@@ -11,7 +11,7 @@ import { API_URLS } from '../../utils/constants';
 
 // Компонент для редактирования товаров в заказе
 const OrderItemsEditor = ({ order, onOrderUpdated }) => {
-  const { updateOrderItems } = useOrders();
+  const { updateOrderItems, getAdminOrderById } = useOrders();
   const [availableProducts, setAvailableProducts] = useState([]);
   const [dropdownProducts, setDropdownProducts] = useState([]);  // Продукты для выпадающего списка
   const [searchResults, setSearchResults] = useState([]);       // Результаты текстового поиска
@@ -295,6 +295,8 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
     setError(null);
     
     try {
+      console.log("Начинаем обновление товаров заказа ID:", order.id);
+      
       // Формируем данные для запроса
       const updateData = {
         items_to_add: itemsToAdd.map(item => ({
@@ -317,33 +319,54 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
         return;
       }
       
+      console.log("Отправляем обновления:", updateData);
+      
       // Отправляем запрос
       const result = await updateOrderItems(order.id, updateData);
+      console.log("Получен результат обновления:", result);
       
       if (result && result.success) {
-        // Закрываем редактор и уведомляем родительский компонент
-        setShowEditor(false);
+        console.log("Обновление успешно, обновляем интерфейс");
+        
+        // Из-за кэширования на бэкенде result.order может содержать устаревшие данные
+        // Явно запрашиваем актуальные данные заказа
+        console.log("Запрашиваем актуальное состояние заказа после обновления");
+        const freshOrderData = await getAdminOrderById(order.id);
+        
+        if (freshOrderData) {
+          console.log("Получены свежие данные заказа:", freshOrderData);
+          // Обновляем данные в родительском компоненте
+          if (onOrderUpdated) {
+            onOrderUpdated(freshOrderData);
+          }
+        } else {
+          // В случае ошибки запроса используем данные из первого ответа
+          console.warn("Не удалось получить свежие данные, используем данные из ответа");
+          if (onOrderUpdated && result.order) {
+            onOrderUpdated(result.order);
+          }
+        }
         
         // Очищаем состояние
         setItemsToAdd([]);
         setItemsToUpdate({});
         setItemsToRemove([]);
         
-        // Уведомляем родительский компонент об обновлении
-        if (onOrderUpdated) {
-          onOrderUpdated(result.order);
-        }
+        // Закрываем редактор
+        setShowEditor(false);
       } else {
-        // Если есть ошибки в ответе
-        if (result && result.errors) {
-          setError(Object.values(result.errors).join("\n"));
-        } else {
-          setError("Не удалось обновить товары в заказе");
-        }
+        console.error("Ошибка при обновлении товаров:", result);
+        setError(result?.errors?.message || "Не удалось обновить товары в заказе");
       }
     } catch (err) {
       console.error("Ошибка при обновлении товаров:", err);
-      setError(err.message || "Произошла ошибка при обновлении товаров");
+      
+      if (err.response) {
+        console.error("Ответ сервера:", err.response.data);
+        setError(err.response.data?.detail || "Ошибка при обновлении товаров");
+      } else {
+        setError(err.message || "Произошла ошибка при обновлении товаров");
+      }
     } finally {
       setLoading(false);
     }
@@ -588,6 +611,23 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
+            <td><strong>{formatPrice(order.total_price || order.total_amount || 0)}</strong></td>
+          </tr>
+          {order.discount_amount > 0 && (
+            <tr>
+              <td colSpan="4" className="text-end"><em>Скидка по промокоду {order.promo_code?.code && (
+                <span>
+                  ({order.promo_code.code}
+                  {order.promo_code.discount_percent && <span> - {order.promo_code.discount_percent}%</span>})
+                </span>
+              )}:</em></td>
+              <td>-{formatPrice(order.discount_amount)}</td>
+            </tr>
+          )}
+        </tfoot>
       </Table>
       
       {/* Кнопки действий */}
@@ -981,6 +1021,18 @@ const AdminOrderDetail = () => {
                   <p><strong>Email:</strong> {order.email}</p>
                   <p><strong>Телефон:</strong> {order.phone || 'Не указан'}</p>
                   <p><strong>Сумма заказа:</strong> {formatPrice(order.total_price)}</p>
+                  {order.discount_amount > 0 && (
+                    <p><strong>Скидка:</strong> {formatPrice(order.discount_amount)}</p>
+                  )}
+                  {order.promo_code && (
+                    <p><strong>Промокод:</strong> <Badge bg="success">{order.promo_code.code}</Badge> 
+                      {order.promo_code.discount_percent ? 
+                        <span className="ms-1">({order.promo_code.discount_percent}%)</span> : 
+                        order.promo_code.discount_amount ? 
+                          <span className="ms-1">({formatPrice(order.promo_code.discount_amount)})</span> : 
+                          null}
+                    </p>
+                  )}
                 </Col>
               </Row>
               
@@ -1030,6 +1082,17 @@ const AdminOrderDetail = () => {
                     <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
                     <td><strong>{formatPrice(order.total_price || order.total_amount || 0)}</strong></td>
                   </tr>
+                  {order.discount_amount > 0 && (
+                    <tr>
+                      <td colSpan="4" className="text-end"><em>Скидка по промокоду {order.promo_code?.code && (
+                        <span>
+                          ({order.promo_code.code}
+                          {order.promo_code.discount_percent && <span> - {order.promo_code.discount_percent}%</span>})
+                        </span>
+                      )}:</em></td>
+                      <td>-{formatPrice(order.discount_amount)}</td>
+                    </tr>
+                  )}
                 </tfoot>
               </Table>
             </Card.Body>

@@ -575,30 +575,42 @@ async def update_order_items(
                 await session.delete(item)
         
         # Обновляем общую сумму заказа
+        await session.flush()  # Применяем все изменения перед обновлением
         await session.refresh(order, ["items"])
-        total_price = sum(item.total_price for item in order.items)
         
-        # Применяем скидку, если есть промокод
-        if promo_code:
-            if promo_code.discount_percent:
-                discount = int(total_price * promo_code.discount_percent / 100)
-                total_price -= discount
-                order.discount_amount = discount
-            elif promo_code.discount_amount:
-                discount = min(promo_code.discount_amount, total_price)
-                total_price -= discount
-                order.discount_amount = discount
+        # Проверяем, остались ли товары в заказе
+        if not order.items or len(order.items) == 0:
+            logger.info(f"В заказе {order_id} не осталось товаров, устанавливаем сумму 0")
+            total_price = 0
+            order.discount_amount = 0
+        else:
+            total_price = sum(item.total_price for item in order.items)
+            
+            # Применяем скидку, если есть промокод
+            if promo_code:
+                if promo_code.discount_percent:
+                    discount = int(total_price * promo_code.discount_percent / 100)
+                    total_price -= discount
+                    order.discount_amount = discount
+                elif promo_code.discount_amount:
+                    discount = min(promo_code.discount_amount, total_price)
+                    total_price -= discount
+                    order.discount_amount = discount
         
+        logger.info(f"Обновляем общую сумму заказа {order_id}: {total_price}")
         order.total_price = total_price
         
         await session.commit()
         
-        # Инвалидируем кэш заказа и связанных списков
+        # Инвалидация Redis кэша
         await invalidate_order_cache(order_id)
+        
+        # Принудительное обновление сессии для избежания кэширования SQLAlchemy
+        session.expire_all()
         
         logger.info(f"Элементы заказа {order_id} успешно обновлены")
         
-        # Получаем обновленный заказ для возврата
+        # Получаем обновленный заказ для возврата с отключенным кэшированием
         order_stmt = select(OrderModel).where(OrderModel.id == order_id).options(
             selectinload(OrderModel.items),
             selectinload(OrderModel.status),
@@ -610,7 +622,9 @@ async def update_order_items(
                 selectinload(OrderModel.promo_code)
             )
             
-        result = await session.execute(order_stmt)
+        # Отключаем кэширование для получения актуальных данных
+        result = await session.execute(order_stmt, execution_options={"cacheable": False})
+        logger.info(f"Получен результат запроса с отключенным кэшированием для заказа {order_id}")
         return result.scalar_one_or_none()
         
     except Exception as e:

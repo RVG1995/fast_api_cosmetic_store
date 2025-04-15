@@ -5,12 +5,13 @@ import { useOrders } from '../context/OrderContext';
 import { useAuth } from '../context/AuthContext';
 import { Alert, Button, Form, Card, Row, Col, Spinner } from 'react-bootstrap';
 import { formatPrice } from '../utils/helpers';
+import PromoCodeForm from '../components/PromoCodeForm';
 import './CheckoutPage.css';
 
 const CheckoutPage = () => {
   const navigate = useNavigate();
   const { cart, clearCart } = useCart();
-  const { createOrder, loading, error, setError } = useOrders();
+  const { createOrder, loading, error, setError, promoCode, clearPromoCode } = useOrders();
   const { user } = useAuth();
   
   // Состояния формы
@@ -27,11 +28,21 @@ const CheckoutPage = () => {
   const [validated, setValidated] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderNumber, setOrderNumber] = useState(null);
+  const [redirectTimer, setRedirectTimer] = useState(null);
+  const [appliedPromoCode, setAppliedPromoCode] = useState(null);
+  const [cartTotal, setCartTotal] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
   
-  // Проверяем наличие товаров в корзине
+  // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
     if (!cart || !cart.items || cart.items.length === 0) {
       navigate('/cart');
+    } else {
+      // Вычисляем общую стоимость корзины
+      const total = cart.items.reduce((sum, item) => {
+        return sum + (item.product?.price || 0) * item.quantity;
+      }, 0);
+      setCartTotal(total);
     }
   }, [cart, navigate]);
   
@@ -42,6 +53,19 @@ const CheckoutPage = () => {
       ...prev,
       [name]: value
     }));
+  };
+
+  // Обработчик применения промокода
+  const handlePromoCodeApplied = (promoData) => {
+    setAppliedPromoCode(promoData);
+    if (promoData) {
+      const calculatedDiscount = promoData.discount;
+      setDiscountAmount(calculatedDiscount);
+      console.log('Промокод применен:', promoData, 'Скидка:', calculatedDiscount);
+    } else {
+      setDiscountAmount(0);
+      console.log('Промокод удален');
+    }
   };
   
   // Обработчик отправки формы
@@ -105,7 +129,8 @@ const CheckoutPage = () => {
       region: formData.region,
       city: formData.city,
       street: formData.street,
-      comment: formData.comment || ''
+      comment: formData.comment || '',
+      promo_code: promoCode ? promoCode.code : undefined
     };
     
     console.log("Отправляемые данные заказа:", orderData);
@@ -131,6 +156,9 @@ const CheckoutPage = () => {
         setOrderSuccess(true);
         setOrderNumber(formattedOrderNumber);
         
+        // Очищаем промокод после успешного создания заказа
+        clearPromoCode();
+        
         // Откладываем очистку корзины и редирект на 15 секунд
         const redirectTimer = setTimeout(() => {
           clearCart(); // Очищаем корзину непосредственно перед редиректом
@@ -145,9 +173,6 @@ const CheckoutPage = () => {
       // Лог ошибки уже выполняется в контексте заказов
     }
   };
-  
-  // Добавляем состояние для хранения ID таймера
-  const [redirectTimer, setRedirectTimer] = useState(null);
   
   // Если заказ успешно создан, показываем сообщение об успехе
   if (orderSuccess) {
@@ -168,6 +193,7 @@ const CheckoutPage = () => {
                   clearTimeout(redirectTimer);
                 }
                 clearCart(); // Очищаем корзину перед редиректом
+                clearPromoCode(); // Очищаем промокод при переходе на страницу заказов
                 navigate('/orders');
               }}
               className="mt-3"
@@ -179,6 +205,9 @@ const CheckoutPage = () => {
       </div>
     );
   }
+
+  // Вычисляем итоговую стоимость с учетом скидки
+  const finalTotal = Math.max(0, cartTotal - discountAmount);
   
   // Основной рендер страницы оформления заказа
   return (
@@ -248,7 +277,7 @@ const CheckoutPage = () => {
                         Пожалуйста, введите корректный номер телефона (начинается с +7 или 8)
                       </Form.Control.Feedback>
                       <Form.Text className="text-muted">
-                        Введите телефон в формате +79999999999 или 89999999999
+                        Формат: +79999999999 или 89999999999
                       </Form.Text>
                     </Form.Group>
                   </Col>
@@ -262,10 +291,10 @@ const CheckoutPage = () => {
                     value={formData.region}
                     onChange={handleChange}
                     required
-                    placeholder="Свердловская область"
+                    placeholder="Москва и Московская область"
                   />
                   <Form.Control.Feedback type="invalid">
-                    Пожалуйста, укажите регион доставки
+                    Пожалуйста, укажите регион
                   </Form.Control.Feedback>
                 </Form.Group>
                 
@@ -277,10 +306,10 @@ const CheckoutPage = () => {
                     value={formData.city}
                     onChange={handleChange}
                     required
-                    placeholder="Екатеринбург"
+                    placeholder="Москва"
                   />
                   <Form.Control.Feedback type="invalid">
-                    Пожалуйста, укажите город доставки
+                    Пожалуйста, укажите город
                   </Form.Control.Feedback>
                 </Form.Group>
                 
@@ -292,14 +321,11 @@ const CheckoutPage = () => {
                     value={formData.street}
                     onChange={handleChange}
                     required
-                    placeholder="ул. Ленина, д. 1, кв. 1"
+                    placeholder="Улица, дом, квартира"
                   />
                   <Form.Control.Feedback type="invalid">
-                    Пожалуйста, укажите полный адрес доставки
+                    Пожалуйста, укажите адрес доставки
                   </Form.Control.Feedback>
-                  <Form.Text className="text-muted">
-                    Укажите полный адрес, включая улицу, дом, корпус, квартиру
-                  </Form.Text>
                 </Form.Group>
                 
                 <Form.Group className="mb-3">
@@ -310,13 +336,14 @@ const CheckoutPage = () => {
                     name="comment"
                     value={formData.comment}
                     onChange={handleChange}
+                    placeholder="Комментарий к заказу (например, удобное время доставки)"
                   />
                 </Form.Group>
                 
                 <Button 
                   variant="primary" 
                   type="submit" 
-                  className="w-100 mt-3" 
+                  className="w-100"
                   disabled={loading}
                 >
                   {loading ? (
@@ -331,7 +358,7 @@ const CheckoutPage = () => {
                       <span className="ms-2">Оформление заказа...</span>
                     </>
                   ) : (
-                    'Оформить заказ'
+                    "Оформить заказ"
                   )}
                 </Button>
               </Form>
@@ -339,39 +366,59 @@ const CheckoutPage = () => {
           </Card>
         </Col>
         
-        {/* Сводка заказа */}
+        {/* Информация о заказе */}
         <Col md={4}>
           <Card className="checkout-summary-card">
             <Card.Header>
               <h3 className="checkout-summary-title">Ваш заказ</h3>
             </Card.Header>
             <Card.Body>
-              <div className="checkout-items">
-                {cart?.items?.map(item => (
-                  <div key={item.id} className="checkout-item">
-                    <div className="checkout-item-details">
-                      <div className="checkout-item-name">
-                        {item.product.name}
+              {cart && cart.items && cart.items.length > 0 ? (
+                <div className="checkout-summary">
+                  <div className="checkout-items">
+                    {cart.items.map(item => (
+                      <div key={item.id} className="checkout-item">
+                        <div className="item-name">{item.product.name}</div>
+                        <div className="item-quantity">{item.quantity} x {formatPrice(item.product.price)} ₽</div>
+                        <div className="item-total">{formatPrice(item.quantity * item.product.price)} ₽</div>
                       </div>
-                      <div className="checkout-item-quantity">
-                        {item.quantity} шт.
+                    ))}
+                  </div>
+                  
+                  {/* Форма промокода */}
+                  <PromoCodeForm 
+                    email={formData.email} 
+                    phone={formData.phone} 
+                    cartTotal={cartTotal}
+                    onPromoCodeApplied={handlePromoCodeApplied}
+                  />
+                  
+                  <div className="checkout-total">
+                    {discountAmount > 0 && (
+                      <div className="discount">
+                        <div>Скидка:</div>
+                        <div>-{formatPrice(discountAmount)} ₽</div>
                       </div>
-                    </div>
-                    <div className="checkout-item-price">
-                      {formatPrice(item.product.price * item.quantity)}
+                    )}
+                    
+                    <div className="total">
+                      <div>Итого:</div>
+                      <div>
+                        {discountAmount > 0 && (
+                          <span className="old-price">{formatPrice(cartTotal)} ₽</span>
+                        )}
+                        <strong className={discountAmount > 0 ? "new-price" : ""}>
+                          {formatPrice(finalTotal)} ₽
+                        </strong>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
-              
-              <hr />
-              
-              <div className="checkout-total">
-                <span className="checkout-total-label">Итого:</span>
-                <span className="checkout-total-price">
-                  {formatPrice(cart?.total_price || 0)}
-                </span>
-              </div>
+                </div>
+              ) : (
+                <div className="empty-cart-message">
+                  Корзина пуста
+                </div>
+              )}
             </Card.Body>
           </Card>
         </Col>

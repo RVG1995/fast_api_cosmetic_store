@@ -77,6 +77,10 @@ class OrderModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
     total_price: Mapped[int] = mapped_column(Integer, nullable=False)
     
+    # Новое поле для связи с промокодом
+    promo_code_id: Mapped[Optional[int]] = mapped_column(ForeignKey("promo_codes.id", ondelete="SET NULL"), nullable=True)
+    discount_amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)  # Сумма скидки
+    
     # Данные о клиенте и доставке
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -96,6 +100,9 @@ class OrderModel(Base):
     
     # История изменений статуса
     status_history = relationship("OrderStatusHistoryModel", back_populates="order", cascade="all, delete-orphan")
+    
+    # Связь с промокодом
+    promo_code = relationship("PromoCodeModel", back_populates="orders")
     
     @property
     def order_number(self) -> str:
@@ -433,3 +440,91 @@ class PaymentStatusModel(Base):
         # TODO: Реализовать проверку использования статуса в заказах
         # когда будет добавлена связь с заказами
         return False 
+
+class PromoCodeModel(Base):
+    """Модель промокода"""
+    __tablename__ = 'promo_codes'
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    discount_percent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    discount_amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    valid_until: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    
+    # Связь с заказами
+    orders = relationship("OrderModel", back_populates="promo_code")
+    
+    # Связь с использованными промокодами
+    usages = relationship("PromoCodeUsageModel", back_populates="promo_code", cascade="all, delete-orphan")
+    
+    @property
+    def is_valid(self) -> bool:
+        """Проверяет, действителен ли промокод (по сроку действия)"""
+        return self.is_active and self.valid_until >= datetime.now()
+    
+    @classmethod
+    async def get_by_code(cls, session: AsyncSession, code: str) -> Optional["PromoCodeModel"]:
+        """Получить промокод по коду"""
+        try:
+            query = select(cls).filter(cls.code == code)
+            result = await session.execute(query)
+            return result.scalars().first()
+        except Exception as e:
+            logging.error(f"Ошибка при получении промокода: {str(e)}")
+            return None
+    
+    @classmethod
+    async def get_all(cls, session: AsyncSession, skip: int = 0, limit: int = 100) -> List["PromoCodeModel"]:
+        """Получить все промокоды с пагинацией"""
+        try:
+            query = select(cls).order_by(cls.created_at.desc()).offset(skip).limit(limit)
+            result = await session.execute(query)
+            return result.scalars().all()
+        except Exception as e:
+            logging.error(f"Ошибка при получении промокодов: {str(e)}")
+            return []
+    
+    @classmethod
+    async def get_active(cls, session: AsyncSession) -> List["PromoCodeModel"]:
+        """Получить все активные промокоды"""
+        try:
+            query = select(cls).filter(
+                cls.is_active == True,
+                cls.valid_until >= func.now()
+            ).order_by(cls.created_at.desc())
+            result = await session.execute(query)
+            return result.scalars().all()
+        except Exception as e:
+            logging.error(f"Ошибка при получении активных промокодов: {str(e)}")
+            return []
+
+class PromoCodeUsageModel(Base):
+    """Модель использования промокода"""
+    __tablename__ = 'promo_code_usages'
+    
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    promo_code_id: Mapped[int] = mapped_column(ForeignKey("promo_codes.id", ondelete="CASCADE"), nullable=False)
+    email: Mapped[str] = mapped_column(String(100), nullable=False)
+    phone: Mapped[str] = mapped_column(String(50), nullable=False)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    used_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
+    
+    # Связь с промокодом
+    promo_code = relationship("PromoCodeModel", back_populates="usages")
+    
+    @classmethod
+    async def check_usage(cls, session: AsyncSession, promo_code_id: int, email: str, phone: str) -> bool:
+        """Проверить, использовал ли пользователь промокод ранее (по email и телефону)"""
+        try:
+            query = select(cls).filter(
+                cls.promo_code_id == promo_code_id,
+                (cls.email == email) | (cls.phone == phone)
+            )
+            result = await session.execute(query)
+            return result.scalars().first() is not None
+        except Exception as e:
+            logging.error(f"Ошибка при проверке использования промокода: {str(e)}")
+            return False 

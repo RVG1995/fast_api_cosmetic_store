@@ -44,6 +44,7 @@ const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
 const AdminOrderDetail = lazy(() => import('./pages/admin/AdminOrderDetail'));
 const AdminOrderStatuses = lazy(() => import('./pages/admin/AdminOrderStatuses'));
 const AdminPaymentStatuses = lazy(() => import('./pages/admin/AdminPaymentStatuses'));
+const AdminPromoCodes = lazy(() => import('./pages/admin/AdminPromoCodes'));
 const AdminReviewsPage = lazy(() => import('./pages/admin/reviews/AdminReviewsPage'));
 const AdminReviewDetailPage = lazy(() => import('./pages/admin/reviews/AdminReviewDetailPage'));
 
@@ -295,6 +296,16 @@ function App() {
                         <AdminRoute>
                           <Suspense fallback={<Loading />}>
                             <AdminPaymentStatuses />
+                          </Suspense>
+                        </AdminRoute>
+                      } 
+                    />
+                    <Route 
+                      path="admin/promo-codes" 
+                      element={
+                        <AdminRoute>
+                          <Suspense fallback={<Loading />}>
+                            <AdminPromoCodes />
                           </Suspense>
                         </AdminRoute>
                       } 

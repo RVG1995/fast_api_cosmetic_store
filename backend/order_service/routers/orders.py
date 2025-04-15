@@ -6,13 +6,14 @@ import logging
 import os
 from dotenv import load_dotenv
 from datetime import datetime
+import hashlib
 
 from database import get_db
-from models import OrderModel, OrderStatusModel, OrderStatusHistoryModel
+from models import OrderModel, OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel
 from schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderDetailResponse, 
     OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics, BatchStatusUpdate,
-    OrderItemsUpdate, OrderItemsUpdateResponse
+    OrderItemsUpdate, OrderItemsUpdateResponse, PromoCodeResponse, OrderResponseWithPromo, OrderDetailResponseWithPromo
 )
 from services import (
     create_order, get_order_by_id, get_orders, update_order, 
@@ -54,7 +55,7 @@ admin_router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-@router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=OrderResponseWithPromo, status_code=status.HTTP_201_CREATED)
 async def create_new_order(
     order_data: OrderCreate,
     current_user: Optional[Dict[str, Any]] = Depends(get_current_user),
@@ -119,8 +120,23 @@ async def create_new_order(
         await invalidate_order_cache(order.id)
         logger.info(f"Кэш заказа {order.id} и связанных списков инвалидирован перед возвратом ответа")
         
-        # Преобразуем модель в схему
-        return OrderResponse.model_validate(loaded_order)
+        # Преобразуем модель в схему без промокода
+        order_response = OrderResponse.model_validate(loaded_order)
+        
+        # Создаем расширенный ответ с возможностью добавления промокода
+        response_with_promo = OrderResponseWithPromo(**order_response.model_dump())
+        
+        # Если у заказа есть промокод, загружаем его данные вручную
+        if loaded_order.promo_code_id:
+            try:
+                promo_code = await session.get(PromoCodeModel, loaded_order.promo_code_id)
+                if promo_code:
+                    response_with_promo.promo_code = PromoCodeResponse.model_validate(promo_code)
+                    logger.info(f"Для нового заказа {loaded_order.id} загружен промокод {promo_code.code}")
+            except Exception as e:
+                logger.warning(f"Не удалось загрузить промокод {loaded_order.promo_code_id} для заказа {loaded_order.id}: {str(e)}")
+        
+        return response_with_promo
     except ValueError as e:
         logger.error(f"Ошибка при создании заказа: {str(e)}")
         raise HTTPException(
@@ -186,8 +202,32 @@ async def list_my_orders(
         )
         
         # Формируем ответ с преобразованием моделей в схемы
+        order_responses = []
+        for order in orders:
+            # Создаем базовый объект OrderResponse без промокода
+            order_response = OrderResponse.model_validate(order)
+            
+            # Если у заказа есть промокод, создаем OrderResponseWithPromo
+            if order.promo_code_id:
+                # Создаем расширенный ответ с информацией о промокоде
+                with_promo = OrderResponseWithPromo(**order_response.model_dump())
+                
+                try:
+                    # Получаем промокод и устанавливаем его
+                    promo_code = await session.get(PromoCodeModel, order.promo_code_id)
+                    if promo_code:
+                        with_promo.promo_code = PromoCodeResponse.model_validate(promo_code)
+                        logger.info(f"Для заказа {order.id} загружен промокод {promo_code.code}")
+                except Exception as e:
+                    logger.warning(f"Не удалось загрузить промокод {order.promo_code_id} для заказа {order.id}: {str(e)}")
+                
+                order_responses.append(with_promo)
+            else:
+                # Заказ без промокода, используем обычный OrderResponse
+                order_responses.append(order_response)
+        
         response = PaginatedResponse(
-            items=[OrderResponse.model_validate(order) for order in orders],
+            items=order_responses,
             total=total,
             page=filters.page,
             size=filters.size,
@@ -251,7 +291,7 @@ async def get_user_statistics(
             detail="Ошибка при получении статистики заказов"
         )
 
-@router.get("/{order_id}", response_model=OrderDetailResponse)
+@router.get("/{order_id}", response_model=OrderDetailResponseWithPromo)
 async def get_order(
     order_id: int = Path(..., ge=1),
     current_user: Optional[Dict[str, Any]] = Depends(get_current_user),
@@ -309,15 +349,28 @@ async def get_order(
                 detail=f"Заказ с ID {order_id} не найден",
             )
         
-        # Преобразуем модель в схему
+        # Преобразуем модель в схему без промокода
         order_response = OrderDetailResponse.model_validate(order)
+        
+        # Создаем расширенный ответ с возможностью добавления промокода
+        response_with_promo = OrderDetailResponseWithPromo(**order_response.model_dump())
+        
+        # Вручную обрабатываем промокод
+        if order.promo_code_id:
+            try:
+                promo_code = await session.get(PromoCodeModel, order.promo_code_id)
+                if promo_code:
+                    response_with_promo.promo_code = PromoCodeResponse.model_validate(promo_code)
+                    logger.info(f"Для заказа {order.id} загружен промокод {promo_code.code}")
+            except Exception as e:
+                logger.warning(f"Не удалось загрузить промокод {order.promo_code_id} для заказа {order.id}: {str(e)}")
         
         # Кэшируем результат, если запрос не от сервиса
         if not current_user.get("is_service"):
-            await cache_order(order_id, order_response)
+            await cache_order(order_id, response_with_promo)
             logger.info(f"Данные о заказе {order_id} добавлены в кэш")
         
-        return order_response
+        return response_with_promo
     except HTTPException:
         raise
     except Exception as e:
@@ -526,42 +579,54 @@ async def list_all_orders(
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Получение списка всех заказов с пагинацией и фильтрацией (только для администраторов).
+    Получение списка всех заказов (только для администраторов).
     
-    - **page**: Номер страницы
-    - **size**: Размер страницы
-    - **status_id**: ID статуса заказа
-    - **user_id**: ID пользователя
-    - **id**: ID заказа
-    - **date_from**: Дата начала периода (YYYY-MM-DD)
-    - **date_to**: Дата окончания периода (YYYY-MM-DD)
-    - **order_by**: Поле для сортировки
-    - **order_dir**: Направление сортировки
+    Поддерживает фильтрацию по различным параметрам.
     """
     try:
-        # Логируем запрос с параметрами фильтрации
-        logger.info(f"Запрос списка всех заказов с параметрами: page={filters.page}, size={filters.size}, "
-                   f"status_id={filters.status_id}, user_id={filters.user_id}, id={filters.id}, "
-                   f"date_from={filters.date_from}, date_to={filters.date_to}, username={filters.username}")
-        
         # Создаем ключ для кэша на основе параметров фильтрации
-        cache_key = f"p{filters.page}_s{filters.size}_st{filters.status_id or 'all'}_u{filters.user_id or 'all'}_id{filters.id or 'all'}_df{filters.date_from or 'all'}_dt{filters.date_to or 'all'}_un{filters.username or 'all'}_ob{filters.order_by or 'default'}_od{filters.order_dir or 'default'}"
+        filter_params = filters.model_dump_json()
+        cache_key = hashlib.md5(filter_params.encode()).hexdigest()
         
         # Пытаемся получить данные из кэша
         cached_orders = await get_cached_orders_list(cache_key)
         if cached_orders:
-            logger.info(f"Данные о всех заказах получены из кэша")
+            logger.info(f"Данные о всех заказах получены из кэша по ключу {cache_key}")
             return cached_orders
         
-        # Получаем заказы
+        # Если данных нет в кэше, получаем из БД
         orders, total = await get_orders(
             session=session,
             filters=filters
         )
         
         # Формируем ответ с преобразованием моделей в схемы
+        order_responses = []
+        for order in orders:
+            # Создаем базовый объект OrderResponse без промокода
+            order_response = OrderResponse.model_validate(order)
+            
+            # Если у заказа есть промокод, создаем OrderResponseWithPromo
+            if order.promo_code_id:
+                # Создаем расширенный ответ с информацией о промокоде
+                with_promo = OrderResponseWithPromo(**order_response.model_dump())
+                
+                try:
+                    # Получаем промокод и устанавливаем его
+                    promo_code = await session.get(PromoCodeModel, order.promo_code_id)
+                    if promo_code:
+                        with_promo.promo_code = PromoCodeResponse.model_validate(promo_code)
+                        logger.info(f"Для заказа {order.id} загружен промокод {promo_code.code} (в админ списке)")
+                except Exception as e:
+                    logger.warning(f"Не удалось загрузить промокод {order.promo_code_id} для заказа {order.id}: {str(e)}")
+                
+                order_responses.append(with_promo)
+            else:
+                # Заказ без промокода, используем обычный OrderResponse
+                order_responses.append(order_response)
+        
         response = PaginatedResponse(
-            items=[OrderResponse.model_validate(order) for order in orders],
+            items=order_responses,
             total=total,
             page=filters.page,
             size=filters.size,
@@ -570,7 +635,7 @@ async def list_all_orders(
         
         # Кэшируем результат
         await cache_orders_list(cache_key, response)
-        logger.info(f"Данные о всех заказах добавлены в кэш с ключом: {cache_key}")
+        logger.info(f"Данные о всех заказах добавлены в кэш по ключу {cache_key}")
         
         return response
     except Exception as e:
@@ -610,53 +675,58 @@ async def get_admin_orders_statistics(
             detail="Ошибка при получении статистики заказов"
         )
 
-@admin_router.get("/{order_id}", response_model=OrderDetailResponse)
+@admin_router.get("/{order_id}", response_model=OrderDetailResponseWithPromo)
 async def get_order_admin(
     order_id: int = Path(..., ge=1),
     current_user: Dict[str, Any] = Depends(get_admin_user),
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Получение подробной информации о заказе по ID (только для администраторов).
+    Получение информации о заказе по ID (только для администраторов)
     
     - **order_id**: ID заказа
     """
     try:
-        logger.info(f"Запрос заказа администратором. ID заказа: {order_id}, ID пользователя: {current_user.get('user_id')}")
-        
         # Пытаемся получить данные из кэша
-        cached_order = await get_cached_order(order_id)
+        cached_order = await get_cached_order(order_id, admin=True)
         if cached_order:
-            logger.info(f"Данные о заказе {order_id} получены из кэша")
+            logger.info(f"Данные о заказе {order_id} получены из кэша (админ)")
             return cached_order
-        
+            
         # Получаем заказ
-        order = await get_order_by_id(
-            session=session,
-            order_id=order_id
-        )
+        order = await get_order_by_id(session, order_id)
         
         if not order:
-            logger.warning(f"Заказ с ID {order_id} не найден для администратора")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Заказ с ID {order_id} не найден",
             )
         
-        logger.info(f"Заказ с ID {order_id} успешно найден для администратора")
-        
-        # Преобразуем модель в схему
+        # Преобразуем модель в схему без промокода
         order_response = OrderDetailResponse.model_validate(order)
         
-        # Кэшируем результат
-        await cache_order(order_id, order_response)
-        logger.info(f"Данные о заказе {order_id} добавлены в кэш")
+        # Создаем расширенный ответ с возможностью добавления промокода
+        response_with_promo = OrderDetailResponseWithPromo(**order_response.model_dump())
         
-        return order_response
+        # Вручную обрабатываем промокод
+        if order.promo_code_id:
+            try:
+                promo_code = await session.get(PromoCodeModel, order.promo_code_id)
+                if promo_code:
+                    response_with_promo.promo_code = PromoCodeResponse.model_validate(promo_code)
+                    logger.info(f"Для заказа {order.id} загружен промокод {promo_code.code} (админ)")
+            except Exception as e:
+                logger.warning(f"Не удалось загрузить промокод {order.promo_code_id} для заказа {order.id}: {str(e)}")
+        
+        # Кэшируем результат
+        await cache_order(order_id, response_with_promo, admin=True)
+        logger.info(f"Данные о заказе {order_id} добавлены в кэш (админ)")
+        
+        return response_with_promo
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка при получении информации о заказе: {str(e)}")
+        logger.error(f"Ошибка при получении информации о заказе (админ): {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при получении информации о заказе",
@@ -839,43 +909,106 @@ async def update_order_items_endpoint(
     current_user: Dict[str, Any] = Depends(get_admin_user)
 ):
     """Обновление товаров в заказе (админский доступ)"""
+    logger = logging.getLogger("order_router")
     logger.info(f"Запрос на обновление элементов заказа {order_id}: items_to_add={items_data.items_to_add} items_to_update={items_data.items_to_update} items_to_remove={items_data.items_to_remove}")
     
-    # Получаем текущий статус заказа
-    order = await get_order_by_id(session, order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Заказ не найден")
+    try:
+        # Получаем текущий статус заказа
+        order = await get_order_by_id(session, order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
         
-    # Проверка статуса заказа - запрещаем редактировать товары для определенных статусов
-    non_editable_statuses = ["Отправлен", "Доставлен", "Отменен", "Оплачен"]
-    if order.status and order.status.name in non_editable_statuses:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Редактирование товаров невозможно для заказа в статусе '{order.status.name}'"
+        # Проверка статуса заказа - запрещаем редактировать товары для определенных статусов
+        non_editable_statuses = ["Отправлен", "Доставлен", "Отменен", "Оплачен"]
+        if order.status and order.status.name in non_editable_statuses:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Редактирование товаров невозможно для заказа в статусе '{order.status.name}'"
+            )
+        
+        # Подготавливаем данные для обновления
+        items_to_add = [item.model_dump() for item in items_data.items_to_add] if items_data.items_to_add else []
+        items_to_update = items_data.items_to_update if items_data.items_to_update else {}
+        items_to_remove = items_data.items_to_remove if items_data.items_to_remove else []
+        
+        # Вызываем сервисную функцию
+        updated_order = await update_order_items(
+            order_id=order_id,
+            items_to_add=items_to_add,
+            items_to_update=items_to_update,
+            items_to_remove=items_to_remove,
+            session=session,
+            user_id=int(current_user.get("sub")) if current_user.get("sub") else None
         )
-    
-    # Получаем токен из объекта current_user
-    token = current_user.get("token")
-    
-    # Формируем данные для обновления
-    items_dict = {
-        "items_to_add": [item.dict() for item in items_data.items_to_add] if items_data.items_to_add else [],
-        "items_to_update": items_data.items_to_update if items_data.items_to_update else {},
-        "items_to_remove": items_data.items_to_remove if items_data.items_to_remove else []
-    }
-    
-    # Вызываем сервисную функцию из services.py
-    success, updated_order, errors = await update_order_items(
-        session, order_id, items_dict, current_user["user_id"], token
-    )
-    
-    if not success:
-        raise HTTPException(status_code=400, detail=errors)
-    
-    if errors:
-        return {"success": True, "order": updated_order, "errors": errors}
-    else:
-        return {"success": True, "order": updated_order, "errors": None}
+        
+        if not updated_order:
+            raise HTTPException(status_code=400, detail="Ошибка при обновлении элементов заказа")
+        
+        # Создаем ответ с данными заказа
+        order_dict = {
+            "id": updated_order.id,
+            "user_id": updated_order.user_id,
+            "status_id": updated_order.status_id,
+            "status": {
+                "id": updated_order.status.id,
+                "name": updated_order.status.name,
+                "description": updated_order.status.description,
+                "color": updated_order.status.color,
+                "allow_cancel": updated_order.status.allow_cancel,
+                "is_final": updated_order.status.is_final,
+                "sort_order": updated_order.status.sort_order
+            },
+            "created_at": updated_order.created_at,
+            "updated_at": datetime.now(),
+            "total_price": updated_order.total_price,
+            "promo_code_id": updated_order.promo_code_id,
+            "discount_amount": updated_order.discount_amount,
+            "full_name": updated_order.full_name,
+            "email": updated_order.email,
+            "phone": updated_order.phone,
+            "region": updated_order.region,
+            "city": updated_order.city,
+            "street": updated_order.street,
+            "comment": updated_order.comment,
+            "is_paid": updated_order.is_paid,
+            "items": [
+                {
+                    "id": item.id,
+                    "order_id": item.order_id,
+                    "product_id": item.product_id,
+                    "product_name": item.product_name,
+                    "product_price": item.product_price,
+                    "quantity": item.quantity,
+                    "total_price": item.total_price
+                } 
+                for item in updated_order.items
+            ],
+            "order_number": f"{updated_order.id}-{updated_order.created_at.year}"
+        }
+        
+        # Добавляем данные о промокоде, если он есть
+        if hasattr(updated_order, 'promo_code') and updated_order.promo_code:
+            promo = updated_order.promo_code
+            order_dict["promo_code"] = {
+                "id": promo.id,
+                "code": promo.code,
+                "discount_percent": promo.discount_percent,
+                "discount_amount": promo.discount_amount,
+                "valid_until": promo.valid_until,
+                "is_active": promo.is_active,
+                "created_at": promo.created_at,
+                "updated_at": datetime.now()
+            }
+        
+        return OrderItemsUpdateResponse(success=True, order=order_dict)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении элементов заказа: {str(e)}")
+        return OrderItemsUpdateResponse(
+            success=False, 
+            errors={"message": f"Ошибка при обновлении элементов заказа: {str(e)}"}
+        )
 
 @admin_router.post("/batch-status", response_model=List[OrderResponse])
 async def update_batch_status(

@@ -214,6 +214,20 @@ const AdminDashboard = () => {
           </div>
         </div>
         
+        {/* Управление промокодами */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-tag-fill admin-card-icon"></i>
+              <h3>Промокоды</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Управление промокодами. Создание, редактирование и отслеживание промокодов для скидок.</p>
+              <Link to="/admin/promo-codes" className="btn btn-primary">Управление промокодами</Link>
+            </div>
+          </div>
+        </div>
+        
         {/* Блок для суперадминов */}
         {isSuperAdmin() && (
           <div className="col-md-4 mb-4">

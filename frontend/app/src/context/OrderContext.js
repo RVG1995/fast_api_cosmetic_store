@@ -23,6 +23,7 @@ export const OrderProvider = ({ children }) => {
   const [currentOrder, setCurrentOrder] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [promoCode, setPromoCode] = useState(null);
 
   // Функция для получения конфигурации запроса
   const getConfig = useCallback(() => {
@@ -202,8 +203,7 @@ export const OrderProvider = ({ children }) => {
   }, [isAuthenticated, getConfig]);
 
   // Создание нового заказа
-  const createOrder = useCallback(async (orderData) => {
-    console.log('Вызов createOrder с данными:', orderData);
+  const createOrder = async (orderData) => {
     setLoading(true);
     setError(null);
     
@@ -212,6 +212,7 @@ export const OrderProvider = ({ children }) => {
     console.log("Статус аутентификации при создании заказа:", userAuthenticated ? "Пользователь аутентифицирован" : "Пользователь не аутентифицирован");
     
     console.log("Исходные данные заказа:", orderData);
+    console.log("Текущий промокод в контексте:", promoCode);
     console.log("URL:", `${ORDER_SERVICE_URL}/orders`);
     
     try {
@@ -248,6 +249,21 @@ export const OrderProvider = ({ children }) => {
         comment: orderData.notes || orderData.comment || ""
       };
       
+      // Добавляем промокод, если он есть
+      if (promoCode) {
+        // Если есть promoCode.code, используем его (текстовый код промокода)
+        if (promoCode.code) {
+          newOrderData.promo_code = promoCode.code;
+          console.log("Добавлен промокод в данные заказа:", promoCode.code);
+        }
+        
+        // Если есть promoCode.id, используем его (ID промокода в базе данных)
+        if (promoCode.id) {
+          newOrderData.promo_code_id = promoCode.id;
+          console.log("Добавлен ID промокода в данные заказа:", promoCode.id);
+        }
+      }
+      
       // Проверяем итоговый объект на наличие всех обязательных полей
       const requiredFields = ['full_name', 'phone', 'region', 'city', 'street'];
       const missingFields = requiredFields.filter(field => !newOrderData[field]);
@@ -273,50 +289,36 @@ export const OrderProvider = ({ children }) => {
       const config = getConfig();
       console.log("Используемые заголовки:", config);
       
+      console.log("Финальные данные заказа для отправки:", JSON.stringify(newOrderData));
+      
       const response = await axios.post(
         `${ORDER_SERVICE_URL}/orders`, 
         newOrderData,
         config
       );
       
-      console.log("Ответ сервера:", response.data);
-      return response.data;
-    } catch (err) {
-      console.error("Полная ошибка при создании заказа:", err);
-      console.error("Ответ сервера:", err.response);
+      const data = response.data;
+      console.log("Ответ сервера после создания заказа:", data);
       
-      let errorMessage = 'Не удалось создать заказ';
+      // Очищаем промокод после успешного создания заказа
+      clearPromoCode();
       
-      // Обработка ошибок валидации (422 Unprocessable Entity)
-      if (err.response?.status === 422 && err.response?.data?.detail) {
-        const validationErrors = err.response.data.detail;
-        if (Array.isArray(validationErrors)) {
-          // Собираем сообщения об ошибках валидации
-          errorMessage = validationErrors.map(error => {
-            const field = error.loc[error.loc.length - 1];
-            return `Ошибка в поле "${field}": ${error.msg}`;
-          }).join('. ');
-        } else if (typeof validationErrors === 'string') {
-          errorMessage = validationErrors;
-        }
-      } 
-      // Дополнительная проверка на ошибку авторизации
-      else if (err.response?.status === 401) {
-        errorMessage = "Для оформления заказа необходима авторизация. Пожалуйста, войдите в систему.";
-      } 
-      // Другие ошибки от сервера
-      else if (err.response?.data?.detail) {
-        errorMessage = typeof err.response.data.detail === 'string' 
-          ? err.response.data.detail 
-          : 'Ошибка на сервере';
+      setLoading(false);
+      return data;
+    } catch (error) {
+      console.error("Ошибка при создании заказа:", error);
+      
+      if (error.response) {
+        console.error("Детали ошибки:", error.response.data);
+        setError(error.response.data.detail || "Ошибка при создании заказа. Попробуйте еще раз.");
+      } else {
+        setError("Ошибка соединения с сервером. Проверьте подключение к интернету.");
       }
       
-      setError(errorMessage);
-      return null;
-    } finally {
       setLoading(false);
+      return null;
     }
-  }, [isAuthenticated, getConfig, setError, setLoading]);
+  };
 
   // Отмена заказа
   const cancelOrder = useCallback(async (orderId, reason) => {
@@ -858,6 +860,68 @@ export const OrderProvider = ({ children }) => {
     }
   }, [user, getConfig, setCurrentOrder]);
 
+  // Проверка промокода
+  const checkPromoCode = useCallback(async (code, email, phone) => {
+    console.log(`Проверка промокода: ${code}, email: ${email}, phone: ${phone}`);
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const config = getConfig();
+      const response = await axios.post(
+        `${ORDER_SERVICE_URL}/promo-codes/check`, 
+        { code, email, phone },
+        config
+      );
+      
+      console.log("Ответ сервера при проверке промокода:", response.data);
+      
+      if (response.data.is_valid) {
+        // Сохраняем информацию о промокоде в состоянии
+        setPromoCode({
+          code,
+          discountPercent: response.data.discount_percent,
+          discountAmount: response.data.discount_amount,
+          message: response.data.message,
+          // Сохраняем ID промокода
+          promoCodeId: response.data.promo_code?.id
+        });
+      } else {
+        setPromoCode(null);
+        setError(response.data.message);
+      }
+      
+      return response.data;
+    } catch (err) {
+      console.error("Ошибка при проверке промокода:", err);
+      setPromoCode(null);
+      setError(err.response?.data?.detail || "Не удалось проверить промокод");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [getConfig]);
+  
+  // Очистка промокода
+  const clearPromoCode = useCallback(() => {
+    setPromoCode(null);
+  }, []);
+
+  // Расчет скидки на основе промокода
+  const calculateDiscount = useCallback((totalPrice) => {
+    if (!promoCode) return 0;
+    
+    if (promoCode.discountPercent) {
+      // Скидка в процентах
+      return Math.floor(totalPrice * promoCode.discountPercent / 100);
+    } else if (promoCode.discountAmount) {
+      // Фиксированная скидка
+      return Math.min(promoCode.discountAmount, totalPrice);
+    }
+    
+    return 0;
+  }, [promoCode]);
+
   // Значение контекста
   const contextValue = {
     orders,
@@ -876,7 +940,13 @@ export const OrderProvider = ({ children }) => {
     getUserOrders,
     getAllOrders,
     getAdminOrderById,
-    getUserOrderStatistics
+    getUserOrderStatistics,
+    
+    // Функции для работы с промокодами
+    promoCode,
+    checkPromoCode,
+    clearPromoCode,
+    calculateDiscount
   };
 
   return (

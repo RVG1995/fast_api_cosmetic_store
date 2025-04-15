@@ -17,10 +17,10 @@ from product_api import ProductAPI, get_product_api
 from cart_api import CartAPI, get_cart_api
 from email_service import EmailService
 from database import engine
-from routers.orders import router as order_router
-from routers.orders import admin_router as admin_order_router
+from routers.orders import router as orders_router, admin_router as orders_admin_router
 from routers.order_statuses import router as order_statuses_router
 from routers.payment_statuses import router as payment_statuses_router
+from routers.promo_codes import router as promo_codes_router, admin_router as promo_codes_admin_router
 from cache import close_redis
 
 # Загрузка переменных окружения
@@ -99,10 +99,13 @@ app.add_middleware(
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "static/uploads")
 
 # Подключение роутеров
-app.include_router(order_router)
-app.include_router(admin_order_router)
+app.include_router(orders_router)
+app.include_router(orders_admin_router)
 app.include_router(order_statuses_router)
 app.include_router(payment_statuses_router)
+app.include_router(promo_codes_router)
+app.include_router(promo_codes_admin_router)
+
 # Маршрут для проверки работоспособности сервиса
 @app.get("/api/health", tags=["health"])
 async def health_check():

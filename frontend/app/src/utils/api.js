@@ -78,14 +78,10 @@ const setupInterceptors = (api, serviceName) => {
       
       // Обработка ошибок авторизации (401)
       if (error.response && error.response.status === 401) {
-        console.log('Ошибка авторизации (401): Токен истек или недействителен, перенаправление на страницу входа');
-        
-        // Проверяем, не находимся ли мы уже на странице логина
-        const currentPath = window.location.pathname;
-        if (currentPath !== '/login' && currentPath !== '/register') {
-          // Перенаправляем на страницу входа с указанием причины
-          window.location.href = '/login?expired=true';
-        }
+        console.log('Ошибка авторизации (401): Токен истек или недействителен');
+        // Не делаем window.location.href! Пусть обработка будет на уровне компонентов/guard'ов
+        // window.location.href = '/login?expired=true';
+        // Можно тут диспатчить глобальный алерт, если нужно
       }
       return Promise.reject(error);
     }

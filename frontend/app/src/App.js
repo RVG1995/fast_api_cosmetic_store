@@ -26,6 +26,8 @@ import ReviewPage from './pages/reviews/ReviewPage'; // Импортируем �
 import ScrollToTop from './components/layout/ScrollToTop';
 import { CartProvider } from './context/CartContext';
 import { ReviewProvider } from './context/ReviewContext';
+import ResetPasswordRequestPage from './pages/auth/ResetPasswordRequestPage';
+import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 // Импорт стилей перемещен в начало файла
 import './styles/App.css';
 
@@ -137,6 +139,8 @@ function App() {
                       } 
                     />
                     <Route path="activate/:token" element={<ActivationPage />} />
+                    <Route path="forgot-password" element={<ResetPasswordRequestPage />} />
+                    <Route path="reset-password/:token" element={<ResetPasswordPage />} />
 
                     {/* Защищенные маршруты - используем обычные импорты, убрали Suspense */}
                     <Route 

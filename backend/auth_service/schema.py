@@ -104,3 +104,11 @@ class PermissionResponseSchema(BaseModel):
     is_admin: bool
     is_super_admin: bool
     has_permission: Optional[bool] = None
+
+class PasswordResetRequestSchema(BaseModel):
+    email: EmailStr
+
+class PasswordResetSchema(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8, max_length=100)
+    confirm_password: str = Field(..., min_length=8, max_length=100)

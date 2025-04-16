@@ -904,12 +904,64 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
             logger.warning(f"Превышено количество попыток ({MAX_RETRY_COUNT}). Сообщение будет перемещено в DLX.")
             await message.reject(requeue=False)
 
+
+def create_password_reset_email_content(reset_data):
+    reset_link = reset_data.get('reset_link', '#')
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset='UTF-8'>
+        <title>Сброс пароля</title>
+    </head>
+    <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 650px; margin: 0 auto;'>
+        <div style='background-color: #f8f9fa; padding: 20px; text-align: center; margin-bottom: 20px;'>
+            <h1 style='color: #4a5568; margin: 0;'>Сброс пароля</h1>
+            <p style='font-size: 18px; margin-top: 10px;'>Kosmetik-Store</p>
+        </div>
+        <div style='padding: 0 20px;'>
+            <p>Здравствуйте!</p>
+            <p>Вы запросили сброс пароля для своей учетной записи.</p>
+            <p>Для установки нового пароля, пожалуйста, нажмите на кнопку ниже:</p>
+            <div style='text-align: center; margin: 30px 0;'>
+                <a href='{reset_link}' style='background-color: #4a5568; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;'>Сбросить пароль</a>
+            </div>
+            <p>Если кнопка не работает, скопируйте и вставьте следующую ссылку в адресную строку браузера:</p>
+            <p style='word-break: break-all; background-color: #f1f5f9; padding: 10px; border-radius: 4px;'>{reset_link}</p>
+            <p>Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо.</p>
+            <div style='margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #718096; font-size: 14px;'>
+                <p>С уважением,<br>Команда "Косметик-стор"</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+
+async def password_reset_message(message: aio_pika.IncomingMessage) -> None:
+    try:
+        message_body = json.loads(message.body.decode())
+        email = message_body["email"]
+        user_id = message_body["user_id"]
+        reset_link = message_body["reset_link"]
+        subject = "Сброс пароля на сайте Kosmetik-Store"
+        html_content = create_password_reset_email_content(message_body)
+        await send_email(email, subject, html_content)
+        logger.info(f"Сообщение для сброса пароля пользователя {user_id} успешно обработано")
+        await message.ack()
+    except Exception as e:
+        logger.error(f"Ошибка при обработке сообщения сброса пароля: {e}")
+        await message.reject(requeue=False)
+
+
 # Определяем словарь с очередями и их обработчиками
 QUEUE_HANDLERS = {
     "email_message": process_email_message,
     "update_message": update_status_email_message,
     "notification_message": notification_message,
     "registration_message": registration_message,
+    "password_reset_message": password_reset_message,
     # Можно добавить больше очередей и их обработчиков здесь
 }
 

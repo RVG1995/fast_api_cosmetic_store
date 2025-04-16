@@ -44,3 +44,28 @@ async def send_email_activation_message(
     finally:
         # Закрываем соединение в любом случае
         await close_connection(connection)
+
+async def send_password_reset_email(user_id: str, email: str, reset_token: str):
+    """
+    Отправляет сообщение для сброса пароля в очередь
+    """
+    connection = await get_connection()
+    try:
+        channel = await connection.channel()
+        queue = await declare_queue(channel, "password_reset_message")
+        reset_link = f"http://localhost:3000/reset-password/{reset_token}"
+        message_body = {
+            "user_id": user_id,
+            "email": email,
+            "reset_link": reset_link
+        }
+        await channel.default_exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(message_body).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+            ),
+            routing_key=queue.name
+        )
+        logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+    finally:
+        await close_connection(connection)

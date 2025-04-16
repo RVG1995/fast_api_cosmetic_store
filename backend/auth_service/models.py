@@ -21,6 +21,8 @@ class UserModel(Base):
     activation_token: Mapped[Optional[str]] = mapped_column(unique=True, nullable=True)
     token_created_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     last_login: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    reset_token: Mapped[Optional[str]] = mapped_column(unique=True, nullable=True)
+    reset_token_created_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
     is_user: Mapped[bool] = mapped_column(default=True, server_default=text('true'), nullable=False)
     is_admin: Mapped[bool] = mapped_column(default=False, server_default=text('false'), nullable=False)
@@ -52,6 +54,13 @@ class UserModel(Base):
     async def get_by_id(cls, session: AsyncSession, user_id: int) -> Optional["UserModel"]:
         """Получить пользователя по ID"""
         return await session.get(cls, user_id)
+    
+    @classmethod
+    async def get_by_reset_token(cls, session: AsyncSession, token: str) -> Optional["UserModel"]:
+        """Получить пользователя по токену сброса пароля"""
+        stmt = select(cls).filter(cls.reset_token == token)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
     
     async def activate(self, session: AsyncSession) -> None:
         """Активировать пользователя и удалить токен активации"""

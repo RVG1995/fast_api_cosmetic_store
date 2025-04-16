@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_session
 from models import UserModel, UserSessionModel
 import jwt
-from schema import TokenShema, UserCreateShema, UserReadShema, PasswordChangeSchema, UserSessionsResponseSchema
+from schema import TokenShema, UserCreateShema, UserReadShema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema
 from datetime import datetime, timedelta, timezone
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import secrets
@@ -13,7 +13,7 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 import os
 from dotenv import load_dotenv
 from utils import get_password_hash, verify_password  # Импортируем из utils
-from app.services.email_service import send_email_activation_message
+from app.services.email_service import send_email_activation_message, send_password_reset_email
 import logging
 import uuid  # Если это еще не импортировано
 
@@ -703,3 +703,28 @@ async def check_user_permissions(
             result["has_permission"] = False
             
     return result
+
+@router.post("/request-password-reset")
+async def request_password_reset(data: PasswordResetRequestSchema, session: SessionDep):
+    user = await user_service.get_user_by_email(session, data.email)
+    if not user:
+        return {"status": "ok"}
+    token = secrets.token_urlsafe(32)
+    user.reset_token = token
+    user.reset_token_created_at = datetime.utcnow()
+    await session.commit()
+    await send_password_reset_email(str(user.id), user.email, token)
+    return {"status": "ok"}
+
+@router.post("/reset-password")
+async def reset_password(data: PasswordResetSchema, session: SessionDep):
+    user = await UserModel.get_by_reset_token(session, data.token)
+    if not user or not user.reset_token or user.reset_token != data.token:
+        raise HTTPException(status_code=400, detail="Неверный или истёкший токен")
+    if data.new_password != data.confirm_password:
+        raise HTTPException(status_code=400, detail="Пароли не совпадают")
+    user.hashed_password = await get_password_hash(data.new_password)
+    user.reset_token = None
+    user.reset_token_created_at = None
+    await session.commit()
+    return {"status": "success"}

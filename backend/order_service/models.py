@@ -467,7 +467,6 @@ class PromoCodeModel(Base):
     
     @classmethod
     async def get_by_code(cls, session: AsyncSession, code: str) -> Optional["PromoCodeModel"]:
-        """Получить промокод по коду"""
         try:
             query = select(cls).filter(cls.code == code)
             result = await session.execute(query)
@@ -478,7 +477,6 @@ class PromoCodeModel(Base):
     
     @classmethod
     async def get_all(cls, session: AsyncSession, skip: int = 0, limit: int = 100) -> List["PromoCodeModel"]:
-        """Получить все промокоды с пагинацией"""
         try:
             query = select(cls).order_by(cls.created_at.desc()).offset(skip).limit(limit)
             result = await session.execute(query)
@@ -489,11 +487,10 @@ class PromoCodeModel(Base):
     
     @classmethod
     async def get_active(cls, session: AsyncSession) -> List["PromoCodeModel"]:
-        """Получить все активные промокоды"""
         try:
             query = select(cls).filter(
                 cls.is_active == True,
-                cls.valid_until >= func.now()
+                cls.valid_until >= datetime.now()
             ).order_by(cls.created_at.desc())
             result = await session.execute(query)
             return result.scalars().all()

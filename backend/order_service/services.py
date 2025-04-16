@@ -835,15 +835,18 @@ async def check_promo_code(
         logger.warning(f"Промокод {code} не найден")
         return False, "Промокод не найден", None
     
+    # Проверяем срок действия промокода
+    if promo_code.valid_until < datetime.now():
+        if promo_code.is_active:
+            promo_code.is_active = False
+            await session.commit()
+        logger.warning(f"Промокод {code} истек {promo_code.valid_until}")
+        return False, "Срок действия промокода истек", None
+    
     # Проверяем активность промокода
     if not promo_code.is_active:
         logger.warning(f"Промокод {code} не активен")
         return False, "Промокод не активен", None
-    
-    # Проверяем срок действия промокода
-    if promo_code.valid_until < datetime.now():
-        logger.warning(f"Промокод {code} истек {promo_code.valid_until}")
-        return False, "Срок действия промокода истек", None
     
     # Проверяем, использовал ли пользователь промокод ранее
     already_used = await PromoCodeUsageModel.check_usage(session, promo_code.id, email, phone)

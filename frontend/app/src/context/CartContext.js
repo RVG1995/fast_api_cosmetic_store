@@ -137,6 +137,7 @@ export const CartProvider = ({ children }) => {
       setCartSummary(localCartToSummary(localCart));
       setLoading(false);
       window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: localCart, summary: localCartToSummary(localCart) } }));
+      fetchCart();
       return { success: true, message: 'Товар добавлен в корзину' };
     }
     try {

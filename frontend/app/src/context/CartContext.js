@@ -63,16 +63,9 @@ export const CartProvider = ({ children }) => {
       if (localCart.items.length > 0) {
         try {
           const ids = localCart.items.map(i => i.product_id);
-          let productsInfo = {};
-          if (productAPI.getBatchProductStats) {
-            const res = await productAPI.getBatchProductStats(ids);
-            if (res && res.data) {
-              res.data.forEach(p => { productsInfo[p.id] = p; });
-            }
-          } else {
-            const prods = await Promise.all(ids.map(id => productAPI.getProductById(id).then(r => r.data).catch(() => null)));
-            prods.forEach(p => { if (p) productsInfo[p.id] = p; });
-          }
+          const products = await productAPI.getProductsBatch(ids);
+          const productsInfo = {};
+          products.forEach(p => { if (p) productsInfo[p.id] = p; });
           localCart.items = localCart.items.map(i => ({ ...i, product: productsInfo[i.product_id] || null }));
         } catch (e) {
           localCart.items = localCart.items.map(i => ({ ...i, product: null }));
@@ -131,16 +124,9 @@ export const CartProvider = ({ children }) => {
       if (localCart.items.length > 0) {
         try {
           const ids = localCart.items.map(i => i.product_id);
-          let productsInfo = {};
-          if (productAPI.getBatchProductStats) {
-            const res = await productAPI.getBatchProductStats(ids);
-            if (res && res.data) {
-              res.data.forEach(p => { productsInfo[p.id] = p; });
-            }
-          } else {
-            const prods = await Promise.all(ids.map(id => productAPI.getProductById(id).then(r => r.data).catch(() => null)));
-            prods.forEach(p => { if (p) productsInfo[p.id] = p; });
-          }
+          const products = await productAPI.getProductsBatch(ids);
+          const productsInfo = {};
+          products.forEach(p => { if (p) productsInfo[p.id] = p; });
           localCart.items = localCart.items.map(i => ({ ...i, product: productsInfo[i.product_id] || null }));
         } catch (e) {
           localCart.items = localCart.items.map(i => ({ ...i, product: null }));

@@ -130,6 +130,29 @@ async def get_products_public_batch(
         logger.error(f"Ошибка при выполнении публичного пакетного запроса продуктов: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
 
+@router.post('/open-batch', tags=["Products"])
+async def get_products_open_batch(
+    session: SessionDep,
+    product_ids: List[int] = Body(..., embed=True, description="Список ID продуктов")
+):
+    """
+    Новый публичный batch-эндпоинт: получить список продуктов по id без авторизации и service-key.
+    Ограничение: не более 100 id за раз.
+    """
+    logger.info(f"Открытый batch-запрос продуктов: {product_ids}")
+    if not product_ids:
+        return []
+    unique_ids = list(set(product_ids))
+    if len(unique_ids) > 100:
+        logger.warning(f"Слишком много ID продуктов в запросе ({len(unique_ids)}), ограничиваем до 100")
+        unique_ids = unique_ids[:100]
+    query = select(ProductModel).where(ProductModel.id.in_(unique_ids))
+    result = await session.execute(query)
+    products = result.scalars().all()
+    # Если нужна подробная инфа (связи) — раскомментируй:
+    # return [await ProductModel.get_product_with_relations(session, p.id) for p in products]
+    return products
+
 @router.put("/{product_id}/stock", status_code=200)
 async def update_product_stock(
     product_id: int,

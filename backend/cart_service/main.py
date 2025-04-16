@@ -859,8 +859,11 @@ async def clear_cart(
                 total_items=0,
                 total_price=0
             )
-            
-            return empty_cart
+            return {
+                "success": True,
+                "message": "Корзина успешно очищена",
+                "cart": empty_cart
+            }
             
     except Exception as e:
         logger.error(f"Ошибка при очистке корзины: {str(e)}")

@@ -546,6 +546,12 @@ export const productAPI = {
   createSubcategory: async (data) => await productApi.post('/subcategories', data),
   updateSubcategory: async (id, data) => await productApi.put(`/subcategories/${id}`, data),
   deleteSubcategory: async (id) => await productApi.delete(`/subcategories/${id}`),
+  
+  getProductsBatch: async (ids) => {
+    if (!ids || !ids.length) return [];
+    const response = await productApi.post('/products/open-batch', { product_ids: ids });
+    return response.data;
+  },
 };
 
 // Экспортируем объект с методами для работы с корзиной

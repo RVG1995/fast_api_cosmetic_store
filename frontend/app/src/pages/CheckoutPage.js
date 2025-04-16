@@ -29,7 +29,6 @@ const CheckoutPage = () => {
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderNumber, setOrderNumber] = useState(null);
   const [redirectTimer, setRedirectTimer] = useState(null);
-  const [appliedPromoCode, setAppliedPromoCode] = useState(null);
   const [cartTotal, setCartTotal] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
   
@@ -57,7 +56,6 @@ const CheckoutPage = () => {
 
   // Обработчик применения промокода
   const handlePromoCodeApplied = (promoData) => {
-    setAppliedPromoCode(promoData);
     if (promoData) {
       const calculatedDiscount = promoData.discount;
       setDiscountAmount(calculatedDiscount);
@@ -376,8 +374,8 @@ const CheckoutPage = () => {
               {cart && cart.items && cart.items.length > 0 ? (
                 <div className="checkout-summary">
                   <div className="checkout-items">
-                    {cart.items.map(item => (
-                      <div key={item.id} className="checkout-item">
+                    {cart.items.map((item, idx) => (
+                      <div key={item.id !== undefined ? item.id : `anon_${item.product_id}_${idx}`} className="checkout-item">
                         <div className="item-name">{item.product.name}</div>
                         <div className="item-quantity">{item.quantity} x {formatPrice(item.product.price)} ₽</div>
                         <div className="item-total">{formatPrice(item.quantity * item.product.price)} ₽</div>

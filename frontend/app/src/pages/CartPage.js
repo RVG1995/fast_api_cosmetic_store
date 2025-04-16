@@ -21,18 +21,16 @@ const CartPage = () => {
     if (cart && cart.items && cart.items.length > 0) {
       const newQuantities = {};
       cart.items.forEach(item => {
-        newQuantities[item.id] = item.quantity;
+        const key = item.id !== undefined ? item.id : `anon_${item.product_id}`;
+        newQuantities[key] = item.quantity;
       });
       setQuantities(newQuantities);
-      
-      // Сохраняем порядок элементов корзины, если он еще не установлен или добавлены новые элементы
       if (itemsOrder.length === 0) {
-        setItemsOrder(cart.items.map(item => item.id));
-      } else if (cart.items.some(item => !itemsOrder.includes(item.id))) {
-        // Если появились новые элементы, сохраняем существующий порядок и добавляем новые в конец
+        setItemsOrder(cart.items.map(item => item.id !== undefined ? item.id : `anon_${item.product_id}`));
+      } else if (cart.items.some(item => !itemsOrder.includes(item.id !== undefined ? item.id : `anon_${item.product_id}`))) {
         const newIds = cart.items
-          .filter(item => !itemsOrder.includes(item.id))
-          .map(item => item.id);
+          .filter(item => !itemsOrder.includes(item.id !== undefined ? item.id : `anon_${item.product_id}`))
+          .map(item => item.id !== undefined ? item.id : `anon_${item.product_id}`);
         setItemsOrder([...itemsOrder, ...newIds]);
       }
     }
@@ -41,29 +39,23 @@ const CartPage = () => {
   // Сортируем элементы корзины согласно сохраненному порядку
   const sortedCartItems = useMemo(() => {
     if (!cart || !cart.items) return [];
-    
-    // Создаем копию элементов корзины
     const itemsCopy = [...cart.items];
-    
-    // Сортируем элементы в соответствии с сохраненным порядком
     return itemsCopy.sort((a, b) => {
-      const indexA = itemsOrder.indexOf(a.id);
-      const indexB = itemsOrder.indexOf(b.id);
-      
-      // Если элемент не найден в порядке, помещаем его в конец
+      const keyA = a.id !== undefined ? a.id : `anon_${a.product_id}`;
+      const keyB = b.id !== undefined ? b.id : `anon_${b.product_id}`;
+      const indexA = itemsOrder.indexOf(keyA);
+      const indexB = itemsOrder.indexOf(keyB);
       if (indexA === -1) return 1;
       if (indexB === -1) return -1;
-      
-      // Сортируем по сохраненному порядку
       return indexA - indexB;
     });
   }, [cart, itemsOrder]);
 
   // Обработчик изменения количества товара
-  const handleQuantityChange = (itemId, value) => {
+  const handleQuantityChange = (itemKey, value) => {
     // Очищаем предыдущий таймер обновления для этого товара, если он есть
-    if (updateTimers.current[itemId]) {
-      clearTimeout(updateTimers.current[itemId]);
+    if (updateTimers.current[itemKey]) {
+      clearTimeout(updateTimers.current[itemKey]);
     }
 
     // Проверяем, что value - это число или может быть преобразовано в число
@@ -73,7 +65,7 @@ const CartPage = () => {
     }
     
     // Находим максимально доступное количество товара
-    const itemInCart = cart.items.find(item => item.id === itemId);
+    const itemInCart = cart.items.find(item => (item.id !== undefined ? item.id : `anon_${item.product_id}`) === itemKey);
     const maxStock = itemInCart && itemInCart.product ? itemInCart.product.stock : 1;
     
     // Ограничиваем новое количество максимальным значением
@@ -84,16 +76,16 @@ const CartPage = () => {
     // Обновляем локальное состояние
     setQuantities(prev => ({
       ...prev,
-      [itemId]: newQuantity
+      [itemKey]: newQuantity
     }));
 
     // Устанавливаем новый таймер для обновления через 800 мс - увеличили задержку для стабильности
-    updateTimers.current[itemId] = setTimeout(() => {
+    updateTimers.current[itemKey] = setTimeout(() => {
       // Проверяем, изменилось ли количество по сравнению с корзиной
-      const currentItem = cart.items.find(item => item.id === itemId);
+      const currentItem = cart.items.find(item => (item.id !== undefined ? item.id : `anon_${item.product_id}`) === itemKey);
       if (currentItem && currentItem.quantity !== newQuantity) {
         // Явно вызываем функцию обновления количества
-        handleUpdateQuantity(itemId, newQuantity);
+        handleUpdateQuantity(itemKey, newQuantity);
       }
     }, 800);
   };
@@ -112,15 +104,16 @@ const CartPage = () => {
   }, []);
 
   // Обработчик обновления количества товара
-  const handleUpdateQuantity = async (itemId, quantity = null) => {
+  const handleUpdateQuantity = async (itemKey, quantity = null) => {
     // Используем переданное количество или берем из локального состояния
-    const newQuantity = quantity !== null ? quantity : (quantities[itemId] || 1);
+    const newQuantity = quantity !== null ? quantity : (quantities[itemKey] || 1);
     
-    setIsUpdating(prev => ({ ...prev, [itemId]: true }));
+    setIsUpdating(prev => ({ ...prev, [itemKey]: true }));
     setUpdateMessage({ type: '', text: '' });
 
     try {
-      const result = await updateCartItem(itemId, newQuantity);
+      const item = cart.items.find(item => (item.id !== undefined ? item.id : `anon_${item.product_id}`) === itemKey);
+      const result = await updateCartItem(item.id !== undefined ? item.id : cart.items.indexOf(item), newQuantity);
       
       if (result.success) {
         setUpdateMessage({ type: 'success', text: 'Количество товара обновлено' });
@@ -130,11 +123,10 @@ const CartPage = () => {
         setUpdateMessage({ type: 'danger', text: result.message || 'Ошибка при обновлении количества' });
         
         // Восстанавливаем предыдущее значение, если обновление не удалось
-        const currentItem = cart.items.find(item => item.id === itemId);
-        if (currentItem) {
+        if (item) {
           setQuantities(prev => ({
             ...prev,
-            [itemId]: currentItem.quantity
+            [itemKey]: item.quantity
           }));
         }
       }
@@ -143,15 +135,15 @@ const CartPage = () => {
       setUpdateMessage({ type: 'danger', text: 'Ошибка при обновлении количества товара' });
       
       // Восстанавливаем предыдущее значение, если обновление не удалось
-      const currentItem = cart.items.find(item => item.id === itemId);
-      if (currentItem) {
+      const item = cart.items.find(item => (item.id !== undefined ? item.id : `anon_${item.product_id}`) === itemKey);
+      if (item) {
         setQuantities(prev => ({
           ...prev,
-          [itemId]: currentItem.quantity
+          [itemKey]: item.quantity
         }));
       }
     } finally {
-      setIsUpdating(prev => ({ ...prev, [itemId]: false }));
+      setIsUpdating(prev => ({ ...prev, [itemKey]: false }));
       
       // Автоматически скрываем сообщение через 3 секунды
       setTimeout(() => {
@@ -161,12 +153,13 @@ const CartPage = () => {
   };
 
   // Обработчик удаления товара
-  const handleRemoveItem = async (itemId) => {
-    setIsRemoving(prev => ({ ...prev, [itemId]: true }));
+  const handleRemoveItem = async (itemKey) => {
+    setIsRemoving(prev => ({ ...prev, [itemKey]: true }));
     setUpdateMessage({ type: '', text: '' });
 
     try {
-      const result = await removeFromCart(itemId);
+      const item = cart.items.find(item => (item.id !== undefined ? item.id : `anon_${item.product_id}`) === itemKey);
+      const result = await removeFromCart(item.id !== undefined ? item.id : cart.items.indexOf(item));
       
       if (result.success) {
         setUpdateMessage({ type: 'success', text: 'Товар удален из корзины' });
@@ -179,7 +172,7 @@ const CartPage = () => {
       console.error('Ошибка при удалении товара:', err);
       setUpdateMessage({ type: 'danger', text: 'Ошибка при удалении товара' });
     } finally {
-      setIsRemoving(prev => ({ ...prev, [itemId]: false }));
+      setIsRemoving(prev => ({ ...prev, [itemKey]: false }));
       
       // Автоматически скрываем сообщение через 3 секунды
       setTimeout(() => {
@@ -308,126 +301,129 @@ const CartPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedCartItems.map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          <div className="d-flex align-items-center">
-                            <div className="me-3">
-                              {item.product && item.product.image ? (
-                                <img 
-                                  src={`http://localhost:8001${item.product.image}`} 
-                                  alt={item.product ? item.product.name : 'Товар'} 
-                                  style={{ width: '60px', height: '60px', objectFit: 'cover' }}
-                                  className="rounded"
-                                />
-                              ) : (
-                                <div 
-                                  className="bg-light rounded d-flex align-items-center justify-content-center"
-                                  style={{ width: '60px', height: '60px' }}
+                    {sortedCartItems.map((item, idx) => {
+                      const key = item.id !== undefined ? item.id : `anon_${item.product_id}`;
+                      return (
+                        <tr key={key}>
+                          <td>
+                            <div className="d-flex align-items-center">
+                              <div className="me-3">
+                                {item.product && item.product.image ? (
+                                  <img 
+                                    src={`http://localhost:8001${item.product.image}`} 
+                                    alt={item.product ? item.product.name : 'Товар'} 
+                                    style={{ width: '60px', height: '60px', objectFit: 'cover' }}
+                                    className="rounded"
+                                  />
+                                ) : (
+                                  <div 
+                                    className="bg-light rounded d-flex align-items-center justify-content-center"
+                                    style={{ width: '60px', height: '60px' }}
+                                  >
+                                    <i className="bi bi-image text-muted"></i>
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <h6 className="mb-0">
+                                  {item.product ? (
+                                    <Link to={`/products/${item.product.id}`} className="text-decoration-none">
+                                      {item.product.name}
+                                    </Link>
+                                  ) : (
+                                    'Товар недоступен'
+                                  )}
+                                </h6>
+                                {item.product && item.product.stock > 0 ? (
+                                  <small className="text-success">
+                                    <i className="bi bi-check-circle me-1"></i>
+                                    В наличии
+                                  </small>
+                                ) : (
+                                  <small className="text-danger">
+                                    <i className="bi bi-x-circle me-1"></i>
+                                    Нет в наличии
+                                  </small>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="text-center align-middle">
+                            {item.product ? `${formatPrice(item.product.price)} ₽` : '-'}
+                          </td>
+                          <td className="text-center align-middle">
+                            <div className="d-flex align-items-center justify-content-center">
+                              <div className="input-group" style={{ width: '150px' }}>
+                                <button 
+                                  className="btn btn-outline-secondary" 
+                                  type="button"
+                                  onClick={() => {
+                                    const newQuantity = Math.max(1, (quantities[key] || item.quantity) - 1);
+                                    handleQuantityChange(key, newQuantity);
+                                  }}
+                                  disabled={isUpdating[key]}
                                 >
-                                  <i className="bi bi-image text-muted"></i>
+                                  <i className="bi bi-dash"></i>
+                                </button>
+                                <input 
+                                  type="text"
+                                  pattern="[0-9]*"
+                                  inputMode="numeric"
+                                  className="form-control text-center fs-5"
+                                  value={quantities[key] !== undefined ? quantities[key] : item.quantity}
+                                  onChange={(e) => {
+                                    // Разрешаем только цифры
+                                    const value = e.target.value.replace(/[^0-9]/g, '');
+                                    handleQuantityChange(key, value);
+                                  }}
+                                  style={{ 
+                                    minWidth: '50px',
+                                    textAlign: 'center',
+                                    padding: '0.375rem 0.5rem'
+                                  }}
+                                  disabled={isUpdating[key]}
+                                  aria-label="Количество товара"
+                                />
+                                <button 
+                                  className="btn btn-outline-secondary" 
+                                  type="button"
+                                  onClick={() => {
+                                    const maxStock = item.product ? item.product.stock : 1;
+                                    const newQuantity = Math.min(maxStock, (quantities[key] || item.quantity) + 1);
+                                    handleQuantityChange(key, newQuantity);
+                                  }}
+                                  disabled={isUpdating[key] || (item.product && (quantities[key] || item.quantity) >= item.product.stock)}
+                                >
+                                  <i className="bi bi-plus"></i>
+                                </button>
+                              </div>
+                              {isUpdating[key] && (
+                                <div className="ms-2">
+                                  <span className="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
                                 </div>
                               )}
                             </div>
-                            <div>
-                              <h6 className="mb-0">
-                                {item.product ? (
-                                  <Link to={`/products/${item.product.id}`} className="text-decoration-none">
-                                    {item.product.name}
-                                  </Link>
-                                ) : (
-                                  'Товар недоступен'
-                                )}
-                              </h6>
-                              {item.product && item.product.stock > 0 ? (
-                                <small className="text-success">
-                                  <i className="bi bi-check-circle me-1"></i>
-                                  В наличии
-                                </small>
+                          </td>
+                          <td className="text-center align-middle fw-bold">
+                            {item.product ? `${formatPrice(item.product.price * item.quantity)} ₽` : '-'}
+                          </td>
+                          <td className="text-center align-middle">
+                            <button 
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={() => handleRemoveItem(key)}
+                              disabled={isRemoving[key]}
+                              title="Удалить из корзины"
+                            >
+                              {isRemoving[key] ? (
+                                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                               ) : (
-                                <small className="text-danger">
-                                  <i className="bi bi-x-circle me-1"></i>
-                                  Нет в наличии
-                                </small>
+                                <i className="bi bi-trash"></i>
                               )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="text-center align-middle">
-                          {item.product ? `${formatPrice(item.product.price)} ₽` : '-'}
-                        </td>
-                        <td className="text-center align-middle">
-                          <div className="d-flex align-items-center justify-content-center">
-                            <div className="input-group" style={{ width: '150px' }}>
-                              <button 
-                                className="btn btn-outline-secondary" 
-                                type="button"
-                                onClick={() => {
-                                  const newQuantity = Math.max(1, (quantities[item.id] || item.quantity) - 1);
-                                  handleQuantityChange(item.id, newQuantity);
-                                }}
-                                disabled={isUpdating[item.id]}
-                              >
-                                <i className="bi bi-dash"></i>
-                              </button>
-                              <input 
-                                type="text"
-                                pattern="[0-9]*"
-                                inputMode="numeric"
-                                className="form-control text-center fs-5"
-                                value={quantities[item.id] !== undefined ? quantities[item.id] : item.quantity}
-                                onChange={(e) => {
-                                  // Разрешаем только цифры
-                                  const value = e.target.value.replace(/[^0-9]/g, '');
-                                  handleQuantityChange(item.id, value);
-                                }}
-                                style={{ 
-                                  minWidth: '50px',
-                                  textAlign: 'center',
-                                  padding: '0.375rem 0.5rem'
-                                }}
-                                disabled={isUpdating[item.id]}
-                                aria-label="Количество товара"
-                              />
-                              <button 
-                                className="btn btn-outline-secondary" 
-                                type="button"
-                                onClick={() => {
-                                  const maxStock = item.product ? item.product.stock : 1;
-                                  const newQuantity = Math.min(maxStock, (quantities[item.id] || item.quantity) + 1);
-                                  handleQuantityChange(item.id, newQuantity);
-                                }}
-                                disabled={isUpdating[item.id] || (item.product && (quantities[item.id] || item.quantity) >= item.product.stock)}
-                              >
-                                <i className="bi bi-plus"></i>
-                              </button>
-                            </div>
-                            {isUpdating[item.id] && (
-                              <div className="ms-2">
-                                <span className="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="text-center align-middle fw-bold">
-                          {item.product ? `${formatPrice(item.product.price * item.quantity)} ₽` : '-'}
-                        </td>
-                        <td className="text-center align-middle">
-                          <button 
-                            className="btn btn-sm btn-outline-danger"
-                            onClick={() => handleRemoveItem(item.id)}
-                            disabled={isRemoving[item.id]}
-                            title="Удалить из корзины"
-                          >
-                            {isRemoving[item.id] ? (
-                              <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                            ) : (
-                              <i className="bi bi-trash"></i>
-                            )}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

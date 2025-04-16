@@ -612,18 +612,11 @@ export const cartAPI = {
 
   /**
    * Объединяет корзины при авторизации пользователя
-   * @param {string} [sessionId] - Идентификатор сессии для корзины (необязательный)
+   * @param {Array} items - Массив товаров из localStorage
    * @returns {Promise<Object>} - Объединенная корзина
    */
-  mergeCarts: async (sessionId) => {
-    let url = '/cart/merge';
-    
-    // Если передан sessionId, добавляем его как query параметр
-    if (sessionId) {
-      url += `?url_session_id=${sessionId}`;
-    }
-    
-    return await cartApi.post(url);
+  mergeCarts: async (items) => {
+    return await cartApi.post('/cart/merge', { items });
   }
 };
 

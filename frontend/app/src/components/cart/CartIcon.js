@@ -6,7 +6,7 @@ import { API_URLS } from '../../utils/constants';
 import './CartIcon.css';
 
 const CartIcon = () => {
-  const { cartSummary, cart, removeFromCart, loading, fetchCart, fetchCartSummary } = useCart();
+  const { cart, removeFromCart, loading, fetchCart } = useCart();
   const [isOpen, setIsOpen] = useState(false);
   const [isRemoving, setIsRemoving] = useState({}); // состояние для отслеживания удаления товаров
   const dropdownRef = useRef(null);
@@ -15,46 +15,24 @@ const CartIcon = () => {
   
   // Логируем cartSummary при каждом изменении
   useEffect(() => {
-    console.log('cartSummary изменился:', cartSummary);
-  }, [cartSummary]);
+    console.log('cartSummary изменился:', cart);
+  }, [cart]);
 
   // При монтировании компонента и открытии дропдауна обновляем данные корзины
   useEffect(() => {
     // При первом рендере загружаем полные данные
     fetchCart();
-    
     // Слушаем событие обновления корзины
     const handleCartUpdated = (event) => {
-      console.log('Событие обновления корзины получено', event?.detail);
-      
-      // Получаем данные, которые были переданы с событием
-      if (event?.detail?.summary) {
-        // Если в событии есть сводка, используем её для обновления счетчика
-        console.log('Получены данные сводки из события:', event.detail.summary);
-        // Нет необходимости вызывать fetchCartSummary, так как CartContext уже обновил cartSummary
-      } else if (event?.detail?.cart) {
-        console.log('Получены данные корзины из события:', event.detail.cart);
-      }
-      
-      // В любом случае обновляем данные корзины
-      fetchCart();
+      // Просто обнови UI, если нужно, но не вызывай fetchCart
     };
-    
     window.addEventListener('cart:updated', handleCartUpdated);
     window.addEventListener('cart:merged', handleCartUpdated);
-    
     return () => {
       window.removeEventListener('cart:updated', handleCartUpdated);
       window.removeEventListener('cart:merged', handleCartUpdated);
     };
-  }, [fetchCart, fetchCartSummary]);
-
-  // При открытии дропдауна обновляем полные данные корзины
-  useEffect(() => {
-    if (isOpen) {
-      fetchCart();
-    }
-  }, [isOpen, fetchCart]);
+  }, [fetchCart]);
 
   // Обработчик клика вне выпадающего меню
   useEffect(() => {

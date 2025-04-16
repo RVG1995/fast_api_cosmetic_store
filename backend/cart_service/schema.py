@@ -126,4 +126,11 @@ class PaginatedUserCartsResponse(BaseModel):
     limit: int
     pages: int
     
-    model_config = ConfigDict(from_attributes=True) 
+    model_config = ConfigDict(from_attributes=True)
+
+class CartMergeItemSchema(BaseModel):
+    product_id: int
+    quantity: int
+
+class CartMergeSchema(BaseModel):
+    items: list[CartMergeItemSchema] 

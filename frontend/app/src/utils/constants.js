@@ -65,5 +65,6 @@ export const TIMEOUTS = {
 // Локальные ключи хранилища
 export const STORAGE_KEYS = {
   AUTH_TOKEN: 'auth_token',
-  USER_DATA: 'user_data'
+  USER_DATA: 'user_data',
+  CART_DATA: 'cart_data'
 }; 

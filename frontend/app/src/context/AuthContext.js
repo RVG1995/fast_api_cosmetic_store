@@ -83,8 +83,7 @@ export const AuthProvider = ({ children }) => {
   // Функция для входа в систему
   const login = async (credentials) => {
     try {
-      const response = await authAPI.login(credentials);
-      
+      await authAPI.login(credentials);
       // После успешного логина сразу делаем новый запрос для получения данных пользователя
       await checkAuth();
       return { success: true };

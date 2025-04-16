@@ -1,5 +1,5 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, func, select
+from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, func, select, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from typing import Optional, List, Tuple
@@ -173,6 +173,7 @@ class CartItemModel(Base):
     __tablename__ = 'cart_items'
     __table_args__ = (
         CheckConstraint('quantity > 0', name='cart_item_quantity_positive'),
+        UniqueConstraint('cart_id', 'product_id', name='cart_items_cart_id_product_id_key'),
     )
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

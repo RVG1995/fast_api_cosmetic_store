@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { cartAPI } from '../utils/api';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { cartAPI, productAPI } from '../utils/api';
 import { useAuth } from './AuthContext';
+import { STORAGE_KEYS } from '../utils/constants';
 
 // Создаем контекст для корзины
 const CartContext = createContext();
@@ -14,6 +15,34 @@ export const useCart = () => {
   return context;
 };
 
+// --- Вспомогательные функции для localStorage ---
+const getLocalCart = () => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.CART_DATA);
+    return data ? JSON.parse(data) : { items: [] };
+  } catch {
+    return { items: [] };
+  }
+};
+
+const setLocalCart = (cart) => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.CART_DATA, JSON.stringify(cart));
+  } catch {}
+};
+
+const clearLocalCart = () => {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.CART_DATA);
+  } catch {}
+};
+
+// --- Локальные операции с корзиной ---
+const localCartToSummary = (cartObj) => ({
+  total_items: cartObj.items.reduce((sum, i) => sum + i.quantity, 0),
+  total_price: cartObj.items.reduce((sum, i) => sum + (i.product?.price || 0) * i.quantity, 0)
+});
+
 // Провайдер контекста корзины
 export const CartProvider = ({ children }) => {
   const { user } = useAuth();
@@ -21,260 +50,278 @@ export const CartProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [cartSummary, setCartSummary] = useState({ total_items: 0, total_price: 0 });
+  const isMergingRef = useRef(false);
 
-  // Загрузка корзины
+  // --- Получение корзины ---
   const fetchCart = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    if (!user) {
+      // Аноним: localStorage
+      const localCart = getLocalCart();
+      // --- ДОБАВЛЕНО: подгружаем инфу о товарах ---
+      if (localCart.items.length > 0) {
+        try {
+          const ids = localCart.items.map(i => i.product_id);
+          let productsInfo = {};
+          if (productAPI.getBatchProductStats) {
+            const res = await productAPI.getBatchProductStats(ids);
+            if (res && res.data) {
+              res.data.forEach(p => { productsInfo[p.id] = p; });
+            }
+          } else {
+            const prods = await Promise.all(ids.map(id => productAPI.getProductById(id).then(r => r.data).catch(() => null)));
+            prods.forEach(p => { if (p) productsInfo[p.id] = p; });
+          }
+          localCart.items = localCart.items.map(i => ({ ...i, product: productsInfo[i.product_id] || null }));
+        } catch (e) {
+          localCart.items = localCart.items.map(i => ({ ...i, product: null }));
+        }
+      }
+      // --- ГАРАНТИРУЕМ наличие total_items/total_price в cart ---
+      const summary = localCartToSummary(localCart);
+      const cartWithTotals = { ...localCart, ...summary };
+      setCart(cartWithTotals);
+      setCartSummary(summary);
+      setLoading(false);
+      return;
+    }
+    // Авторизованный: API
     try {
-      setLoading(true);
-      setError(null);
       const response = await cartAPI.getCart();
       setCart(response.data);
-      
-      // Обновляем сводку корзины
       setCartSummary({
         total_items: response.data.total_items || 0,
         total_price: response.data.total_price || 0
       });
     } catch (err) {
-      console.error('Ошибка при загрузке корзины:', err);
       setError('Не удалось загрузить корзину');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
-  // Загрузка сводки корзины (легковесный запрос)
+  // --- Получение сводки корзины ---
   const fetchCartSummary = useCallback(async () => {
+    if (!user) {
+      const localCart = getLocalCart();
+      setCartSummary(localCartToSummary(localCart));
+      return;
+    }
     try {
-      console.log('Запрос сводки корзины...');
       const response = await cartAPI.getCartSummary();
-      console.log('Получена сводка корзины:', response.data);
-      
-      // Убедимся, что у нас есть данные и они имеют правильную структуру
-      if (response.data) {
-        setCartSummary(response.data);
-        
-        // Логируем обновленную сводку для дебага
-        console.log('CartSummary обновлен:', response.data);
-      }
-    } catch (err) {
-      console.error('Ошибка при загрузке сводки корзины:', err);
-    }
-  }, []);
+      if (response.data) setCartSummary(response.data);
+    } catch {}
+  }, [user]);
 
-  // Добавление товара в корзину
+  // --- Добавление товара ---
   const addToCart = useCallback(async (productId, quantity = 1) => {
-    try {
-      setLoading(true);
-      const response = await cartAPI.addToCart(productId, quantity);
-      
-      if (response.data.success) {
-        // Устанавливаем данные корзины из ответа сервера
-        setCart(response.data.cart);
-        
-        // Убедимся, что у нас есть total_items и total_price
-        // Если их нет, вычислим из данных корзины
-        const cartSummaryData = {
-          total_items: response.data.cart.total_items || 
-                      (response.data.cart.items ? response.data.cart.items.length : 0),
-          total_price: response.data.cart.total_price || 0
-        };
-        
-        setCartSummary(cartSummaryData);
-        
-        // Логируем обновление для дебага
-        console.log('Данные корзины обновлены после добавления:', response.data.cart);
-        console.log('Сводка корзины обновлена:', cartSummaryData);
-
-        // Оповещаем всех, что корзина обновилась, передавая данные
-        window.dispatchEvent(new CustomEvent('cart:updated', { 
-          detail: {
-            cart: response.data.cart,
-            summary: cartSummaryData
-          }
-        }));
-        
-        return { success: true, message: response.data.message };
+    setLoading(true);
+    if (!user) {
+      let localCart = getLocalCart();
+      const idx = localCart.items.findIndex(i => i.product_id === productId);
+      if (idx !== -1) {
+        localCart.items[idx].quantity += quantity;
       } else {
-        const errorMessage = response.data.error || response.data.message || 'Не удалось добавить товар в корзину';
-        console.warn('Ошибка при добавлении товара в корзину:', errorMessage);
-        
-        return { 
-          success: false, 
-          message: errorMessage,
-          error: errorMessage
-        };
+        localCart.items.push({ product_id: productId, quantity });
       }
-    } catch (err) {
-      console.error('Ошибка при добавлении товара в корзину:', err);
-      return { 
-        success: false, 
-        message: 'Ошибка при добавлении товара в корзину',
-        error: err.message || 'Неизвестная ошибка'
-      };
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      setLocalCart(localCart);
 
-  // Обновление количества товара в корзине
-  const updateCartItem = useCallback(async (itemId, quantity) => {
+      // --- ПОДГРУЗКА ИНФЫ О ТОВАРАХ ---
+      if (localCart.items.length > 0) {
+        try {
+          const ids = localCart.items.map(i => i.product_id);
+          let productsInfo = {};
+          if (productAPI.getBatchProductStats) {
+            const res = await productAPI.getBatchProductStats(ids);
+            if (res && res.data) {
+              res.data.forEach(p => { productsInfo[p.id] = p; });
+            }
+          } else {
+            const prods = await Promise.all(ids.map(id => productAPI.getProductById(id).then(r => r.data).catch(() => null)));
+            prods.forEach(p => { if (p) productsInfo[p.id] = p; });
+          }
+          localCart.items = localCart.items.map(i => ({ ...i, product: productsInfo[i.product_id] || null }));
+        } catch (e) {
+          localCart.items = localCart.items.map(i => ({ ...i, product: null }));
+        }
+      }
+
+      setCart(localCart);
+      setCartSummary(localCartToSummary(localCart));
+      setLoading(false);
+      window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: localCart, summary: localCartToSummary(localCart) } }));
+      return { success: true, message: 'Товар добавлен в корзину' };
+    }
     try {
-      setLoading(true);
-      const response = await cartAPI.updateCartItem(itemId, quantity);
-      
+      const response = await cartAPI.addToCart(productId, quantity);
       if (response.data.success) {
         setCart(response.data.cart);
         setCartSummary({
           total_items: response.data.cart.total_items || 0,
           total_price: response.data.cart.total_price || 0
         });
+        window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: response.data.cart, summary: { total_items: response.data.cart.total_items || 0, total_price: response.data.cart.total_price || 0 } } }));
+        return { success: true, message: response.data.message };
+      } else {
+        return { success: false, message: response.data.error || response.data.message || 'Не удалось добавить товар в корзину' };
+      }
+    } catch (err) {
+      return { success: false, message: 'Ошибка при добавлении товара в корзину', error: err.message || 'Неизвестная ошибка' };
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
 
-        // Оповещаем всех, что корзина обновилась, передавая данные
-        window.dispatchEvent(new CustomEvent('cart:updated', { 
-          detail: {
-            cart: response.data.cart,
-            summary: {
-              total_items: response.data.cart.total_items || 0,
-              total_price: response.data.cart.total_price || 0
-            }
-          }
-        }));
-        
+  // --- Обновление количества ---
+  const updateCartItem = useCallback(async (itemId, quantity) => {
+    setLoading(true);
+    if (!user) {
+      let localCart = getLocalCart();
+      if (itemId < 0 || itemId >= localCart.items.length) {
+        setLoading(false);
+        return { success: false, message: 'Товар не найден в корзине' };
+      }
+      localCart.items[itemId].quantity = quantity;
+      setLocalCart(localCart);
+      setCart(localCart);
+      setCartSummary(localCartToSummary(localCart));
+      setLoading(false);
+      window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: localCart, summary: localCartToSummary(localCart) } }));
+      return { success: true, message: 'Количество товара обновлено' };
+    }
+    try {
+      const response = await cartAPI.updateCartItem(itemId, quantity);
+      if (response.data.success) {
+        setCart(response.data.cart);
+        setCartSummary({
+          total_items: response.data.cart.total_items || 0,
+          total_price: response.data.cart.total_price || 0
+        });
+        window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: response.data.cart, summary: { total_items: response.data.cart.total_items || 0, total_price: response.data.cart.total_price || 0 } } }));
         return { success: true, message: response.data.message };
       } else {
         return { success: false, message: response.data.error || 'Не удалось обновить количество товара' };
       }
     } catch (err) {
-      console.error('Ошибка при обновлении количества товара:', err);
       return { success: false, message: 'Ошибка при обновлении количества товара' };
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
-  // Удаление товара из корзины
+  // --- Удаление товара ---
   const removeFromCart = useCallback(async (itemId) => {
+    setLoading(true);
+    if (!user) {
+      let localCart = getLocalCart();
+      if (itemId < 0 || itemId >= localCart.items.length) {
+        setLoading(false);
+        return { success: false, message: 'Товар не найден в корзине' };
+      }
+      localCart.items.splice(itemId, 1);
+      setLocalCart(localCart);
+      setCart(localCart);
+      setCartSummary(localCartToSummary(localCart));
+      setLoading(false);
+      window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: localCart, summary: localCartToSummary(localCart) } }));
+      return { success: true, message: 'Товар удален из корзины' };
+    }
     try {
-      setLoading(true);
       const response = await cartAPI.removeFromCart(itemId);
-      
       if (response.data.success) {
         setCart(response.data.cart);
         setCartSummary({
           total_items: response.data.cart.total_items || 0,
           total_price: response.data.cart.total_price || 0
         });
-
-        // Оповещаем всех, что корзина обновилась, передавая данные
-        window.dispatchEvent(new CustomEvent('cart:updated', { 
-          detail: {
-            cart: response.data.cart,
-            summary: {
-              total_items: response.data.cart.total_items || 0,
-              total_price: response.data.cart.total_price || 0
-            }
-          }
-        }));
-        
+        window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: response.data.cart, summary: { total_items: response.data.cart.total_items || 0, total_price: response.data.cart.total_price || 0 } } }));
         return { success: true, message: response.data.message };
       } else {
         return { success: false, message: response.data.error || 'Не удалось удалить товар из корзины' };
       }
     } catch (err) {
-      console.error('Ошибка при удалении товара из корзины:', err);
       return { success: false, message: 'Ошибка при удалении товара из корзины' };
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
-  // Очистка корзины
+  // --- Очистка корзины ---
   const clearCart = useCallback(async () => {
+    setLoading(true);
+    if (!user) {
+      clearLocalCart();
+      setCart({ items: [] });
+      setCartSummary({ total_items: 0, total_price: 0 });
+      setLoading(false);
+      window.dispatchEvent(new CustomEvent('cart:updated'));
+      return { success: true, message: 'Корзина очищена' };
+    }
     try {
-      setLoading(true);
       const response = await cartAPI.clearCart();
-      
       if (response.data.success) {
         setCart(response.data.cart);
         setCartSummary({ total_items: 0, total_price: 0 });
-        
-        // Оповещаем всех, что корзина обновилась (очищена)
         window.dispatchEvent(new CustomEvent('cart:updated'));
-        
         return { success: true, message: response.data.message };
       } else {
         return { success: false, message: response.data.error || 'Не удалось очистить корзину' };
       }
     } catch (err) {
-      console.error('Ошибка при очистке корзины:', err);
       return { success: false, message: 'Ошибка при очистке корзины' };
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
-  // Объединение корзин при авторизации
+  // --- Объединение корзин при авторизации ---
   const mergeCarts = useCallback(async () => {
     if (!user) return;
-    
+    if (localStorage.getItem('cart_merged')) return;
+    if (isMergingRef.current) return;
+    isMergingRef.current = true;
+    localStorage.setItem('cart_merged', '1');
+    const localCart = getLocalCart();
+    const validItems = (localCart.items || []).filter(i => Number.isInteger(i.product_id) && Number.isInteger(i.quantity) && i.quantity > 0);
+    if (!validItems.length) {
+      isMergingRef.current = false;
+      return;
+    }
     try {
-      // Получаем session_id из cookie
-      const getCookie = (name) => {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
-        return null;
-      };
-      
-      const sessionId = getCookie('cart_session_id');
-      console.log('Объединение корзин с session_id:', sessionId);
-      
-      const response = await cartAPI.mergeCarts(sessionId);
+      const response = await cartAPI.mergeCarts(validItems);
       if (response.data.success) {
+        clearLocalCart();
         setCart(response.data.cart);
         setCartSummary({
           total_items: response.data.cart.total_items || 0,
           total_price: response.data.cart.total_price || 0
         });
+        await fetchCart();
+        window.dispatchEvent(new CustomEvent('cart:merged'));
       }
     } catch (err) {
+      localStorage.removeItem('cart_merged');
       console.error('Ошибка при объединении корзин:', err);
+    } finally {
+      isMergingRef.current = false;
     }
-  }, [user]);
+  }, [user, fetchCart]);
 
   // Загружаем корзину при монтировании компонента
   useEffect(() => {
-    // Функция для получения корзины с обработкой ошибок
-    const loadCart = async () => {
-      try {
-        await fetchCart();
-      } catch (err) {
-        console.error('Не удалось загрузить корзину при инициализации', err);
-        setLoading(false);
-      }
-    };
-    
-    loadCart();
+    fetchCart();
   }, [fetchCart]);
 
   // Объединяем корзины при авторизации пользователя
   useEffect(() => {
-    // Объединяем корзины сразу при изменении пользователя
     if (user) {
-      console.log('Пользователь изменился, объединяем корзины');
-      mergeCarts()
-        .then(() => {
-          // После объединения корзин перезагружаем корзину
-          fetchCart();
-          // Оповещаем всех, что корзина обновилась после объединения
-          window.dispatchEvent(new CustomEvent('cart:merged'));
-        })
-        .catch(err => {
-          console.error('Не удалось объединить корзины', err);
-        });
+      if (localStorage.getItem('cart_merged')) return;
+      mergeCarts();
+    } else {
+      localStorage.removeItem('cart_merged');
     }
-  }, [user, mergeCarts, fetchCart]);
+  }, [user, mergeCarts]);
 
   // Значение контекста
   const value = {

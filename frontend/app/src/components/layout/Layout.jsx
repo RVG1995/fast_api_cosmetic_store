@@ -6,7 +6,7 @@ import { useCategories } from "../../context/CategoryContext";
 import React, { useEffect, useState } from 'react';
 import ProductSearch from "../ProductSearch";
 import CartIcon from "../cart/CartIcon";
-import { CartProvider } from "../../context/CartContext";
+import { CartProvider, useCart } from "../../context/CartContext";
 import ScrollToTopButton from "./ScrollToTopButton";
 import OfflineIndicator from "../common/OfflineIndicator";
 import "../../styles/Layout.css"; // Обновленный путь к стилям
@@ -14,6 +14,7 @@ import "../../styles/Layout.css"; // Обновленный путь к стил
 const Layout = () => {
   const { user, loading, logout, isAdmin } = useAuth();
   const { categories, loading: isLoadingCategories } = useCategories();
+  const { clearCart } = useCart();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -55,6 +56,8 @@ const Layout = () => {
 
   const handleLogout = async () => {
     await logout();
+    await clearCart();
+    localStorage.removeItem('cart_data');
     navigate('/login');
   };
 

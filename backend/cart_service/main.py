@@ -430,15 +430,15 @@ async def add_item_to_cart(
             cart.updated_at = datetime.now()
             
             await db.commit()
-            
+            # Инвалидируем кэш корзины до получения корзины для ответа
+            await invalidate_user_cart_cache(user.id)
             # Загружаем обновленную корзину
             query = select(CartModel).options(
                 selectinload(CartModel.items)
             ).filter(CartModel.id == cart.id)
-            
             result = await db.execute(query)
             updated_cart = result.scalars().first()
-            
+            await db.refresh(updated_cart, attribute_names=["items"])
             if not updated_cart:
                 logger.error(f"Не удалось получить обновленную корзину после добавления товара")
                 return {
@@ -446,17 +446,11 @@ async def add_item_to_cart(
                     "message": "Ошибка при добавлении товара в корзину",
                     "error": "Не удалось получить обновленную корзину"
                 }
-            
             # Обогащаем корзину данными о продуктах
             enriched_cart = await enrich_cart_with_product_data(updated_cart)
-            
-            # Инвалидируем кэш корзины
-            await invalidate_user_cart_cache(user.id)
-            
             success_message = "Товар успешно добавлен в корзину"
             if partial_add:
                 success_message = "Товар добавлен в корзину в максимально доступном количестве"
-            
             return {
                 "success": True,
                 "message": success_message,

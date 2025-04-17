@@ -1080,6 +1080,16 @@ const AdminOrderDetail = () => {
               <p><strong>Регион:</strong> {order.region || "Не указан"}</p>
               <p><strong>Телефон:</strong> {order.phone || "Не указан"}</p>
               <p><strong>Email:</strong> {order.email}</p>
+              <p>
+                <strong>Согласие на обработку ПД:</strong>{' '}
+                {order.personal_data_agreement !== undefined ? (
+                  <Badge bg={order.personal_data_agreement ? "success" : "danger"}>
+                    {order.personal_data_agreement ? "Дано" : "Не дано"}
+                  </Badge>
+                ) : (
+                  <Badge bg="warning">Нет данных</Badge>
+                )}
+              </p>
             </Card.Body>
           </Card>
           

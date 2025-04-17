@@ -104,6 +104,8 @@ class OrderModel(Base):
     # Связь с промокодом
     promo_code = relationship("PromoCodeModel", back_populates="orders")
     
+    personal_data_agreement: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    
     @property
     def order_number(self) -> str:
         """Получить номер заказа в формате ID + год"""

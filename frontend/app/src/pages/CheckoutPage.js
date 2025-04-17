@@ -22,7 +22,8 @@ const CheckoutPage = () => {
     city: '',
     region: '',
     street: '',
-    comment: ''
+    comment: '',
+    personalDataAgreement: false
   });
   
   const [validated, setValidated] = useState(false);
@@ -47,11 +48,22 @@ const CheckoutPage = () => {
   
   // Обработчик изменения полей формы
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    const { name, value, type, checked } = e.target;
+    
+
+
+    
+    if (type === 'checkbox') {
+      setFormData(prev => ({
+        ...prev,
+        [name]: checked
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
 
   // Обработчик применения промокода
@@ -74,7 +86,7 @@ const CheckoutPage = () => {
     console.log("Форма отправляется, валидность:", form.checkValidity());
     
     // Дополнительная проверка обязательных полей
-    const requiredFields = ["fullName", "phone", "region", "city", "street"];
+    const requiredFields = ["fullName", "phone", "region", "city", "street", "personalDataAgreement"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     
     if (missingFields.length > 0) {
@@ -84,7 +96,8 @@ const CheckoutPage = () => {
         phone: "Телефон",
         region: "Регион",
         city: "Город",
-        street: "Адрес доставки"
+        street: "Адрес доставки",
+        personalDataAgreement: "Согласие на обработку персональных данных"
       };
       console.error("Отсутствуют обязательные поля:", missingFields.map(f => fieldNames[f]).join(", "));
       return;
@@ -128,6 +141,7 @@ const CheckoutPage = () => {
       city: formData.city,
       street: formData.street,
       comment: formData.comment || '',
+      personalDataAgreement: formData.personalDataAgreement,
       promo_code: promoCode ? promoCode.code : undefined
     };
     
@@ -337,6 +351,22 @@ const CheckoutPage = () => {
                     placeholder="Комментарий к заказу (например, удобное время доставки)"
                   />
                 </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Check
+                    type="checkbox"
+                    id="personal-data-agreement"
+                    name="personalDataAgreement"
+                    label="Я согласен на обработку персональных данных"
+                    checked={formData.personalDataAgreement}
+                    onChange={handleChange}
+                    required
+                    isInvalid={validated && !formData.personalDataAgreement}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    Необходимо согласие на обработку персональных данных
+                  </Form.Control.Feedback>
+                </Form.Group>
                 
                 <Button 
                   variant="primary" 
@@ -353,7 +383,7 @@ const CheckoutPage = () => {
                         role="status"
                         aria-hidden="true"
                       />
-                      <span className="ms-2">Оформление заказа...</span>
+                      <span className="ms-2">Оформить заказ</span>
                     </>
                   ) : (
                     "Оформить заказ"

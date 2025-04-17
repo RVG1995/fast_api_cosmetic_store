@@ -75,6 +75,9 @@ class OrderCreate(BaseModel):
     # Поле для промокода
     promo_code: Optional[str] = Field(None, min_length=3, max_length=50)
     
+    # Согласие на обработку персональных данных
+    personal_data_agreement: bool = Field(..., description="Согласие на обработку персональных данных")
+    
     @field_validator('phone')
     def validate_phone_format(cls, v):
         if not (v.startswith('+7') or v.startswith('8')):
@@ -272,6 +275,7 @@ class OrderResponse(BaseModel):
     comment: Optional[str] = None
     
     is_paid: bool
+    personal_data_agreement: Optional[bool] = None
     items: List[OrderItemResponse] = []
     
     order_number: str
@@ -373,5 +377,63 @@ class PaymentStatusResponse(PaymentStatusBase):
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class OrderItemSchema(BaseModel):
+    """Схема для элемента заказа"""
+    id: int
+    product_id: int
+    product_name: str
+    product_price: int
+    quantity: int
+    total_price: int
+    created_at: Optional[datetime] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class OrderStatusSchema(BaseModel):
+    """Схема для отображения статуса заказа"""
+    id: int
+    name: str
+    description: Optional[str] = None
+    color: str
+    allow_cancel: bool
+    is_final: bool
+    sort_order: int
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class OrderStatusHistorySchema(BaseModel):
+    """Схема для истории статусов заказа"""
+    id: int
+    order_id: int
+    status_id: int
+    changed_at: datetime
+    changed_by_user_id: Optional[int] = None
+    notes: Optional[str] = None
+    status: Optional[OrderStatusSchema] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class OrderSchema(BaseModel):
+    """Схема для отображения заказа"""
+    id: int
+    user_id: int
+    status_id: int
+    created_at: datetime
+    updated_at: datetime
+    total_price: int
+    shipping_address: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    notes: Optional[str] = None
+    is_paid: bool
+    personal_data_agreement: bool = Field(..., description="Согласие на обработку персональных данных")
+    
+    order_number: str
+    status: Optional[OrderStatusSchema] = None
+    items: List[OrderItemSchema] = []
+    status_history: List[OrderStatusHistorySchema] = []
     
     model_config = ConfigDict(from_attributes=True) 

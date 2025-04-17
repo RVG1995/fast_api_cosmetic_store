@@ -238,7 +238,8 @@ export const OrderProvider = ({ children }) => {
         region: orderData.shipping_address?.state || orderData.region || "",
         city: orderData.shipping_address?.city || orderData.city || "",
         street: orderData.shipping_address?.address_line1 || orderData.street || "",
-        comment: orderData.notes || orderData.comment || ""
+        comment: orderData.notes || orderData.comment || "",
+        personal_data_agreement: Boolean(orderData.personalDataAgreement)
       };
       
       // Добавляем промокод, если он есть
@@ -257,7 +258,7 @@ export const OrderProvider = ({ children }) => {
       }
       
       // Проверяем итоговый объект на наличие всех обязательных полей
-      const requiredFields = ['full_name', 'phone', 'region', 'city', 'street'];
+      const requiredFields = ['full_name', 'phone', 'region', 'city', 'street', 'personal_data_agreement'];
       const missingFields = requiredFields.filter(field => !newOrderData[field]);
       
       if (missingFields.length > 0) {
@@ -267,7 +268,8 @@ export const OrderProvider = ({ children }) => {
           phone: 'Телефон',
           region: 'Регион',
           city: 'Город',
-          street: 'Адрес'
+          street: 'Адрес',
+          personal_data_agreement: 'Согласие на обработку персональных данных'
         };
         
         const errorMsg = `Необходимо заполнить следующие поля: ${missingFields.map(f => fieldNames[f]).join(', ')}`;

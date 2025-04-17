@@ -114,7 +114,8 @@ async def create_order(
         comment=order_data.comment,
         promo_code_id=promo_code_id,
         discount_amount=0,  # Будет обновлено после расчета скидки
-        is_paid=False
+        is_paid=False,
+        personal_data_agreement=order_data.personal_data_agreement
     )
     session.add(order)
     await session.flush()

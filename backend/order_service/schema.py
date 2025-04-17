@@ -96,6 +96,7 @@ class OrderCreateSchema(BaseModel):
     contact_phone: Optional[str] = None
     contact_email: Optional[EmailStr] = None
     notes: Optional[str] = None
+    personal_data_agreement: bool = Field(..., description="Согласие на обработку персональных данных")
 
 class OrderUpdateSchema(BaseModel):
     """Схема для обновления заказа"""

@@ -657,51 +657,40 @@ async def check_user_permissions(
     Returns:
         Dict с результатами проверки разрешения
     """
-    # Логирование для отладки
     logger.info(f"Запрос проверки разрешений для пользователя ID={current_user.id}, permission={permission}")
-    
-    # Базовые пермиссии на основе статуса пользователя
+
     result = {
         "is_authenticated": True,
         "is_active": current_user.is_active,
         "is_admin": current_user.is_admin,
         "is_super_admin": current_user.is_super_admin,
     }
-    
-    # Если запрошено конкретное разрешение
+
     if permission:
-        # Если суперадмин - у него есть все разрешения
         if current_user.is_super_admin:
             result["has_permission"] = True
             return result
-            
-        # Проверки для обычных пользователей и админов
+        if permission == "admin_access":
+            if not (current_user.is_admin or current_user.is_super_admin):
+                from fastapi import HTTPException, status
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+            result["has_permission"] = True
+            return result
         if permission == "read":
-            # Для чтения ресурсов обычно нужно быть аутентифицированным
             result["has_permission"] = True
         elif permission in ["write", "update"]:
-            # Для записи может потребоваться больше прав
             if resource_type == "user" and resource_id == current_user.id:
-                # Пользователь может изменять свой профиль
                 result["has_permission"] = True
             elif current_user.is_admin:
-                # Админы могут изменять большинство ресурсов
                 result["has_permission"] = True
             else:
                 result["has_permission"] = False
         elif permission == "delete":
-            # Удаление обычно требует админских прав
             result["has_permission"] = current_user.is_admin
-        elif permission == "admin_access":
-            # Доступ к админ-панели
-            result["has_permission"] = current_user.is_admin or current_user.is_super_admin
         elif permission == "super_admin_access":
-            # Доступ к функциям суперадмина
             result["has_permission"] = current_user.is_super_admin
         else:
-            # Неизвестный тип разрешения
             result["has_permission"] = False
-            
     return result
 
 @router.post("/request-password-reset")

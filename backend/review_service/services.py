@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from models import ReviewModel, AdminCommentModel, ReviewReactionModel, ReviewTypeEnum, ReactionTypeEnum
 from schema import ProductReviewCreate, StoreReviewCreate, AdminCommentCreate, ReactionCreate, ReviewRead, ReviewStats, PaginatedResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from auth import User
 from math import ceil
 import asyncio
@@ -756,27 +756,27 @@ async def get_batch_product_review_stats(
         product_ids_str = ','.join(str(pid) for pid in product_ids)
         
         # Для оптимизации делаем один запрос за всеми средними рейтингами
-        avg_ratings_query = text(f"""
+        avg_ratings_query = text("""
             SELECT product_id, AVG(rating) as avg_rating
             FROM reviews
             WHERE review_type = 'product'
             AND is_hidden = FALSE
-            AND product_id IN ({product_ids_str})
+            AND product_id IN :ids
             GROUP BY product_id
-        """)
-        avg_ratings_result = await session.execute(avg_ratings_query)
+        """).bindparams(bindparam("ids", expanding=True))
+        avg_ratings_result = await session.execute(avg_ratings_query, {"ids": product_ids})
         avg_ratings = {str(row[0]): float(row[1]) for row in avg_ratings_result}
         
         # Запрос для получения количества отзывов по каждому рейтингу для всех товаров
-        rating_counts_query = text(f"""
+        rating_counts_query = text("""
             SELECT product_id, rating, COUNT(*) as count
             FROM reviews
             WHERE review_type = 'product'
             AND is_hidden = FALSE
-            AND product_id IN ({product_ids_str})
+            AND product_id IN :ids
             GROUP BY product_id, rating
-        """)
-        rating_counts_result = await session.execute(rating_counts_query)
+        """).bindparams(bindparam("ids", expanding=True))
+        rating_counts_result = await session.execute(rating_counts_query, {"ids": product_ids})
         
         # Инициализируем словарь для подсчета рейтингов по каждому товару
         product_rating_counts = {str(pid): {1: 0, 2: 0, 3: 0, 4: 0, 5: 0} for pid in product_ids}

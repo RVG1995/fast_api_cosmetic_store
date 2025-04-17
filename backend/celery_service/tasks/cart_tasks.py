@@ -16,7 +16,7 @@ from celery_app import app
 logger = logging.getLogger(__name__)
 CART_SERVICE_URL = os.getenv('CART_SERVICE_URL', 'http://cart_service:8000')
 # Сервисный API-ключ для внутренней авторизации между микросервисами
-INTERNAL_SERVICE_KEY = os.getenv('INTERNAL_SERVICE_KEY', 'service_secret_key_for_internal_use')
+INTERNAL_SERVICE_KEY = os.getenv('INTERNAL_SERVICE_KEY', 'test')
 
 @app.task(name='cart.cleanup_old_anonymous_carts', bind=True, queue='cart')
 def cleanup_old_anonymous_carts(self, days=1):

@@ -20,8 +20,6 @@ const CartIcon = () => {
 
   // При монтировании компонента и открытии дропдауна обновляем данные корзины
   useEffect(() => {
-    // При первом рендере загружаем полные данные
-    fetchCart();
     // Слушаем событие обновления корзины
     const handleCartUpdated = (event) => {
       // Просто обнови UI, если нужно, но не вызывай fetchCart
@@ -32,7 +30,7 @@ const CartIcon = () => {
       window.removeEventListener('cart:updated', handleCartUpdated);
       window.removeEventListener('cart:merged', handleCartUpdated);
     };
-  }, [fetchCart]);
+  }, []);
 
   // Обработчик клика вне выпадающего меню
   useEffect(() => {

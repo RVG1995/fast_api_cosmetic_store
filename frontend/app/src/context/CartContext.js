@@ -51,9 +51,11 @@ export const CartProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [cartSummary, setCartSummary] = useState({ total_items: 0, total_price: 0 });
   const isMergingRef = useRef(false);
+  const prevUserId = useRef();
 
   // --- Получение корзины ---
   const fetchCart = useCallback(async () => {
+    console.log('fetchCart вызван, user:', user);
     setLoading(true);
     setError(null);
     if (!user) {
@@ -284,7 +286,6 @@ export const CartProvider = ({ children }) => {
           total_items: response.data.cart.total_items || 0,
           total_price: response.data.cart.total_price || 0
         });
-        await fetchCart();
         window.dispatchEvent(new CustomEvent('cart:merged'));
       }
     } catch (err) {
@@ -297,8 +298,12 @@ export const CartProvider = ({ children }) => {
 
   // Загружаем корзину при монтировании компонента
   useEffect(() => {
+    // Production-safe: вызываем fetchCart только если user.id реально изменился
+    if ((user && prevUserId.current === user.id) || (!user && prevUserId.current === null)) return;
+    prevUserId.current = user ? user.id : null;
+    console.log('useEffect(fetchCart) сработал, user:', user);
     fetchCart();
-  }, [fetchCart]);
+  }, [user && user.id]);
 
   // Объединяем корзины при авторизации пользователя
   useEffect(() => {

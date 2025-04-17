@@ -16,13 +16,11 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
   const [dropdownProducts, setDropdownProducts] = useState([]);  // Продукты для выпадающего списка
   const [searchResults, setSearchResults] = useState([]);       // Результаты текстового поиска
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(false);
-  const [showEditor, setShowEditor] = useState(false);
   const [error, setError] = useState(null);
   const debounceTimeoutRef = useRef(null);
   const searchContainerRef = useRef(null);
+  const searchInputRef = useRef(null);
   
   // Локальное состояние для редактирования товаров
   const [itemsToAdd, setItemsToAdd] = useState([]);
@@ -34,6 +32,9 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
     product_id: "",
     quantity: 1
   });
+  
+  const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
   
   // Загрузка списка доступных товаров
   const loadAvailableProducts = useCallback(async () => {
@@ -49,7 +50,7 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
       // 2. Исключаем товары, которые уже есть в заказе
       const products = response.data.items || [];
       const filteredProducts = products.filter(product => 
-        product.stock > 0 && !order.items.some(item => item.product_id === product.id)
+        product.stock > 0 && !order?.items.some(item => item.product_id === product.id)
       );
       
       setAvailableProducts(filteredProducts);
@@ -60,7 +61,7 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
     } finally {
       setLoadingProducts(false);
     }
-  }, [order.items]);
+  }, [order?.items]);
   
   // Локальная фильтрация товаров
   const filterProductsLocally = useCallback((query) => {
@@ -89,7 +90,7 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
       // 1. Исключаем товары, которых нет в наличии (stock === 0)
       // 2. Исключаем товары, которые уже есть в заказе
       const filteredApiProducts = apiProducts.filter(apiProduct => 
-        apiProduct.stock > 0 && !order.items.some(item => item.product_id === apiProduct.id)
+        apiProduct.stock > 0 && !order?.items.some(item => item.product_id === apiProduct.id)
       );
       
       setSearchResults(filteredApiProducts);
@@ -103,14 +104,14 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
     } finally {
       setLoadingProducts(false);
     }
-  }, [order.items, filterProductsLocally]);
+  }, [order?.items, filterProductsLocally]);
   
   // Загрузка доступных товаров при открытии редактора
   useEffect(() => {
-    if (showEditor) {
+    if (showModal) {
       loadAvailableProducts();
     }
-  }, [showEditor, loadAvailableProducts]);
+  }, [showModal, loadAvailableProducts]);
   
   // Обработчик клика вне компонента поиска
   useEffect(() => {
@@ -126,62 +127,48 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
     };
   }, []);
   
-  // Обработчик изменения поискового запроса
-  const handleSearchChange = (e) => {
-    const value = e.target.value;
-    setSearchQuery(value);
-    
-    // Очищаем предыдущий timeout
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-    
-    // Если поле пустое, скрываем результаты
+  // handleSearchChange теперь читает значение напрямую из ref
+  const handleSearchChange = useCallback(() => {
+    const value = searchInputRef.current ? searchInputRef.current.value : '';
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     if (!value.trim()) {
       setSearchResults([]);
       setShowSearchResults(false);
       return;
     }
-    
-    // Устанавливаем новый timeout для debounce эффекта
     debounceTimeoutRef.current = setTimeout(() => {
       if (value.length >= 3) {
-        // Если строка достаточной длины, запрашиваем API
         searchProductsFromApi(value);
       } else {
-        // Иначе фильтруем локально
         const localResults = filterProductsLocally(value);
         setSearchResults(localResults);
         setShowSearchResults(localResults.length > 0);
       }
     }, 300);
+  }, [searchProductsFromApi, filterProductsLocally]);
+  
+  const handleClearSearch = () => {
+    if (searchInputRef.current) searchInputRef.current.value = '';
+    setSearchResults([]);
+    setShowSearchResults(false);
   };
   
-  // Обработчик выбора товара из результатов поиска
   const handleSelectSearchResult = (product) => {
     setNewProduct({
       ...newProduct,
       product_id: product.id.toString()
     });
-    
-    setSearchQuery(product.name);
     setShowSearchResults(false);
+    if (searchInputRef.current) searchInputRef.current.focus();
   };
   
-  // Очистка поискового поля
-  const handleClearSearch = () => {
-    setSearchQuery('');
-    setSearchResults([]);
-    setShowSearchResults(false);
-  };
-
   // Обработчик изменения количества товара
   const handleQuantityChange = (itemId, newQuantity) => {
     // Проверяем, что количество корректное
     if (newQuantity <= 0) return;
     
     // Находим оригинальное количество
-    const originalItem = order.items.find(item => item.id === itemId);
+    const originalItem = order?.items.find(item => item.id === itemId);
     if (!originalItem) return;
     
     // Если количество не изменилось, удаляем из списка обновлений
@@ -239,7 +226,7 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
     }
     
     // Проверяем, есть ли товар в заказе
-    const existingInOrder = order.items.find(item => item.product_id === parseInt(newProduct.product_id));
+    const existingInOrder = order?.items.find(item => item.product_id === parseInt(newProduct.product_id));
     if (existingInOrder) {
       setError(`Товар "${selectedProduct.name}" уже есть в заказе`);
       return;
@@ -281,7 +268,6 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
     });
     
     // Сбрасываем поиск
-    setSearchQuery("");
     setSearchResults([]);
     setShowSearchResults(false);
     
@@ -295,7 +281,7 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
     setError(null);
     
     try {
-      console.log("Начинаем обновление товаров заказа ID:", order.id);
+      console.log("Начинаем обновление товаров заказа ID:", order?.id);
       
       // Формируем данные для запроса
       const updateData = {
@@ -322,7 +308,7 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
       console.log("Отправляем обновления:", updateData);
       
       // Отправляем запрос
-      const result = await updateOrderItems(order.id, updateData);
+      const result = await updateOrderItems(order?.id, updateData);
       console.log("Получен результат обновления:", result);
       
       if (result && result.success) {
@@ -331,7 +317,7 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
         // Из-за кэширования на бэкенде result.order может содержать устаревшие данные
         // Явно запрашиваем актуальные данные заказа
         console.log("Запрашиваем актуальное состояние заказа после обновления");
-        const freshOrderData = await getAdminOrderById(order.id);
+        const freshOrderData = await getAdminOrderById(order?.id);
         
         if (freshOrderData) {
           console.log("Получены свежие данные заказа:", freshOrderData);
@@ -353,7 +339,7 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
         setItemsToRemove([]);
         
         // Закрываем редактор
-        setShowEditor(false);
+        setShowModal(false);
       } else {
         console.error("Ошибка при обновлении товаров:", result);
         setError(result?.errors?.message || "Не удалось обновить товары в заказе");
@@ -372,302 +358,251 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
     }
   };
   
-  // Отображаем кнопку открытия редактора
-  if (!showEditor) {
-    return (
+  useEffect(() => {
+    console.log('OrderItemsEditor mounted');
+    return () => console.log('OrderItemsEditor unmounted');
+  }, []);
+  
+  if (!order) return <Spinner animation="border" size="sm" />;
+  
+  return (
+    <>
       <Button 
         variant="primary" 
         className="mb-3" 
-        onClick={() => setShowEditor(true)}
+        onClick={() => setShowModal(true)}
       >
         Редактировать товары
       </Button>
-    );
-  }
-  
-  return (
-    <div className="order-items-editor mb-4">
-      <h5 className="mb-3">Редактирование товаров в заказе</h5>
-      
-      {error && (
-        <Alert variant="danger" className="mb-3">
-          {error}
-        </Alert>
-      )}
-      
-      {/* Форма добавления нового товара */}
-      <Card className="mb-3">
-        <Card.Header>Добавить товар</Card.Header>
-        <Card.Body>
-          <Row>
-            <Col md={7}>
-              <Form.Group className="mb-2">
-                <Form.Label>Поиск товара</Form.Label>
-                <div className="position-relative" ref={searchContainerRef}>
-                  <Form.Control
-                    type="text"
-                    placeholder="Введите название товара, SKU или ID"
-                    value={searchQuery}
-                    onChange={handleSearchChange}
-                    disabled={loadingProducts}
-                  />
-                  
-                  {searchQuery && (
-                    <button 
-                      className="btn btn-sm position-absolute end-0 top-50 translate-middle-y bg-transparent border-0"
-                      onClick={handleClearSearch}
-                      style={{ zIndex: 5, right: "30px" }}
-                    >
-                      <i className="bi bi-x-circle"></i>
-                    </button>
-                  )}
-                  
-                  {loadingProducts && (
-                    <div className="position-absolute end-0 top-50 translate-middle-y me-2">
-                      <Spinner animation="border" size="sm" />
-                    </div>
-                  )}
-                  
-                  {/* Результаты поиска в виде выпадающего списка */}
-                  {showSearchResults && searchResults.length > 0 && (
-                    <div className="position-absolute w-100 mt-1 border rounded bg-white shadow-sm" style={{ zIndex: 1000, maxHeight: "300px", overflowY: "auto" }}>
-                      {searchResults.map(product => (
-                        <div 
-                          key={product.id} 
-                          className="p-2 border-bottom search-result-item" 
-                          onClick={() => handleSelectSearchResult(product)}
-                          style={{ cursor: "pointer" }}
-                        >
-                          <div className="d-flex align-items-center">
-                            <div className="me-2" style={{ width: "40px", height: "40px" }}>
-                              {product.image ? (
-                                <img 
-                                  src={`${API_URLS.PRODUCT_SERVICE}${product.image}`} 
-                                  alt={product.name}
-                                  className="img-fluid"
-                                  style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
-                                />
-                              ) : (
-                                <div className="bg-light d-flex align-items-center justify-content-center" style={{ width: "100%", height: "100%" }}>
-                                  <i className="bi bi-image"></i>
+      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Редактирование товаров в заказе</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {error && (
+            <Alert variant="danger" className="mb-3">
+              {error}
+            </Alert>
+          )}
+          <Card className="mb-3">
+            <Card.Header>Добавить товар</Card.Header>
+            <Card.Body>
+              <Row>
+                <Col md={7}>
+                  <div className="position-relative">
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      className="form-control"
+                      placeholder="Введите название товара, SKU или ID"
+                      autoComplete="off"
+                      style={{ zIndex: 2 }}
+                      onChange={handleSearchChange}
+                    />
+                    {searchInputRef.current && searchInputRef.current.value && (
+                      <button
+                        className="btn btn-sm position-absolute end-0 top-50 translate-middle-y bg-transparent border-0"
+                        onClick={handleClearSearch}
+                        style={{ zIndex: 5, right: "30px" }}
+                        tabIndex={-1}
+                      >
+                        <i className="bi bi-x-circle"></i>
+                      </button>
+                    )}
+                    {loadingProducts && (
+                      <div className="position-absolute end-0 top-50 translate-middle-y me-2">
+                        <Spinner animation="border" size="sm" />
+                      </div>
+                    )}
+                    {showSearchResults && searchResults.length > 0 && (
+                      <div className="position-absolute w-100 mt-1 border rounded bg-white shadow-sm" style={{ zIndex: 1000, maxHeight: "300px", overflowY: "auto" }}>
+                        {searchResults.map(product => (
+                          <div
+                            key={product.id}
+                            className="p-2 border-bottom search-result-item"
+                            onClick={() => handleSelectSearchResult(product)}
+                            style={{ cursor: "pointer" }}
+                          >
+                            <div className="d-flex align-items-center">
+                              <div className="me-2" style={{ width: "40px", height: "40px" }}>
+                                {product.image ? (
+                                  <img
+                                    src={`${API_URLS.PRODUCT_SERVICE}${product.image}`}
+                                    alt={product.name}
+                                    className="img-fluid"
+                                    style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+                                  />
+                                ) : (
+                                  <div className="bg-light d-flex align-items-center justify-content-center" style={{ width: "100%", height: "100%" }}>
+                                    <i className="bi bi-image"></i>
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <div className="fw-bold">{product.name}</div>
+                                <div className="small text-muted">
+                                  ID: {product.id} | {formatPrice(product.price)} | Остаток: {product.stock}
                                 </div>
-                              )}
-                            </div>
-                            <div>
-                              <div className="fw-bold">{product.name}</div>
-                              <div className="small text-muted">
-                                ID: {product.id} | {formatPrice(product.price)} | Остаток: {product.stock}
                               </div>
                             </div>
                           </div>
-                        </div>
+                        ))}
+                      </div>
+                    )}
+                    {showSearchResults && searchInputRef.current && searchInputRef.current.value && searchResults.length === 0 && !loadingProducts && (
+                      <div className="position-absolute w-100 mt-1 border rounded bg-white shadow-sm p-3 text-center text-muted" style={{ zIndex: 1000 }}>
+                        <i className="bi bi-search me-2"></i>
+                        Товары не найдены
+                      </div>
+                    )}
+                  </div>
+                  <Form.Group className="mb-2">
+                    <Form.Label>Выбор из списка</Form.Label>
+                    <Form.Select
+                      value={newProduct.product_id}
+                      onChange={(e) => setNewProduct({...newProduct, product_id: e.target.value})}
+                      disabled={loadingProducts}
+                    >
+                      <option value="">Выберите товар</option>
+                      {dropdownProducts.map(product => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} (ID: {product.id}, {formatPrice(product.price)}, остаток: {product.stock})
+                        </option>
                       ))}
-                    </div>
-                  )}
-                  
-                  {showSearchResults && searchQuery && searchResults.length === 0 && !loadingProducts && (
-                    <div className="position-absolute w-100 mt-1 border rounded bg-white shadow-sm p-3 text-center text-muted">
-                      <i className="bi bi-search me-2"></i>
-                      Товары не найдены
-                    </div>
-                  )}
-                </div>
-              </Form.Group>
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                <Col md={3}>
+                  <Form.Group className="mb-2">
+                    <Form.Label>Количество</Form.Label>
+                    <Form.Control
+                      type="number"
+                      min="1"
+                      value={newProduct.quantity}
+                      onChange={(e) => setNewProduct({...newProduct, quantity: parseInt(e.target.value) || 1})}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={2} className="d-flex align-items-end">
+                  <Button 
+                    variant="success" 
+                    className="mb-2 w-100"
+                    onClick={handleAddNewProduct}
+                    disabled={!newProduct.product_id || newProduct.quantity <= 0 || loadingProducts}
+                  >
+                    Добавить
+                  </Button>
+                </Col>
+              </Row>
+            </Card.Body>
+          </Card>
+          <Table responsive hover>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Наименование</th>
+                <th>Цена</th>
+                <th>Количество</th>
+                <th>Сумма</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Новые товары для добавления - всегда сверху */}
+              {itemsToAdd.map(item => (
+                <tr key={item.temp_id} className="table-success">
+                  <td>{item.product_id}</td>
+                  <td>{item.product_name} <Badge bg="success">Новый</Badge></td>
+                  <td>{formatPrice(item.product_price)}</td>
+                  <td>
+                    <Form.Control
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => {
+                        const newQty = parseInt(e.target.value) || 1;
+                        setItemsToAdd(itemsToAdd.map(i => 
+                          i.temp_id === item.temp_id 
+                            ? {...i, quantity: newQty, total_price: newQty * i.product_price} 
+                            : i
+                        ));
+                      }}
+                      style={{ width: '80px' }}
+                    />
+                  </td>
+                  <td>{formatPrice(item.quantity * item.product_price)}</td>
+                  <td>
+                    <Button 
+                      variant="danger" 
+                      size="sm"
+                      onClick={() => handleRemoveItem(item.temp_id)}
+                    >
+                      Удалить
+                    </Button>
+                  </td>
+                </tr>
+              ))}
               
-              <Form.Group className="mb-2">
-                <Form.Label>Выбор из списка</Form.Label>
-                <Form.Select
-                  value={newProduct.product_id}
-                  onChange={(e) => setNewProduct({...newProduct, product_id: e.target.value})}
-                  disabled={loadingProducts}
-                >
-                  <option value="">Выберите товар</option>
-                  {dropdownProducts.map(product => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} (ID: {product.id}, {formatPrice(product.price)}, остаток: {product.stock})
-                    </option>
-                  ))}
-                </Form.Select>
-              </Form.Group>
-            </Col>
-            <Col md={3}>
-              <Form.Group className="mb-2">
-                <Form.Label>Количество</Form.Label>
-                <Form.Control
-                  type="number"
-                  min="1"
-                  value={newProduct.quantity}
-                  onChange={(e) => setNewProduct({...newProduct, quantity: parseInt(e.target.value) || 1})}
-                />
-              </Form.Group>
-            </Col>
-            <Col md={2} className="d-flex align-items-end">
-              <Button 
-                variant="success" 
-                className="mb-2 w-100"
-                onClick={handleAddNewProduct}
-                disabled={!newProduct.product_id || newProduct.quantity <= 0 || loadingProducts}
-              >
-                Добавить
-              </Button>
-            </Col>
-          </Row>
-        </Card.Body>
-      </Card>
-      
-      {/* Таблица текущих товаров и добавленных товаров */}
-      <Table responsive hover>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Наименование</th>
-            <th>Цена</th>
-            <th>Количество</th>
-            <th>Сумма</th>
-            <th>Действия</th>
-          </tr>
-        </thead>
-        <tbody>
-          {/* Существующие товары в заказе */}
-          {order.items.filter(item => !itemsToRemove.includes(item.id)).map(item => (
-            <tr key={item.id} className={itemsToRemove.includes(item.id) ? 'd-none' : ''}>
-              <td>{item.product_id}</td>
-              <td>{item.product_name}</td>
-              <td>{formatPrice(item.product_price)}</td>
-              <td>
-                <Form.Control
-                  type="number"
-                  min="1"
-                  value={itemsToUpdate[item.id] || item.quantity}
-                  onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
-                  style={{ width: '80px' }}
-                />
-              </td>
-              <td>{formatPrice((itemsToUpdate[item.id] || item.quantity) * item.product_price)}</td>
-              <td>
-                <Button 
-                  variant="danger" 
-                  size="sm"
-                  onClick={() => handleRemoveItem(item.id)}
-                >
-                  Удалить
-                </Button>
-              </td>
-            </tr>
-          ))}
-          
-          {/* Новые товары для добавления */}
-          {itemsToAdd.map(item => (
-            <tr key={item.temp_id} className="table-success">
-              <td>{item.product_id}</td>
-              <td>{item.product_name} <Badge bg="success">Новый</Badge></td>
-              <td>{formatPrice(item.product_price)}</td>
-              <td>
-                <Form.Control
-                  type="number"
-                  min="1"
-                  value={item.quantity}
-                  onChange={(e) => {
-                    const newQty = parseInt(e.target.value) || 1;
-                    setItemsToAdd(itemsToAdd.map(i => 
-                      i.temp_id === item.temp_id 
-                        ? {...i, quantity: newQty, total_price: newQty * i.product_price} 
-                        : i
-                    ));
-                  }}
-                  style={{ width: '80px' }}
-                />
-              </td>
-              <td>{formatPrice(item.quantity * item.product_price)}</td>
-              <td>
-                <Button 
-                  variant="danger" 
-                  size="sm"
-                  onClick={() => handleRemoveItem(item.temp_id)}
-                >
-                  Удалить
-                </Button>
-              </td>
-            </tr>
-          ))}
-          
-          {/* Отображаем удаленные товары */}
-          {order.items.filter(item => itemsToRemove.includes(item.id)).map(item => (
-            <tr key={`removed_${item.id}`} className="table-danger">
-              <td>{item.product_id}</td>
-              <td>{item.product_name} <Badge bg="danger">Удален</Badge></td>
-              <td>{formatPrice(item.product_price)}</td>
-              <td>{item.quantity}</td>
-              <td>{formatPrice(item.quantity * item.product_price)}</td>
-              <td>
-                <Button 
-                  variant="secondary" 
-                  size="sm"
-                  onClick={() => setItemsToRemove(itemsToRemove.filter(id => id !== item.id))}
-                >
-                  Восстановить
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
-            <td><strong>{formatPrice(order.total_price || order.total_amount || 0)}</strong></td>
-          </tr>
-          {order.discount_amount > 0 && (
-            <tr>
-              <td colSpan="4" className="text-end"><em>Скидка по промокоду {order.promo_code?.code && (
-                <span>
-                  ({order.promo_code.code}
-                  {order.promo_code.discount_percent && <span> - {order.promo_code.discount_percent}%</span>})
-                </span>
-              )}:</em></td>
-              <td>-{formatPrice(order.discount_amount)}</td>
-            </tr>
-          )}
-        </tfoot>
-      </Table>
-      
-      {/* Кнопки действий */}
-      <div className="d-flex justify-content-end mt-3">
-        <Button 
-          variant="secondary" 
-          className="me-2"
-          onClick={() => {
-            setShowEditor(false);
-            setItemsToAdd([]);
-            setItemsToUpdate({});
-            setItemsToRemove([]);
-            setError(null);
-          }}
-          disabled={loading}
-        >
-          Отмена
-        </Button>
-        <Button 
-          variant="primary"
-          onClick={handleSaveChanges}
-          disabled={loading}
-        >
-          {loading ? (
-            <>
-              <Spinner
-                as="span"
-                animation="border"
-                size="sm"
-                role="status"
-                aria-hidden="true"
-              />
-              <span className="ms-2">Сохранение...</span>
-            </>
-          ) : (
-            'Сохранить изменения'
-          )}
-        </Button>
-      </div>
-    </div>
+              {/* Существующие товары в заказе без фильтрации, но с разной отрисовкой в зависимости от статуса */}
+              {order.items.map(item => {
+                const isRemoved = itemsToRemove.includes(item.id);
+                return (
+                  <tr key={item.id} className={isRemoved ? 'table-danger' : ''}>
+                    <td>{item.product_id}</td>
+                    <td>
+                      {item.product_name}
+                      {isRemoved && <Badge bg="danger" className="ms-2">Удален</Badge>}
+                    </td>
+                    <td>{formatPrice(item.product_price)}</td>
+                    <td>
+                      {isRemoved ? (
+                        item.quantity
+                      ) : (
+                        <Form.Control
+                          type="number"
+                          min="1"
+                          value={itemsToUpdate[item.id] || item.quantity}
+                          onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
+                          style={{ width: '80px' }}
+                        />
+                      )}
+                    </td>
+                    <td>{formatPrice((itemsToUpdate[item.id] || item.quantity) * item.product_price)}</td>
+                    <td>
+                      {isRemoved ? (
+                        <Button 
+                          variant="secondary" 
+                          size="sm"
+                          onClick={() => setItemsToRemove(itemsToRemove.filter(id => id !== item.id))}
+                        >
+                          Восстановить
+                        </Button>
+                      ) : (
+                        <Button 
+                          variant="danger" 
+                          size="sm"
+                          onClick={() => handleRemoveItem(item.id)}
+                        >
+                          Удалить
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+          <div className="d-flex justify-content-end gap-2 mt-3">
+            <Button variant="secondary" onClick={() => setShowModal(false)}>
+              Закрыть
+            </Button>
+            <Button variant="primary" onClick={handleSaveChanges} disabled={loading}>
+              {loading ? <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" /> : 'Сохранить изменения'}
+            </Button>
+          </div>
+        </Modal.Body>
+      </Modal>
+    </>
   );
 };
 

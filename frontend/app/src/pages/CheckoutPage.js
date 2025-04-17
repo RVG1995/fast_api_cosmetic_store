@@ -35,6 +35,11 @@ const CheckoutPage = () => {
   
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
+    // Если заказ успешно создан, не выполняем редирект даже при пустой корзине
+    if (orderSuccess) {
+      return;
+    }
+    
     if (!cart || !cart.items || cart.items.length === 0) {
       navigate('/cart');
     } else {
@@ -44,14 +49,11 @@ const CheckoutPage = () => {
       }, 0);
       setCartTotal(total);
     }
-  }, [cart, navigate]);
+  }, [cart, navigate, orderSuccess]);
   
   // Обработчик изменения полей формы
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    
-
-
     
     if (type === 'checkbox') {
       setFormData(prev => ({
@@ -165,15 +167,19 @@ const CheckoutPage = () => {
           orderYear = new Date().getFullYear();
         }
         const formattedOrderNumber = `${result.id}-${orderYear}`;
-        setOrderSuccess(true);
-        setOrderNumber(formattedOrderNumber);
+        
+        // Сразу очищаем корзину после успешного создания заказа
+        console.log("Очищаем корзину после создания заказа");
+        await clearCart();
         
         // Очищаем промокод после успешного создания заказа
         clearPromoCode();
         
-        // Откладываем очистку корзины и редирект на 15 секунд
+        setOrderSuccess(true);
+        setOrderNumber(formattedOrderNumber);
+        
+        // Откладываем редирект на 15 секунд (корзина уже очищена)
         const redirectTimer = setTimeout(() => {
-          clearCart(); // Очищаем корзину непосредственно перед редиректом
           navigate('/orders');
         }, 15000);
         
@@ -204,7 +210,11 @@ const CheckoutPage = () => {
                 if (redirectTimer) {
                   clearTimeout(redirectTimer);
                 }
-                clearCart(); // Очищаем корзину перед редиректом
+                // Проверяем, пуста ли корзина, и если нет - очищаем
+                if (cart && cart.items && cart.items.length > 0) {
+                  console.log("Корзина до сих пор не пуста, очищаем перед редиректом");
+                  clearCart();
+                }
                 clearPromoCode(); // Очищаем промокод при переходе на страницу заказов
                 navigate('/orders');
               }}
@@ -351,21 +361,19 @@ const CheckoutPage = () => {
                     placeholder="Комментарий к заказу (например, удобное время доставки)"
                   />
                 </Form.Group>
-
+                
                 <Form.Group className="mb-3">
                   <Form.Check
+                    required
                     type="checkbox"
-                    id="personal-data-agreement"
+                    id="personalDataAgreement"
                     name="personalDataAgreement"
-                    label="Я согласен на обработку персональных данных"
                     checked={formData.personalDataAgreement}
                     onChange={handleChange}
-                    required
-                    isInvalid={validated && !formData.personalDataAgreement}
+                    label="Я согласен на обработку персональных данных"
+                    feedback="Необходимо согласие на обработку персональных данных"
+                    feedbackType="invalid"
                   />
-                  <Form.Control.Feedback type="invalid">
-                    Необходимо согласие на обработку персональных данных
-                  </Form.Control.Feedback>
                 </Form.Group>
                 
                 <Button 
@@ -383,7 +391,7 @@ const CheckoutPage = () => {
                         role="status"
                         aria-hidden="true"
                       />
-                      <span className="ms-2">Оформить заказ</span>
+                      <span className="ms-2">Оформление заказа...</span>
                     </>
                   ) : (
                     "Оформить заказ"

@@ -22,7 +22,13 @@ const CartIcon = () => {
   useEffect(() => {
     // Слушаем событие обновления корзины
     const handleCartUpdated = (event) => {
-      // Просто обнови UI, если нужно, но не вызывай fetchCart
+      console.log('CartIcon: Получено событие cart:updated', event.detail);
+      // Если событие содержит информацию о корзине, обновляем UI
+      if (event.detail && event.detail.cart) {
+        console.log('CartIcon: Обновление UI корзины с новыми данными', event.detail.cart);
+        // Вызываем fetchCart для обновления данных корзины
+        fetchCart();
+      }
     };
     window.addEventListener('cart:updated', handleCartUpdated);
     window.addEventListener('cart:merged', handleCartUpdated);
@@ -30,7 +36,7 @@ const CartIcon = () => {
       window.removeEventListener('cart:updated', handleCartUpdated);
       window.removeEventListener('cart:merged', handleCartUpdated);
     };
-  }, []);
+  }, [fetchCart]);
 
   // Обработчик клика вне выпадающего меню
   useEffect(() => {

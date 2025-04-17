@@ -244,20 +244,28 @@ export const CartProvider = ({ children }) => {
       setCart({ items: [] });
       setCartSummary({ total_items: 0, total_price: 0 });
       setLoading(false);
-      window.dispatchEvent(new CustomEvent('cart:updated'));
+      window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: { items: [] }, summary: { total_items: 0, total_price: 0 } } }));
       return { success: true, message: 'Корзина очищена' };
     }
     try {
       const response = await cartAPI.clearCart();
       if (response.data.success) {
-        setCart(response.data.cart);
+        // Принудительно устанавливаем пустую корзину независимо от ответа сервера
+        const emptyCart = { items: [] };
+        setCart(emptyCart);
         setCartSummary({ total_items: 0, total_price: 0 });
-        window.dispatchEvent(new CustomEvent('cart:updated'));
+        window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: emptyCart, summary: { total_items: 0, total_price: 0 } } }));
         return { success: true, message: response.data.message };
       } else {
         return { success: false, message: response.data.error || 'Не удалось очистить корзину' };
       }
     } catch (err) {
+      console.error('Ошибка при очистке корзины:', err);
+      // Даже при ошибке API очищаем корзину на фронтенде, чтобы избежать рассинхронизации
+      const emptyCart = { items: [] };
+      setCart(emptyCart);
+      setCartSummary({ total_items: 0, total_price: 0 });
+      window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: emptyCart, summary: { total_items: 0, total_price: 0 } } }));
       return { success: false, message: 'Ошибка при очистке корзины' };
     } finally {
       setLoading(false);

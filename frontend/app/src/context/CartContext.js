@@ -160,7 +160,7 @@ export const CartProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, fetchCart]);
 
   // --- Обновление количества ---
   const updateCartItem = useCallback(async (itemId, quantity) => {
@@ -302,16 +302,19 @@ export const CartProvider = ({ children }) => {
     } finally {
       isMergingRef.current = false;
     }
-  }, [user, fetchCart]);
+  }, [user]);
+
+  // Для избежания сложного выражения в зависимостях useEffect
+  const userId = user ? user.id : null;
 
   // Загружаем корзину при монтировании компонента
   useEffect(() => {
     // Production-safe: вызываем fetchCart только если user.id реально изменился
-    if ((user && prevUserId.current === user.id) || (!user && prevUserId.current === null)) return;
-    prevUserId.current = user ? user.id : null;
+    if ((user && prevUserId.current === userId) || (!user && prevUserId.current === null)) return;
+    prevUserId.current = userId;
     console.log('useEffect(fetchCart) сработал, user:', user);
     fetchCart();
-  }, [user && user.id]);
+  }, [userId, fetchCart, user]);
 
   // Объединяем корзины при авторизации пользователя
   useEffect(() => {

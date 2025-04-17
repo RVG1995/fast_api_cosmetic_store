@@ -66,21 +66,24 @@ const CartIcon = () => {
   };
 
   // Обработчик удаления товара из корзины
-  const handleRemoveItem = async (itemId, event) => {
+  const handleRemoveItem = async (itemId, index, event) => {
     // Предотвращаем всплытие события для предотвращения закрытия dropdown
     event.stopPropagation();
     
     // Устанавливаем состояние загрузки для конкретного товара
-    setIsRemoving(prev => ({ ...prev, [itemId]: true }));
+    // Для неавторизованных пользователей используем специальный идентификатор
+    const itemKey = itemId !== undefined ? itemId : `anon_${index}`;
+    setIsRemoving(prev => ({ ...prev, [itemKey]: true }));
     
     try {
-      await removeFromCart(itemId);
+      // Для анонимных пользователей передаем индекс, для авторизованных - id
+      await removeFromCart(itemId !== undefined ? itemId : index);
       // После удаления обновляем корзину
       await fetchCart();
     } catch (error) {
       console.error('Ошибка при удалении товара из корзины:', error);
     } finally {
-      setIsRemoving(prev => ({ ...prev, [itemId]: false }));
+      setIsRemoving(prev => ({ ...prev, [itemKey]: false }));
     }
   };
 
@@ -165,8 +168,8 @@ const CartIcon = () => {
             ) : (
               <>
                 <div className="cart-items">
-                  {cart.items.map(item => (
-                    <div className="cart-item" key={item.id}>
+                  {cart.items.map((item, index) => (
+                    <div className="cart-item" key={item.id !== undefined ? item.id : `anon_${item.product_id}_${index}`}>
                       <div className="cart-item-img">
                         {item.product && item.product.image ? (
                           <img 
@@ -194,11 +197,11 @@ const CartIcon = () => {
                       </div>
                       <button 
                         className="cart-item-remove"
-                        onClick={(e) => handleRemoveItem(item.id, e)}
-                        disabled={isRemoving[item.id]}
+                        onClick={(e) => handleRemoveItem(item.id, index, e)}
+                        disabled={isRemoving[item.id !== undefined ? item.id : `anon_${index}`]}
                         title="Удалить"
                       >
-                        {isRemoving[item.id] ? (
+                        {isRemoving[item.id !== undefined ? item.id : `anon_${index}`] ? (
                           <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                         ) : (
                           <i className="bi bi-x"></i>

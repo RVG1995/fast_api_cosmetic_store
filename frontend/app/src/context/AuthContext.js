@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { authAPI } from "../utils/api";
 import { useNavigate } from 'react-router-dom';
 
@@ -31,22 +31,14 @@ export const AuthProvider = ({ children }) => {
     try {
       console.log("Проверка аутентификации...");
       console.log("Текущие куки документа:", document.cookie);
-      
       const res = await authAPI.getCurrentUser();
-      console.log("Auth successful:", res.data);
-      
       setUser(res.data);
       setError(null);
-      
-      // Сразу после загрузки базовой информации о пользователе проверяем его разрешения
+
       if (res.data && res.data.id) {
+        // Права
         try {
-          console.log("Загружаем информацию о разрешениях пользователя...");
-          // Запрос для проверки админских прав
           const permRes = await authAPI.checkPermissions('admin_access');
-          console.log("Результат проверки разрешений:", permRes.data);
-          
-          // Обновляем данные о пользователе с учетом его прав
           if (permRes.data && (permRes.data.is_admin !== undefined || permRes.data.is_super_admin !== undefined)) {
             setUser(prevUser => ({
               ...prevUser,
@@ -56,6 +48,19 @@ export const AuthProvider = ({ children }) => {
           }
         } catch (permError) {
           console.error("Ошибка при проверке разрешений при инициализации:", permError);
+        }
+
+        // Профиль
+        try {
+          const profileRes = await authAPI.getUserProfile();
+          if (profileRes?.data) {
+            setUser(prevUser => ({
+              ...prevUser,
+              ...profileRes.data
+            }));
+          }
+        } catch (profileError) {
+          console.error("Ошибка при получении профиля пользователя:", profileError);
         }
       }
     } catch (error) {
@@ -170,17 +175,16 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Функция получения полного профиля пользователя
-  const getUserProfile = async () => {
+  const getUserProfile = useCallback(async () => {
     try {
       if (!user) return null;
-      
       const res = await authAPI.getUserProfile();
       return res.data;
     } catch (error) {
       console.error("Ошибка при получении профиля:", error);
       return null;
     }
-  };
+  }, []);
 
   const contextValue = {
     user, 

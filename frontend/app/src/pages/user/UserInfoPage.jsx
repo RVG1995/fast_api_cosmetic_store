@@ -21,10 +21,14 @@ function UserInfoPage() {
 
   // Загрузка профиля пользователя
   useEffect(() => {
+    console.log('UserInfoPage useEffect: user =', user);
+    if (!user || !user.id) return;
     const fetchUserProfile = async () => {
       setLoading(true);
       try {
+        console.log('Вызов getUserProfile');
         const profileData = await getUserProfile();
+        console.log('Ответ getUserProfile:', profileData);
         if (profileData) {
           setUserProfile(profileData);
         }
@@ -35,9 +39,8 @@ function UserInfoPage() {
         setLoading(false);
       }
     };
-
     fetchUserProfile();
-  }, [getUserProfile]);
+  }, [user, getUserProfile]);
 
   // Загрузка статистики при монтировании компонента
   useEffect(() => {

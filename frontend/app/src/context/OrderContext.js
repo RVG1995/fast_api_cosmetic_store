@@ -27,9 +27,9 @@ export const OrderProvider = ({ children }) => {
 
   // Функция для получения конфигурации запроса
   const getConfig = useCallback(() => {
-    // Для работы с куками
+    console.log('getConfig: document.cookie =', document.cookie);
     return {
-      withCredentials: true, 
+      withCredentials: true,
       headers: {
         'Content-Type': 'application/json'
       }
@@ -157,33 +157,26 @@ export const OrderProvider = ({ children }) => {
   // Получение статистики заказов пользователя
   const getUserOrderStatistics = useCallback(async () => {
     console.log('Вызов getUserOrderStatistics');
-    
-    if (!isAuthenticated()) {
+    if (!user) {
       console.error('Попытка получить статистику заказов без авторизации');
       setError('Для просмотра статистики необходима авторизация');
       return null;
     }
-    
     setLoading(true);
     setError(null);
-    
     const url = `${ORDER_SERVICE_URL}/orders/statistics`;
     console.log('URL запроса статистики заказов:', url);
-    
     try {
       const config = getConfig();
       console.log('Заголовки запроса:', {
         Authorization: config?.headers?.Authorization ? 'Bearer xxx...' : 'Отсутствует',
         ContentType: config?.headers?.['Content-Type']
       });
-      
       const response = await axios.get(url, config);
       console.log('Ответ от сервера getUserOrderStatistics:', response.status, response.data);
-      
       return response.data;
     } catch (error) {
       console.error('Ошибка при получении статистики заказов:', error);
-      
       if (error.response) {
         if (error.response.status === 401) {
           setError('Для просмотра статистики необходима авторизация');
@@ -195,12 +188,11 @@ export const OrderProvider = ({ children }) => {
       } else {
         setError(`Ошибка запроса: ${error.message}`);
       }
-      
       return null;
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, getConfig]);
+  }, [user, getConfig]);
 
   // Создание нового заказа
   const createOrder = async (orderData) => {

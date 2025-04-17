@@ -123,6 +123,7 @@ export const CartProvider = ({ children }) => {
       setLocalCart(localCart);
 
       // --- ПОДГРУЗКА ИНФЫ О ТОВАРАХ ---
+      let productName = "Товар";
       if (localCart.items.length > 0) {
         try {
           const ids = localCart.items.map(i => i.product_id);
@@ -130,6 +131,12 @@ export const CartProvider = ({ children }) => {
           const productsInfo = {};
           products.forEach(p => { if (p) productsInfo[p.id] = p; });
           localCart.items = localCart.items.map(i => ({ ...i, product: productsInfo[i.product_id] || null }));
+          
+          // Получаем название добавленного товара
+          const addedProduct = productsInfo[productId];
+          if (addedProduct && addedProduct.name) {
+            productName = addedProduct.name;
+          }
         } catch (e) {
           localCart.items = localCart.items.map(i => ({ ...i, product: null }));
         }
@@ -140,7 +147,7 @@ export const CartProvider = ({ children }) => {
       setLoading(false);
       window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: localCart, summary: localCartToSummary(localCart) } }));
       fetchCart();
-      return { success: true, message: 'Товар добавлен в корзину' };
+      return { success: true, message: `${productName} добавлен в корзину`, productName };
     }
     try {
       const response = await cartAPI.addToCart(productId, quantity);
@@ -151,7 +158,15 @@ export const CartProvider = ({ children }) => {
           total_price: response.data.cart.total_price || 0
         });
         window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: response.data.cart, summary: { total_items: response.data.cart.total_items || 0, total_price: response.data.cart.total_price || 0 } } }));
-        return { success: true, message: response.data.message };
+        
+        // Определяем название товара из ответа сервера
+        let productName = "Товар";
+        const item = response.data.cart.items.find(item => item.product_id === productId);
+        if (item && item.product && item.product.name) {
+          productName = item.product.name;
+        }
+        
+        return { success: true, message: `${productName} добавлен в корзину`, productName };
       } else {
         return { success: false, message: response.data.error || response.data.message || 'Не удалось добавить товар в корзину' };
       }

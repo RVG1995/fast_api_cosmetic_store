@@ -38,8 +38,8 @@ const SimpleAddToCartButton = ({ productId, stock, className = '' }) => {
         // Показываем индикатор успеха на короткое время
         setSuccess(true);
         setTimeout(() => setSuccess(false), 1500);
-        // Успешное добавление - показываем toast
-        showToast('Товар добавлен в корзину', 'success');
+        // Успешное добавление - показываем toast с названием товара
+        showToast(result.message, 'success');
       } else {
         // Проверяем сообщение об ошибке на наличие ключевых слов, связанных с наличием товара
         const errorMsg = result.message || '';

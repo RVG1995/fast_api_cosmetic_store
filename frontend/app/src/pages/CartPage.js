@@ -25,16 +25,18 @@ const CartPage = () => {
         newQuantities[key] = item.quantity;
       });
       setQuantities(newQuantities);
-      if (itemsOrder.length === 0) {
-        setItemsOrder(cart.items.map(item => item.id !== undefined ? item.id : `anon_${item.product_id}`));
-      } else if (cart.items.some(item => !itemsOrder.includes(item.id !== undefined ? item.id : `anon_${item.product_id}`))) {
-        const newIds = cart.items
-          .filter(item => !itemsOrder.includes(item.id !== undefined ? item.id : `anon_${item.product_id}`))
-          .map(item => item.id !== undefined ? item.id : `anon_${item.product_id}`);
-        setItemsOrder([...itemsOrder, ...newIds]);
-      }
+
+      // Стабилизируем порядок: удаляем отсутствующие ключи, добавляем новые
+      const currentKeys = cart.items.map(item => item.id !== undefined ? item.id : `anon_${item.product_id}`);
+      setItemsOrder(prevOrder => {
+        // Удаляем отсутствующие
+        let filtered = prevOrder.filter(key => currentKeys.includes(key));
+        // Добавляем новые
+        const newKeys = currentKeys.filter(key => !filtered.includes(key));
+        return [...filtered, ...newKeys];
+      });
     }
-  }, [cart, itemsOrder]);
+  }, [cart]);
 
   // Сортируем элементы корзины согласно сохраненному порядку
   const sortedCartItems = useMemo(() => {
@@ -211,18 +213,6 @@ const CartPage = () => {
     }
   };
 
-  // Если идет загрузка, показываем спиннер
-  if (loading) {
-    return (
-      <div className="text-center py-5">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Загрузка...</span>
-        </div>
-        <p className="mt-2">Загрузка корзины...</p>
-      </div>
-    );
-  }
-
   // Если произошла ошибка, показываем сообщение
   if (error) {
     return (
@@ -254,7 +244,25 @@ const CartPage = () => {
   }
 
   return (
-    <div className="cart-page">
+    <div className="cart-page" style={{ position: 'relative' }}>
+      {loading && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(255,255,255,0.7)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Загрузка...</span>
+          </div>
+        </div>
+      )}
       <h1 className="mb-4">Корзина</h1>
       
       {/* Сообщение об обновлении */}
@@ -409,6 +417,7 @@ const CartPage = () => {
                           </td>
                           <td className="text-center align-middle">
                             <button 
+                              type="button"
                               className="btn btn-sm btn-outline-danger"
                               onClick={() => handleRemoveItem(key)}
                               disabled={isRemoving[key]}

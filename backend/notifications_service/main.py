@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO)
+    # Настройка логгера для модуля auth
+    auth_logger = logging.getLogger("notifications_service.auth")
+    auth_logger.setLevel(logging.INFO)
+    
     # Инициализация БД и запуск консьюмера
     await init_db()
     app.state.rabbit_connection = await start_consumer()

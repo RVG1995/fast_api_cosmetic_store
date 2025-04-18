@@ -6,11 +6,12 @@ import { Link } from 'react-router-dom';
 
 // Предопределённые типы уведомлений в системе
 const AVAILABLE_EVENT_TYPES = [
-  { id: 'review.created', name: 'Новый отзыв на товар' },
-  { id: 'review.reply', name: 'Ответ на ваш отзыв' },
-  { id: 'service.critical_error', name: 'Критические ошибки в сервисе' },
-  { id: 'order.created', name: 'Создание заказа' },
-  { id: 'order.status_changed', name: 'Изменение статуса заказа' }
+  { id: 'review.created', name: 'Новый отзыв на товар', adminOnly: true },
+  { id: 'review.reply', name: 'Ответ на ваш отзыв', adminOnly: false },
+  { id: 'service.critical_error', name: 'Критические ошибки в сервисе', adminOnly: true },
+  { id: 'order.created', name: 'Создание заказа', adminOnly: false },
+  { id: 'order.status_changed', name: 'Изменение статуса заказа', adminOnly: false },
+  { id: 'product.low_stock', name: 'Низкое количество товара на складе', adminOnly: true }
 ];
 
 const NotificationSettingsPage = () => {
@@ -19,6 +20,11 @@ const NotificationSettingsPage = () => {
   const [settingsMap, setSettingsMap] = useState({});
   // Используем useRef для отслеживания первого запроса
   const [initialized, setInitialized] = useState(false);
+
+  // Фильтруем типы событий в зависимости от роли пользователя
+  const filteredEventTypes = AVAILABLE_EVENT_TYPES.filter(eventType => 
+    !eventType.adminOnly || (user && (user.is_admin || user.is_super_admin))
+  );
 
   useEffect(() => {
     // Загружаем настройки только раз при монтировании компонента
@@ -104,7 +110,7 @@ const NotificationSettingsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {AVAILABLE_EVENT_TYPES.map(eventType => (
+                {filteredEventTypes.map(eventType => (
                   <tr key={eventType.id}>
                     <td>{eventType.name}</td>
                     <td className="text-center">

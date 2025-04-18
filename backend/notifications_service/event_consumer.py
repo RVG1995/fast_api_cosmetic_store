@@ -20,6 +20,12 @@ from .config import (
 )
 from .database import AsyncSessionLocal
 from .models import NotificationSetting, SentNotification
+from .settings_router import (
+    EVENT_TYPE_REVIEW_CREATED, EVENT_TYPE_REVIEW_REPLY,
+    EVENT_TYPE_SERVICE_ERROR, EVENT_TYPE_ORDER_CREATED,
+    EVENT_TYPE_ORDER_STATUS_CHANGED, EVENT_TYPE_ORDER_STATUS_CHANGE,
+    EVENT_TYPE_PRODUCT_LOW_STOCK
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +56,7 @@ def create_email_content(event_type: str, data: dict) -> tuple:
     Returns:
         Кортеж (тема, текст)
     """
-    if event_type == "order.created":
+    if event_type == EVENT_TYPE_ORDER_CREATED:
         subject = f"Ваш заказ №{data.get('order_number', 'N/A')} успешно создан"
         
         # Формируем список товаров
@@ -86,7 +92,7 @@ def create_email_content(event_type: str, data: dict) -> tuple:
 """
         return subject, body
         
-    elif event_type == "order.status_changed":
+    elif event_type == EVENT_TYPE_ORDER_STATUS_CHANGED:
         subject = f"Статус заказа №{data.get('order_number', 'N/A')} изменен"
         body = f"""Здравствуйте, {data.get('full_name', 'Уважаемый клиент')}!
 
@@ -101,7 +107,7 @@ def create_email_content(event_type: str, data: dict) -> tuple:
 """
         return subject, body
         
-    elif event_type == "review.created":
+    elif event_type == EVENT_TYPE_REVIEW_CREATED:
         subject = "Новый отзыв на ваш товар"
         body = f"""Уведомляем вас о новом отзыве:
 
@@ -112,7 +118,7 @@ def create_email_content(event_type: str, data: dict) -> tuple:
 """
         return subject, body
         
-    elif event_type == "review.reply":
+    elif event_type == EVENT_TYPE_REVIEW_REPLY:
         subject = "Ответ на ваш отзыв"
         body = f"""Здравствуйте!
 
@@ -161,10 +167,10 @@ async def process_message(message: aio_pika.IncomingMessage) -> None:
             search_event_types = [event_type]
             
             # Обрабатываем специальный случай несоответствия между order.status_changed и order.status_change
-            if event_type == "order.status_changed":
-                search_event_types.append("order.status_change")
-            elif event_type == "order.status_change":
-                search_event_types.append("order.status_changed")
+            if event_type == EVENT_TYPE_ORDER_STATUS_CHANGED:
+                search_event_types.append(EVENT_TYPE_ORDER_STATUS_CHANGE)
+            elif event_type == EVENT_TYPE_ORDER_STATUS_CHANGE:
+                search_event_types.append(EVENT_TYPE_ORDER_STATUS_CHANGED)
                 
             settings = []
             for search_event_type in search_event_types:
@@ -179,27 +185,30 @@ async def process_message(message: aio_pika.IncomingMessage) -> None:
             
             # Если есть конкретный email в сообщении и нет настроек, создаем временные настройки
             # для события order.created и order.status_changed
-            if recipient_email and len(settings) == 0 and event_type in ["order.created", "order.status_changed"]:
+            if recipient_email and len(settings) == 0 and event_type in [EVENT_TYPE_ORDER_CREATED, EVENT_TYPE_ORDER_STATUS_CHANGED, EVENT_TYPE_ORDER_STATUS_CHANGE]:
                 logger.info(f"[process_message] Using recipient email from message: {recipient_email}")
                 
                 # Проверяем, нет ли явно отключенных настроек для пользователя
                 user_id = body.get("user_id")
                 should_create_temp_setting = True
                 
-                if user_id and event_type == "order.status_changed":
+                if user_id and event_type in [EVENT_TYPE_ORDER_STATUS_CHANGED, EVENT_TYPE_ORDER_STATUS_CHANGE]:
                     # Проверяем настройки пользователя
-                    user_settings_result = await session.execute(
-                        select(NotificationSetting).where(
-                            NotificationSetting.user_id == str(user_id),
-                            NotificationSetting.event_type == event_type
+                    search_types = [EVENT_TYPE_ORDER_STATUS_CHANGED, EVENT_TYPE_ORDER_STATUS_CHANGE]
+                    for search_type in search_types:
+                        user_settings_result = await session.execute(
+                            select(NotificationSetting).where(
+                                NotificationSetting.user_id == str(user_id),
+                                NotificationSetting.event_type == search_type
+                            )
                         )
-                    )
-                    user_setting = user_settings_result.scalars().first()
-                    
-                    # Если пользователь явно отключил email для этого типа события, не отправляем
-                    if user_setting and not user_setting.email_enabled:
-                        logger.info(f"[process_message] Skip: user={user_id} explicitly disabled email for {event_type}")
-                        should_create_temp_setting = False
+                        user_setting = user_settings_result.scalars().first()
+                        
+                        # Если пользователь явно отключил email для этого типа события, не отправляем
+                        if user_setting and not user_setting.email_enabled:
+                            logger.info(f"[process_message] Skip: user={user_id} explicitly disabled email for {search_type}")
+                            should_create_temp_setting = False
+                            break
                 
                 # Создаем временную настройку с email из сообщения только если не отключено
                 if should_create_temp_setting:
@@ -291,7 +300,7 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
             data = json.loads(message.body.decode())
             
             # Получаем тип события и email получателя
-            event_type = data.get("event_type", "order.created")
+            event_type = data.get("event_type", EVENT_TYPE_ORDER_CREATED)
             recipient_email = data.get("email")
             
             if not recipient_email:
@@ -338,7 +347,7 @@ async def process_update_message(message: aio_pika.IncomingMessage) -> None:
             data = json.loads(message.body.decode())
             
             # Получаем тип события и email получателя
-            event_type = data.get("event_type", "order.status_changed")
+            event_type = data.get("event_type", EVENT_TYPE_ORDER_STATUS_CHANGED)
             recipient_email = data.get("email")
             
             if not recipient_email:

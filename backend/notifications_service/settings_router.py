@@ -13,12 +13,78 @@ logger = logging.getLogger("notifications_service.settings_router")
 
 router = APIRouter()
 
+# Типы событий
+EVENT_TYPE_REVIEW_CREATED = "review.created"
+EVENT_TYPE_REVIEW_REPLY = "review.reply"
+EVENT_TYPE_SERVICE_ERROR = "service.critical_error"
+EVENT_TYPE_ORDER_CREATED = "order.created"
+EVENT_TYPE_ORDER_STATUS_CHANGED = "order.status_changed"
+EVENT_TYPE_ORDER_STATUS_CHANGE = "order.status_change"
+EVENT_TYPE_PRODUCT_LOW_STOCK = "product.low_stock"
+
+# События, доступные только для администраторов
+ADMIN_ONLY_EVENT_TYPES = [
+    EVENT_TYPE_REVIEW_CREATED,
+    EVENT_TYPE_SERVICE_ERROR,
+    EVENT_TYPE_PRODUCT_LOW_STOCK
+]
+
+# События, доступные для обычных пользователей
+USER_EVENT_TYPES = [
+    EVENT_TYPE_REVIEW_REPLY,
+    EVENT_TYPE_ORDER_CREATED,
+    EVENT_TYPE_ORDER_STATUS_CHANGED,
+    EVENT_TYPE_ORDER_STATUS_CHANGE
+]
+
 @router.get("/settings", response_model=List[schemas.NotificationSettingResponse])
 async def get_settings(user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     logger.info(f"[GET /settings] user_id={user.id}")
     user_id = str(user.id)
-    result = await db.execute(select(models.NotificationSetting).where(models.NotificationSetting.user_id == user_id))
-    return result.scalars().all()
+    
+    # Определяем доступные типы событий на основе роли пользователя
+    allowed_event_types = USER_EVENT_TYPES.copy()
+    if user.is_admin or user.is_super_admin:
+        allowed_event_types.extend(ADMIN_ONLY_EVENT_TYPES)
+    
+    logger.debug(f"Allowed event types for user {user_id}: {allowed_event_types}")
+        
+    result = await db.execute(
+        select(models.NotificationSetting)
+        .where(
+            models.NotificationSetting.user_id == user_id, 
+            models.NotificationSetting.event_type.in_(allowed_event_types)
+        )
+    )
+    settings = result.scalars().all()
+    
+    # Если настроек вообще нет, создаем базовые
+    if not settings:
+        logger.info(f"No settings found for user {user_id}, creating default settings")
+        defaults = []
+        for event_type in allowed_event_types:
+            new_setting = models.NotificationSetting(
+                user_id=user_id,
+                event_type=event_type,
+                email=user.email or f"user{user_id}@example.com",
+                email_enabled=True,
+                push_enabled=True
+            )
+            db.add(new_setting)
+            defaults.append(new_setting)
+        
+        try:
+            await db.commit()
+            for setting in defaults:
+                await db.refresh(setting)
+            return defaults
+        except Exception as e:
+            logger.error(f"Error creating default settings: {str(e)}")
+            await db.rollback()
+            # Даже если не удалось сохранить, вернем временные объекты
+            return defaults
+    
+    return settings
 
 # Новый эндпоинт для проверки настроек пользователя
 @router.get("/settings/check/{user_id}/{event_type}", response_model=Dict[str, bool])
@@ -33,10 +99,10 @@ async def check_settings(
     
     # Обрабатываем специальный случай несоответствия между order.status_changed и order.status_change
     search_event_types = [event_type]
-    if event_type == "order.status_changed":
-        search_event_types.append("order.status_change")
-    elif event_type == "order.status_change":
-        search_event_types.append("order.status_changed")
+    if event_type == EVENT_TYPE_ORDER_STATUS_CHANGED:
+        search_event_types.append(EVENT_TYPE_ORDER_STATUS_CHANGE)
+    elif event_type == EVENT_TYPE_ORDER_STATUS_CHANGE:
+        search_event_types.append(EVENT_TYPE_ORDER_STATUS_CHANGED)
     
     # Поиск настроек с учетом возможных вариантов имен события
     setting = None
@@ -65,6 +131,12 @@ async def check_settings(
 @router.post("/settings", response_model=schemas.NotificationSettingResponse)
 async def create_setting(setting: schemas.NotificationSettingCreate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     logger.info(f"[POST /settings] user_id={user.id}, payload={setting.model_dump()}")
+    
+    # Проверяем, имеет ли пользователь право на настройку указанного типа события
+    event_type = setting.event_type
+    if event_type in ADMIN_ONLY_EVENT_TYPES and not (user.is_admin or user.is_super_admin):
+        raise HTTPException(status_code=403, detail="You don't have permission to configure this notification type")
+    
     data = setting.model_dump()
     data['user_id'] = str(user.id)
     obj = models.NotificationSetting(**data)
@@ -80,6 +152,11 @@ async def create_setting(setting: schemas.NotificationSettingCreate, user: User 
 @router.patch("/settings", response_model=schemas.NotificationSettingResponse)
 async def update_setting(event_type: str, update: schemas.NotificationSettingUpdate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     logger.info(f"[PATCH /settings] user_id={user.id}, event_type={event_type}, update={update.model_dump(exclude_none=True)}")
+    
+    # Проверяем, имеет ли пользователь право на настройку указанного типа события
+    if event_type in ADMIN_ONLY_EVENT_TYPES and not (user.is_admin or user.is_super_admin):
+        raise HTTPException(status_code=403, detail="You don't have permission to configure this notification type")
+    
     user_id = str(user.id)
     result = await db.execute(
         select(models.NotificationSetting)

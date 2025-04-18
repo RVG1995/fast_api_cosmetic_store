@@ -146,7 +146,6 @@ export const CartProvider = ({ children }) => {
       setCartSummary(localCartToSummary(localCart));
       setLoading(false);
       window.dispatchEvent(new CustomEvent('cart:updated', { detail: { cart: localCart, summary: localCartToSummary(localCart) } }));
-      fetchCart();
       return { success: true, message: `${productName} добавлен в корзину`, productName };
     }
     try {
@@ -175,7 +174,7 @@ export const CartProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [user, fetchCart]);
+  }, [user]);
 
   // --- Обновление количества ---
   const updateCartItem = useCallback(async (itemId, quantity) => {

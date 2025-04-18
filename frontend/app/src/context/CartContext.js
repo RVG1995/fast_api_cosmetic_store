@@ -333,6 +333,13 @@ export const CartProvider = ({ children }) => {
   // Объединяем корзины при авторизации пользователя
   useEffect(() => {
     if (user) {
+      const localCart = getLocalCart();
+      const validItems = (localCart.items || []).filter(i => Number.isInteger(i.product_id) && Number.isInteger(i.quantity) && i.quantity > 0);
+      if (validItems.length === 0) {
+        // Если localStorage пустой, не вызываем mergeCarts, просто чистим cart_merged
+        localStorage.setItem('cart_merged', '1');
+        return;
+      }
       if (localStorage.getItem('cart_merged')) return;
       mergeCarts();
     } else {

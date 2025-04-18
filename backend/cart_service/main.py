@@ -880,8 +880,6 @@ async def merge_carts(
         logger.info("Корзина для объединения пуста, объединение не требуется")
         user_cart = await CartModel.get_user_cart(db, user.id)
         if not user_cart:
-            new_count = len(items)
-            updated_count = 0
             new_cart = CartModel(user_id=user.id)
             db.add(new_cart)
             await db.commit()

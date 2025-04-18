@@ -244,6 +244,13 @@ if check_directory "$BACKEND_DIR"; then
         sleep 2
     fi
     
+    # Запуск сервиса уведомлений
+    if [ -d "$BACKEND_DIR/notifications_service" ]; then
+        # запускаем как модуль, чтобы относительный импорт заработал
+        start_service "notifications_service" "$BACKEND_DIR" "python -m notifications_service.main"
+        sleep 2
+    fi
+    
     # Деактивация виртуального окружения не требуется, т.к. каждый сервис запускается в своем подпроцессе
 else
     print_message "${YELLOW}[WARNING]${NC} Директория бэкенда не найдена. Бэкенд-сервисы не будут запущены."

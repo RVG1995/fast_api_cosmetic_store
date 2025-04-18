@@ -116,9 +116,9 @@ function UserInfoPage() {
                     </Link>
                   </div>
                   <div className="col-md-6 mb-3">
-                    <button className="btn btn-light w-100 py-2 rounded shadow-sm">
+                    <Link to="/user/notifications" className="btn btn-light w-100 py-2 rounded shadow-sm">
                       Настройки уведомлений
-                    </button>
+                    </Link>
                   </div>
                 </div>
               </div>

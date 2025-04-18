@@ -22,7 +22,7 @@ from routers.order_statuses import router as order_statuses_router
 from routers.payment_statuses import router as payment_statuses_router
 from routers.promo_codes import router as promo_codes_router, admin_router as promo_codes_admin_router
 from cache import close_redis
-
+from init_data import init_order_statuses
 # Загрузка переменных окружения
 load_dotenv()
 
@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
     # Код, выполняемый при запуске приложения
     logger.info("Запуск сервиса заказов...")
     await setup_database()
+    await init_order_statuses()
     logger.info("Сервис заказов успешно запущен")
     
     yield  # здесь приложение будет работать

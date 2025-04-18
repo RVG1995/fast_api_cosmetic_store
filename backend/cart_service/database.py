@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import logging
 import pathlib
+from typing import AsyncGenerator
 
 from models import Base
 
@@ -54,7 +55,7 @@ async def setup_database():
         logger.error(f"Ошибка при создании таблиц: {str(e)}")
         raise
 
-async def get_session() -> AsyncSession:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Предоставляет асинхронную сессию базы данных"""
     async with AsyncSessionLocal() as session:
         try:

@@ -1,0 +1,47 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import logging
+import asyncio
+from contextlib import asynccontextmanager
+
+from .database import engine, Base
+from .settings_router import router as settings_router
+from .event_consumer import start_consumer
+
+logger = logging.getLogger(__name__)
+
+# Используем lifespan вместо on_event (FastAPI v2)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logging.basicConfig(level=logging.INFO)
+    # Инициализация БД и запуск консьюмера
+    await init_db()
+    app.state.rabbit_connection = await start_consumer()
+    logger.info("Notifications Service started")
+    yield
+    # Shutdown: закрыть коннект
+    conn = getattr(app.state, 'rabbit_connection', None)
+    if conn:
+        await conn.stop()
+        logger.info("RabbitMQ connection closed")
+
+# Создаем приложение с lifespan
+app = FastAPI(title="Notifications Service", lifespan=lifespan)
+# CORS для фронтенда
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(settings_router, prefix="/notifications", tags=["notifications"])
+
+async def init_db():
+    """Инициализировать базу данных (создать таблицы)"""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("notifications_service.main:app", host="0.0.0.0", port=8005, reload=True) 

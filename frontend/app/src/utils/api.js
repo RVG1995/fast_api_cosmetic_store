@@ -223,6 +223,19 @@ export const notificationAPI = {
   getNotifications: async () => await notificationApi.get('/notifications'),
   markAsRead: async (id) => await notificationApi.patch(`/notifications/${id}/read`),
   deleteNotification: async (id) => await notificationApi.delete(`/notifications/${id}`),
+  // Методы для работы с настройками уведомлений
+  getSettings: async () => {
+    const { data } = await notificationApi.get('/notifications/settings');
+    return data;
+  },
+  updateSetting: async (eventType, payload) => {
+    const { data } = await notificationApi.patch(
+      '/notifications/settings',
+      payload,
+      { params: { event_type: eventType } }
+    );
+    return data;
+  }
 };
 
 // API для работы с продуктами

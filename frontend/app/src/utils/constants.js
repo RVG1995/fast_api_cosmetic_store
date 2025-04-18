@@ -16,7 +16,8 @@ export const API_URLS = {
   PAYMENT_SERVICE: process.env.REACT_APP_PAYMENT_SERVICE_URL || 'http://localhost:8005',
   USER: 'http://localhost:8006',       // Сервис пользователей (если будет)
   CONTENT: 'http://localhost:8007',    // Сервис контента (если будет)
-  NOTIFICATION: 'http://localhost:8008' // Сервис уведомлений (если будет)
+  NOTIFICATION: 'http://localhost:8008', // Сервис уведомлений (если будет)
+  NOTIFICATION_SERVICE_URL: process.env.REACT_APP_NOTIFICATION_SERVICE_URL || 'http://localhost:8005'
 };
 
 // Маршруты

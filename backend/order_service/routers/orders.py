@@ -1,12 +1,17 @@
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
+import os
+import logging
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+import hashlib
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-import logging
 import os
 from dotenv import load_dotenv
 from datetime import datetime
 import hashlib
+import sys
 
 from database import get_db
 from models import OrderModel, OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel
@@ -122,11 +127,18 @@ async def create_new_order(
                 logger.info(f"Для нового заказа {loaded_order.id} загружен промокод {promo_code.code}")
         
         # Отправляем подтверждение заказа на email
-        from app.services.order_service import send_email_message
-        if order_data.email:
-            logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
-            task_id = await send_email_message(loaded_order)
-            logger.info(f"Задача подтверждения заказа {loaded_order.id} отправлена в RabbitMQ, task_id: {task_id}")
+        try:
+            from app.services.order_service import send_email_message
+            if order_data.email:
+                logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
+                # Передаем токен для проверки настроек уведомлений
+                task_id = await send_email_message(loaded_order, token)
+                if task_id:
+                    logger.info(f"Задача подтверждения заказа {loaded_order.id} отправлена в RabbitMQ, task_id: {task_id}")
+                else:
+                    logger.info(f"Уведомление о создании заказа {loaded_order.id} не отправлено (отключено в настройках)")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке email о заказе: {str(e)}")
         
         # Явно инвалидируем кэш заказов перед возвратом ответа
         await invalidate_order_cache(order.id)
@@ -906,11 +918,21 @@ async def update_order_status(
                 }
                 logger.info(f"Для заказа {updated_order.id} загружен промокод {promo_code.code} (при обновлении статуса)")
         
+        # Получаем токен авторизации из текущего пользователя
+        token = current_user.get("token")
+        
         # Отправляем уведомление об изменении статуса ПОСЛЕ того, как загрузили промокод
-        from app.services.order_service import update_order_status
-        if order.email:
-            await update_order_status(updated_order, new_status_name)
-            logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
+        try:
+            from app.services.order_service import update_order_status
+            if order.email:
+                # Передаем токен для проверки настроек уведомлений
+                result = await update_order_status(updated_order, new_status_name, token)
+                if result:
+                    logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
+                else:
+                    logger.info(f"Уведомление об изменении статуса заказа {order_id} не отправлено (отключено в настройках)")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке уведомления об изменении статуса: {str(e)}")
         
         return OrderResponse.model_validate(updated_order)
     except HTTPException:

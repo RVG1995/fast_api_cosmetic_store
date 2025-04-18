@@ -15,7 +15,7 @@ logger = logging.getLogger("review_service.database")
 # Получаем информацию о хосте и порте из переменных окружения
 DB_HOST = os.getenv("REVIEW_DB_HOST", "localhost")
 DB_PORT = os.getenv("REVIEW_DB_PORT", "5436")
-DB_NAME = os.getenv("REVIEW_DB_NAME", "reviews_db")
+DB_NAME = os.getenv("REVIEW_DB_NAME", "review_db")
 DB_USER = os.getenv("REVIEW_DB_USER", "postgres")
 DB_PASSWORD = os.getenv("REVIEW_DB_PASSWORD", "postgres")
 

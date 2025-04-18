@@ -2,6 +2,16 @@ import logging
 from ..utils.rabbit_utils import get_connection, close_connection, declare_queue
 import json
 import aio_pika
+# Импортируем функцию проверки настроек уведомлений
+import sys
+import os
+
+# Путь до директории backend/order_service
+current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, current_dir)
+
+# Импортируем модуль напрямую
+import notification_api
 
 logger = logging.getLogger(__name__)
 
@@ -48,16 +58,21 @@ def create_order_email_content(order_data, new_status_name=None, stock=None):
                     "total_price": item.total_price
                 })
             message_body["items"] = items
+
+        # Добавляем информацию о типе события
+        message_body["event_type"] = "order.status_changed"
     elif isinstance(order_data, list):
         # Случай для списка товаров с низким остатком
         message_body = {
-            "low_stock_products": order_data
+            "low_stock_products": order_data,
+            "event_type": "product.low_stock"
         }
     elif stock is not None:
         # Устаревший случай для одного товара с низким остатком
         message_body = {
             "product_name": order_data,
-            "stock": stock
+            "stock": stock,
+            "event_type": "product.low_stock"
         }
     else:
         # Создаем словарь для сообщения, используя только данные, которые точно не требуют lazy loading
@@ -100,21 +115,33 @@ def create_order_email_content(order_data, new_status_name=None, stock=None):
                     "total_price": item.total_price
                 })
             message_body["items"] = items
+        
+        # Добавляем информацию о типе события
+        message_body["event_type"] = "order.created"
             
     return message_body
 
 
 async def send_email_message(
-    order_data
+    order_data, token=None
 ):
     """
     Отправляет сообщение с данными для email в очередь
     
     Args:
-        email: Email получателя
-        order_id: Номер заказа
-        products: Список продуктов в заказе
+        order_data: Данные заказа
+        token: JWT токен для авторизации в сервисе уведомлений
     """
+    # Проверяем настройки уведомлений пользователя
+    user_id = str(order_data.user_id) if hasattr(order_data, 'user_id') and order_data.user_id else None
+    
+    # Если пользователь авторизован - проверяем его настройки уведомлений для созданных заказов
+    if user_id:
+        settings = await notification_api.check_notification_settings(user_id, "order.created", token)
+        if not settings["email_enabled"]:
+            logger.info(f"Email уведомления отключены для пользователя {user_id}, email не будет отправлен")
+            return None
+    
     connection = await get_connection()
     
     try:
@@ -124,7 +151,8 @@ async def send_email_message(
         # Объявляем очередь с использованием общей функции
         queue = await declare_queue(channel, "email_message")
 
-        message_body = create_order_email_content(order_data)        
+        message_body = create_order_email_content(order_data)
+        
         # Отправляем сообщение
         await channel.default_exchange.publish(
             aio_pika.Message(
@@ -134,22 +162,33 @@ async def send_email_message(
             routing_key=queue.name
         )
         logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+        return "message_sent"
     finally:
         # Закрываем соединение в любом случае
         await close_connection(connection)
 
 
 async def update_order_status(
-    order_data, new_status_name
+    order_data, new_status_name, token=None
 ):
     """
     Отправляет сообщение об изменении статуса заказа с данными для email в очередь
     
     Args:
-        email: Email получателя
-        order_id: Номер заказа
-        products: Список продуктов в заказе
+        order_data: Данные заказа
+        new_status_name: Название нового статуса
+        token: JWT токен для авторизации в сервисе уведомлений
     """
+    # Проверяем настройки уведомлений пользователя
+    user_id = str(order_data.user_id) if hasattr(order_data, 'user_id') and order_data.user_id else None
+    
+    # Если пользователь авторизован - проверяем его настройки уведомлений для изменения статуса заказа
+    if user_id:
+        settings = await notification_api.check_notification_settings(user_id, "order.status_changed", token)
+        if not settings["email_enabled"]:
+            logger.info(f"Email уведомления об изменении статуса отключены для пользователя {user_id}, email не будет отправлен")
+            return None
+    
     connection = await get_connection()
     
     try:
@@ -186,6 +225,7 @@ async def update_order_status(
             routing_key=queue.name
         )
         logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+        return "message_sent"
     finally:
         # Закрываем соединение в любом случае
         await close_connection(connection)

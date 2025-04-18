@@ -28,6 +28,8 @@ import { CartProvider } from './context/CartContext';
 import { ReviewProvider } from './context/ReviewContext';
 import ResetPasswordRequestPage from './pages/auth/ResetPasswordRequestPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
+import { NotificationProvider } from "./context/NotificationContext";
+import NotificationSettingsPage from './pages/user/NotificationSettingsPage';
 // Импорт стилей перемещен в начало файла
 import './styles/App.css';
 
@@ -75,283 +77,290 @@ function App() {
     <BrowserRouter>
       <ScrollToTop />
       <AuthProvider>
-        <CategoryProvider>
-          <OrderProvider>
-            <CartProvider>
-              <ReviewProvider>
-                <Routes>
-                  <Route path="/" element={<Layout />}>
-                    {/* Главная страница с продуктами */}
-                    <Route index element={<HomePage />} />
-                    
-                    {/* Страница с фильтрацией товаров */}
-                    <Route path="products" element={<ProductsPage />} />
-                    
-                    {/* Страница детальной информации о товаре */}
-                    <Route path="products/:productId" element={<ProductDetailPage />} />
-                    
-                    {/* Страница корзины */}
-                    <Route path="cart" element={<CartPage />} />
-                    
-                    {/* Страница оформления заказа */}
-                    <Route path="checkout" element={<CheckoutPage />} />
-                    
-                    {/* Страницы заказов пользователя */}
-                    <Route path="orders" element={
-                      <PrivateRoute>
-                        <OrdersPage />
-                      </PrivateRoute>
-                    } />
-                    
-                    <Route path="orders/:orderId" element={
-                      <PrivateRoute>
-                        <OrderDetailPage />
-                      </PrivateRoute>
-                    } />
-                    
-                    {/* Маршруты для отзывов */}
-                    <Route path="reviews" element={<ReviewsPage />} />
-                    <Route path="reviews/:id" element={<ReviewPage />} />
-                    
-                    {/* Публичные маршруты только для неавторизованных пользователей */}
-                    <Route 
-                      path="register" 
-                      element={
-                        <PublicOnlyRoute>
-                          <RegistrationPage />
-                        </PublicOnlyRoute>
-                      } 
-                    />
-                    <Route 
-                      path="login" 
-                      element={
-                        <PublicOnlyRoute>
-                          <LoginPage />
-                        </PublicOnlyRoute>
-                      } 
-                    />
-                    <Route 
-                      path="registration-confirmation" 
-                      element={
-                        <PublicOnlyRoute>
-                          <RegistrationConfirmationPage />
-                        </PublicOnlyRoute>
-                      } 
-                    />
-                    <Route path="activate/:token" element={<ActivationPage />} />
-                    <Route path="forgot-password" element={<ResetPasswordRequestPage />} />
-                    <Route path="reset-password/:token" element={<ResetPasswordPage />} />
-
-                    {/* Защищенные маршруты - используем обычные импорты, убрали Suspense */}
-                    <Route 
-                      path="user" 
-                      element={
+        <NotificationProvider>
+          <CategoryProvider>
+            <OrderProvider>
+              <CartProvider>
+                <ReviewProvider>
+                  <Routes>
+                    <Route path="/" element={<Layout />}>
+                      {/* Главная страница с продуктами */}
+                      <Route index element={<HomePage />} />
+                      
+                      {/* Страница с фильтрацией товаров */}
+                      <Route path="products" element={<ProductsPage />} />
+                      
+                      {/* Страница детальной информации о товаре */}
+                      <Route path="products/:productId" element={<ProductDetailPage />} />
+                      
+                      {/* Страница корзины */}
+                      <Route path="cart" element={<CartPage />} />
+                      
+                      {/* Страница оформления заказа */}
+                      <Route path="checkout" element={<CheckoutPage />} />
+                      
+                      {/* Страницы заказов пользователя */}
+                      <Route path="orders" element={
                         <PrivateRoute>
-                          <UserInfoPage />
+                          <OrdersPage />
                         </PrivateRoute>
-                      } 
-                    />
-                    <Route 
-                      path="user/change-password" 
-                      element={
+                      } />
+                      
+                      <Route path="orders/:orderId" element={
                         <PrivateRoute>
-                          <ChangePasswordPage />
+                          <OrderDetailPage />
                         </PrivateRoute>
-                      } 
-                    />
+                      } />
+                      
+                      {/* Маршруты для отзывов */}
+                      <Route path="reviews" element={<ReviewsPage />} />
+                      <Route path="reviews/:id" element={<ReviewPage />} />
+                      
+                      {/* Публичные маршруты только для неавторизованных пользователей */}
+                      <Route 
+                        path="register" 
+                        element={
+                          <PublicOnlyRoute>
+                            <RegistrationPage />
+                          </PublicOnlyRoute>
+                        } 
+                      />
+                      <Route 
+                        path="login" 
+                        element={
+                          <PublicOnlyRoute>
+                            <LoginPage />
+                          </PublicOnlyRoute>
+                        } 
+                      />
+                      <Route 
+                        path="registration-confirmation" 
+                        element={
+                          <PublicOnlyRoute>
+                            <RegistrationConfirmationPage />
+                          </PublicOnlyRoute>
+                        } 
+                      />
+                      <Route path="activate/:token" element={<ActivationPage />} />
+                      <Route path="forgot-password" element={<ResetPasswordRequestPage />} />
+                      <Route path="reset-password/:token" element={<ResetPasswordPage />} />
 
-                    {/* Административные маршруты с ленивой загрузкой */}
-                    <Route 
-                      path="admin" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminDashboard />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/users" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminUsers />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/products" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminProducts />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/products/:productId" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminProductDetail />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    {/* Новые маршруты для управления категориями, подкатегориями, брендами и странами */}
-                    <Route 
-                      path="admin/categories" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminCategories />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/subcategories" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminSubcategories />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/brands" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminBrands />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/countries" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminCountries />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    {/* Новые маршруты для управления корзинами пользователей */}
-                    <Route 
-                      path="admin/carts" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminCarts />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/carts/:cartId" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminCartDetail />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    {/* Новые маршруты для управления заказами */}
-                    <Route 
-                      path="admin/orders" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminOrders />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/orders/:orderId" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminOrderDetail />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/order-statuses" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminOrderStatuses />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/payment-statuses" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminPaymentStatuses />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/promo-codes" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminPromoCodes />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    {/* Маршруты для управления отзывами */}
-                    <Route 
-                      path="admin/reviews" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminReviewsPage />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/reviews/:reviewId" 
-                      element={
-                        <AdminRoute>
-                          <Suspense fallback={<Loading />}>
-                            <AdminReviewDetailPage />
-                          </Suspense>
-                        </AdminRoute>
-                      } 
-                    />
-                    <Route 
-                      path="admin/permissions" 
-                      element={
-                        <AdminRoute requireSuperAdmin={true}>
-                          {/* Здесь будет компонент для управления правами */}
-                          <div className="container py-5">
-                            <h2>Управление правами (только для суперадмина)</h2>
-                          </div>
-                        </AdminRoute>
-                      } 
-                    />
-                  </Route>
-                </Routes>
-              </ReviewProvider>
-            </CartProvider>
-          </OrderProvider>
-        </CategoryProvider>
+                      {/* Защищенные маршруты - используем обычные импорты, убрали Suspense */}
+                      <Route 
+                        path="user" 
+                        element={
+                          <PrivateRoute>
+                            <UserInfoPage />
+                          </PrivateRoute>
+                        } 
+                      />
+                      <Route 
+                        path="user/change-password" 
+                        element={
+                          <PrivateRoute>
+                            <ChangePasswordPage />
+                          </PrivateRoute>
+                        } 
+                      />
+                      {/* Страница настроек уведомлений */}
+                      <Route path="user/notifications" element={
+                        <PrivateRoute>
+                          <NotificationSettingsPage />
+                        </PrivateRoute>
+                      } />
+
+                      {/* Административные маршруты с ленивой загрузкой */}
+                      <Route 
+                        path="admin" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminDashboard />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/users" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminUsers />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/products" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminProducts />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/products/:productId" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminProductDetail />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      {/* Новые маршруты для управления категориями, подкатегориями, брендами и странами */}
+                      <Route 
+                        path="admin/categories" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminCategories />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/subcategories" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminSubcategories />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/brands" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminBrands />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/countries" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminCountries />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      {/* Новые маршруты для управления корзинами пользователей */}
+                      <Route 
+                        path="admin/carts" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminCarts />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/carts/:cartId" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminCartDetail />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      {/* Новые маршруты для управления заказами */}
+                      <Route 
+                        path="admin/orders" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminOrders />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/orders/:orderId" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminOrderDetail />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/order-statuses" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminOrderStatuses />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/payment-statuses" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminPaymentStatuses />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/promo-codes" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminPromoCodes />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      {/* Маршруты для управления отзывами */}
+                      <Route 
+                        path="admin/reviews" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminReviewsPage />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/reviews/:reviewId" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminReviewDetailPage />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/permissions" 
+                        element={
+                          <AdminRoute requireSuperAdmin={true}>
+                            <div className="container py-5">
+                              <h2>Управление правами (только для суперадмина)</h2>
+                            </div>
+                          </AdminRoute>
+                        } 
+                      />
+                    </Route>
+                  </Routes>
+                </ReviewProvider>
+              </CartProvider>
+            </OrderProvider>
+          </CategoryProvider>
+        </NotificationProvider>
       </AuthProvider>
     </BrowserRouter>
   );

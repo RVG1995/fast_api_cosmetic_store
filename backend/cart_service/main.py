@@ -1182,7 +1182,7 @@ async def get_user_carts(
             user_info = await get_user_info(cart.user_id) if cart.user_id else {}
             first_name = user_info.get('first_name', '')
             last_name = user_info.get('last_name', '')
-            user_name = f"{first_name} {last_name}".strip()
+            user_name = f"{first_name} {last_name}".strip() or f"Пользователь {cart.user_id}"
             
             for item in cart.items:
                 # Получаем информацию о продукте
@@ -1210,7 +1210,7 @@ async def get_user_carts(
             user_cart = UserCartSchema(
                 id=cart.id,
                 user_id=cart.user_id,
-                user_name=user_name or f"Пользователь {cart.user_id}",
+                user_name=user_name,
                 created_at=cart.created_at,
                 updated_at=cart.updated_at,
                 items=cart_items,
@@ -1312,11 +1312,18 @@ async def get_user_cart_by_id(
             cart_items.append(cart_item)
         
         # Формируем ответ
+        if user_info:
+            first_name = user_info.get('first_name', '')
+            last_name = user_info.get('last_name', '')
+            user_name = f"{first_name} {last_name}".strip() or f"Пользователь {cart.user_id}"
+        else:
+            user_name = f"Пользователь {cart.user_id}"
+
         result = UserCartSchema(
             id=cart.id,
             user_id=cart.user_id,
             user_email=user_info.get("email") if user_info else None,
-            user_name=f"{user_info.get('first_name', '')} {user_info.get('last_name', '')}".strip() if user_info else None,
+            user_name=user_name,
             session_id=cart.session_id,
             created_at=cart.created_at,
             updated_at=cart.updated_at,

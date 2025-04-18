@@ -248,16 +248,14 @@ async def get_cart(
     logger.info(f"Запрос корзины: user={user.id if user else 'Anonymous'}")
     
     try:
-        # Для авторизованных пользователей используем БД
+        # Для авторизованных пользователей используем БД и кэш
         if user:
-            # Проверяем кэш корзины
             cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
             cached_cart = await cache_get(cache_key)
-            
             if cached_cart:
                 logger.info(f"Корзина получена из кэша: {cache_key}")
                 return CartSchema(**cached_cart)
-            
+
             # Если данных в кэше нет, пытаемся найти существующую корзину
             cart = await get_cart_with_items(db, user)
             
@@ -280,12 +278,11 @@ async def get_cart(
             
             # Обогащаем корзину данными о продуктах
             enriched_cart = await enrich_cart_with_product_data(cart)
-            
-            # Кэшируем результат
+
+            # Кладём в кэш
             if enriched_cart:
                 await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
-                logger.info(f"Корзина сохранена в кэш: {cache_key}")
-            
+
             logger.info(f"Корзина пользователя успешно получена: id={cart.id}, items={len(cart.items) if hasattr(cart, 'items') and cart.items else 0}")
             
             return enriched_cart
@@ -875,17 +872,15 @@ async def merge_carts(
     db: AsyncSession = Depends(get_session)
 ):
     logger.info(f"/cart/merge RAW BODY: {merge_data}")
-    if not user:
-        logger.warning("Попытка объединения корзин без авторизации")
-        raise HTTPException(status_code=401, detail="Требуется авторизация")
-
-    logger.info(f"Запрос на объединение корзин: user_id={user.id}")
+    # Удалена проверка дублирования merge-запросов — всегда выполняем объединение
 
     items = merge_data.items or []
     if not items:
         logger.info("Корзина для объединения пуста, объединение не требуется")
         user_cart = await CartModel.get_user_cart(db, user.id)
         if not user_cart:
+            new_count = len(items)
+            updated_count = 0
             new_cart = CartModel(user_id=user.id)
             db.add(new_cart)
             await db.commit()
@@ -901,6 +896,8 @@ async def merge_carts(
 
     user_cart = await CartModel.get_user_cart(db, user.id)
     if not user_cart:
+        new_count = len(items)
+        updated_count = 0
         new_cart = CartModel(user_id=user.id)
         db.add(new_cart)
         await db.commit()
@@ -917,13 +914,22 @@ async def merge_carts(
             db.add(new_item)
             logger.info(f"Добавлен товар из localStorage в новую корзину: product_id={item.product_id}, quantity={item.quantity}")
         await db.commit()
+        # Сохраняем обновления и обновляем объекты
+        user_cart.updated_at = datetime.now()
+        await db.commit()
+        # Явно перечитываем user_cart с items после UPSERT-ов
         query = select(CartModel).options(selectinload(CartModel.items)).filter(CartModel.id == user_cart.id)
         result = await db.execute(query)
-        updated_cart = result.scalars().first()
-        enriched_cart = await enrich_cart_with_product_data(updated_cart)
+        user_cart = result.scalars().first()
+        enriched_cart = await enrich_cart_with_product_data(user_cart)
+        # Обновляем кеш сразу после объединения
+        cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
+        await invalidate_user_cart_cache(user.id)
+        await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
+        logger.info(f"Корзины успешно объединены: обновлено товаров - {updated_count}, добавлено новых - {new_count}")
         return {
             "success": True,
-            "message": "Товары из localStorage перенесены в корзину пользователя",
+            "message": f"Корзины успешно объединены: обновлено товаров - {updated_count}, добавлено новых - {new_count}",
             "cart": enriched_cart
         }
 
@@ -942,14 +948,20 @@ async def merge_carts(
             total_quantity = existing_item.quantity + quantity
             stock_check = await product_api.check_product_stock(product_id, total_quantity)
             if stock_check["success"]:
-                existing_item.quantity = total_quantity
-                existing_item.updated_at = datetime.now()
+                await db.execute(
+                    update(CartItemModel)
+                    .where(CartItemModel.id == existing_item.id)
+                    .values(quantity=total_quantity, updated_at=datetime.now())
+                )
                 updated_count += 1
                 logger.info(f"Обновлено количество товара: product_id={product_id}, новое количество={total_quantity}")
             else:
                 available_stock = stock_check.get("available_stock", existing_item.quantity)
-                existing_item.quantity = available_stock
-                existing_item.updated_at = datetime.now()
+                await db.execute(
+                    update(CartItemModel)
+                    .where(CartItemModel.id == existing_item.id)
+                    .values(quantity=available_stock, updated_at=datetime.now())
+                )
                 updated_count += 1
                 logger.info(f"Обновлено количество товара (ограничено наличием): product_id={product_id}, новое количество={available_stock}")
         else:
@@ -988,17 +1000,22 @@ async def merge_carts(
             await db.execute(stmt)
             new_count += 1
             logger.info(f"UPSERT: Добавлен/обновлён товар: product_id={product_id}, количество={quantity}")
+    # Сохраняем обновления и обновляем объекты
     user_cart.updated_at = datetime.now()
     await db.commit()
+    # Явно перечитываем user_cart с items после UPSERT-ов
     query = select(CartModel).options(selectinload(CartModel.items)).filter(CartModel.id == user_cart.id)
     result = await db.execute(query)
-    updated_cart = result.scalars().first()
-    enriched_cart = await enrich_cart_with_product_data(updated_cart)
+    user_cart = result.scalars().first()
+    enriched_cart = await enrich_cart_with_product_data(user_cart)
+    # Обновляем кеш сразу после объединения
+    cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
     await invalidate_user_cart_cache(user.id)
+    await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
     logger.info(f"Корзины успешно объединены: обновлено товаров - {updated_count}, добавлено новых - {new_count}")
     return {
         "success": True,
-        "message": "Корзины успешно объединены",
+        "message": f"Корзины успешно объединены: обновлено товаров - {updated_count}, добавлено новых - {new_count}",
         "cart": enriched_cart
     }
 

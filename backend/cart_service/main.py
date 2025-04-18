@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, Response, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from contextlib import asynccontextmanager
@@ -250,6 +250,7 @@ async def get_cart(
     try:
         # Для авторизованных пользователей используем БД и кэш
         if user:
+            # Проверяем кэш корзины
             cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
             cached_cart = await cache_get(cache_key)
             if cached_cart:
@@ -914,15 +915,15 @@ async def merge_carts(
             db.add(new_item)
             logger.info(f"Добавлен товар из localStorage в новую корзину: product_id={item.product_id}, quantity={item.quantity}")
         await db.commit()
-        # Сохраняем обновления и обновляем объекты
-        user_cart.updated_at = datetime.now()
-        await db.commit()
-        # Явно перечитываем user_cart с items после UPSERT-ов
+        # Закрываем старую сессию и создаём новую через async_sessionmaker
+        await db.close()
+        SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+        db = SessionLocal()
         query = select(CartModel).options(selectinload(CartModel.items)).filter(CartModel.id == user_cart.id)
         result = await db.execute(query)
         user_cart = result.scalars().first()
         enriched_cart = await enrich_cart_with_product_data(user_cart)
-        # Обновляем кеш сразу после объединения
+        # Только теперь инвалидируем и кладём в кэш
         cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
         await invalidate_user_cart_cache(user.id)
         await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
@@ -1000,15 +1001,18 @@ async def merge_carts(
             await db.execute(stmt)
             new_count += 1
             logger.info(f"UPSERT: Добавлен/обновлён товар: product_id={product_id}, количество={quantity}")
-    # Сохраняем обновления и обновляем объекты
+    # Сохраняем обновления
     user_cart.updated_at = datetime.now()
     await db.commit()
-    # Явно перечитываем user_cart с items после UPSERT-ов
+    # Закрываем старую сессию и создаём новую через async_sessionmaker
+    await db.close()
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+    db = SessionLocal()
     query = select(CartModel).options(selectinload(CartModel.items)).filter(CartModel.id == user_cart.id)
     result = await db.execute(query)
     user_cart = result.scalars().first()
     enriched_cart = await enrich_cart_with_product_data(user_cart)
-    # Обновляем кеш сразу после объединения
+    # Только теперь инвалидируем и кладём в кэш
     cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
     await invalidate_user_cart_cache(user.id)
     await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])

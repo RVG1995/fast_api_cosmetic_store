@@ -1,11 +1,12 @@
 import httpx
 import logging
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger("order_service.notification_api")
 
 NOTIFICATION_SERVICE_URL = "http://localhost:8005"  # Адрес сервиса уведомлений
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")  # Адрес сервиса авторизации
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")  # Ключ для межсервисного взаимодействия
 
 async def check_notification_settings(user_id: str, event_type: str, token: Optional[str] = None) -> Dict[str, bool]:
@@ -48,4 +49,39 @@ async def check_notification_settings(user_id: str, event_type: str, token: Opti
                 
     except Exception as e:
         logger.error(f"Ошибка при запросе настроек уведомлений: {str(e)}")
-        return {"email_enabled": True, "push_enabled": True}  # В случае ошибки считаем, что уведомления включены 
+        return {"email_enabled": True, "push_enabled": True}  # В случае ошибки считаем, что уведомления включены
+
+async def get_admin_users(token: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Получает список всех пользователей с правами администратора
+    
+    Args:
+        token: JWT токен для авторизации в сервисе аутентификации
+        
+    Returns:
+        Список пользователей-администраторов
+    """
+    try:
+        headers = {
+            "service-key": INTERNAL_SERVICE_KEY
+        }
+        
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        url = f"{AUTH_SERVICE_URL}/auth/admins"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, timeout=5.0)
+            
+            if response.status_code == 200:
+                admins = response.json()
+                logger.info(f"Получен список администраторов: {len(admins)} пользователей")
+                return admins
+            else:
+                logger.warning(f"Ошибка при получении списка администраторов: {response.status_code}, {response.text}")
+                return []
+                
+    except Exception as e:
+        logger.error(f"Ошибка при запросе списка администраторов: {str(e)}")
+        return [] 

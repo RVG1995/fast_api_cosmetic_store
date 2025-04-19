@@ -102,11 +102,11 @@ async def create_new_order(
         )
         
         # Если пользователь авторизован, очищаем его корзину
-        if user_id:
-            try:
-                await clear_user_cart(user_id)
-            except Exception as e:
-                logger.warning(f"Не удалось очистить корзину пользователя: {str(e)}")
+        # if user_id:
+        #     try:
+        #         await clear_user_cart(user_id)
+        #     except Exception as e:
+        #         logger.warning(f"Не удалось очистить корзину пользователя: {str(e)}")
         
         # Явно коммитим сессию, чтобы убедиться, что все связанные данные загружены
         await session.commit()

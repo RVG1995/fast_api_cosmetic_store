@@ -5,6 +5,7 @@ import aio_pika
 # Импортируем функцию проверки настроек уведомлений
 import sys
 import os
+from typing import Optional
 
 # Путь до директории backend/order_service
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -231,13 +232,62 @@ async def update_order_status(
         await close_connection(connection)
 
 async def notification_message_about_low_stock(
-    low_stock_products
+    low_stock_products,
+    user_id: Optional[str] = None,
+    token: Optional[str] = None
 ):
     """
     Отправляет уведомление о товарах с низким остатком в очередь RabbitMQ
     
     Args:
         low_stock_products: Список товаров с низким остатком, каждый товар содержит id, name и stock
+        user_id: ID пользователя для проверки настроек уведомлений (для обратной совместимости)
+        token: JWT токен для авторизации в сервисе уведомлений
+    """
+    # Получение списка администраторов
+    admins = await notification_api.get_admin_users(token)
+    
+    if not admins:
+        logger.warning("Не найдены администраторы для отправки уведомлений о низком остатке товаров")
+        # Если администраторы не найдены, используем старую логику с одним пользователем
+        if user_id:
+            settings = await notification_api.check_notification_settings(user_id, "product.low_stock", token)
+            if settings["email_enabled"]:
+                await _send_low_stock_notification(low_stock_products)
+            else:
+                logger.info(f"Email уведомления о низком остатке товаров отключены для пользователя {user_id}, email не будет отправлен")
+        else:
+            # Если не указан ID пользователя и нет администраторов, отправляем уведомление по умолчанию
+            await _send_low_stock_notification(low_stock_products)
+        return
+    
+    # Флаг для отслеживания, было ли отправлено хотя бы одно уведомление
+    notification_sent = False
+    
+    # Отправка уведомлений всем администраторам с включенными уведомлениями
+    for admin in admins:
+        admin_id = str(admin.get("id"))
+        settings = await notification_api.check_notification_settings(admin_id, "product.low_stock", token)
+        
+        if settings["email_enabled"]:
+            # Если ещё не отправили уведомление - отправляем его
+            if not notification_sent:
+                await _send_low_stock_notification(low_stock_products)
+                notification_sent = True
+            logger.info(f"Отправлено уведомление о низком остатке товаров администратору {admin_id}")
+        else:
+            logger.info(f"Email уведомления о низком остатке товаров отключены для администратора {admin_id}")
+            
+    if not notification_sent:
+        logger.warning("Ни один администратор не имеет включенных уведомлений о низком остатке товаров")
+
+# Вспомогательная функция для фактической отправки уведомления
+async def _send_low_stock_notification(low_stock_products):
+    """
+    Вспомогательная функция для отправки уведомления о низком остатке товаров
+    
+    Args:
+        low_stock_products: Список товаров с низким остатком
     """
     connection = await get_connection()
     

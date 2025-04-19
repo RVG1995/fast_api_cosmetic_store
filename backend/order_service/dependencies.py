@@ -178,13 +178,14 @@ def get_order_filter_params(
     )
 
 # Функция для проверки наличия товаров в сервисе продуктов
-async def check_products_availability(product_ids: list[int], token: Optional[str] = None) -> Dict[int, bool]:
+async def check_products_availability(product_ids: list[int], token: Optional[str] = None, user_id: Optional[str] = None) -> Dict[int, bool]:
     """
     Проверяет наличие товаров в сервисе продуктов.
     
     Args:
         product_ids: Список ID товаров
         token: Токен авторизации
+        user_id: ID пользователя для проверки настроек уведомлений (для обратной совместимости)
         
     Returns:
         Словарь с ID товаров и их доступностью
@@ -221,10 +222,11 @@ async def check_products_availability(product_ids: list[int], token: Optional[st
             if not getattr(check_products_availability, "_notification_sent", False):
                 # Импортируем функцию для отправки уведомлений
                 from app.services.order_service import notification_message_about_low_stock
-                await notification_message_about_low_stock(low_stock_products)
+                # Отправляем уведомление администраторам
+                await notification_message_about_low_stock(low_stock_products, user_id, token)
                 # Устанавливаем флаг, что уведомление уже отправлено
                 check_products_availability._notification_sent = True
-                logger.info(f"Отправлено уведомление о {len(low_stock_products)} товарах с низким остатком")
+                logger.info(f"Запущена отправка уведомлений о {len(low_stock_products)} товарах с низким остатком")
             else:
                 logger.info(f"Пропуск повторной отправки уведомления о товарах с низким остатком")
         

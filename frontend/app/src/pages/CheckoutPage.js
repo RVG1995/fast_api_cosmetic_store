@@ -7,6 +7,9 @@ import { Alert, Button, Form, Card, Row, Col, Spinner } from 'react-bootstrap';
 import { formatPrice } from '../utils/helpers';
 import PromoCodeForm from '../components/PromoCodeForm';
 import './CheckoutPage.css';
+import axios from 'axios';
+
+const DADATA_TOKEN = process.env.REACT_APP_DADATA_TOKEN;
 
 const CheckoutPage = () => {
   const navigate = useNavigate();
@@ -32,6 +35,18 @@ const CheckoutPage = () => {
   const [redirectTimer, setRedirectTimer] = useState(null);
   const [cartTotal, setCartTotal] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
+  const [nameSuggestions, setNameSuggestions] = useState([]);
+  const [regionSuggestions, setRegionSuggestions] = useState([]);
+  const [citySuggestions, setCitySuggestions] = useState([]);
+  const [streetSuggestions, setStreetSuggestions] = useState([]);
+  // сохраним объекты подсказок для FIAS
+  const [regionOptions, setRegionOptions] = useState([]);
+  const [regionFiasId, setRegionFiasId] = useState('');
+  const [cityOptions, setCityOptions] = useState([]);
+  const [cityFiasId, setCityFiasId] = useState('');
+  // сохраним подсказки улиц с FIAS
+  const [streetOptions, setStreetOptions] = useState([]);
+  const [streetFiasId, setStreetFiasId] = useState('');
   
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
@@ -51,21 +66,114 @@ const CheckoutPage = () => {
     }
   }, [cart, navigate, orderSuccess]);
   
+  // Функция запроса подсказок FIO через axios с логами
+  const fetchNameSuggestions = async (query) => {
+    console.log('Dadata FIO fetch:', query);
+    if (!query) return setNameSuggestions([]);
+    try {
+      const { data } = await axios.post(
+        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/fio',
+        { query },
+        { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
+      );
+      console.log('Dadata FIO resp:', data.suggestions);
+      setNameSuggestions(data.suggestions.map(s => s.value));
+    } catch (e) {
+      console.error('DaData FIO error', e);
+    }
+  };
+  // Подсказки регионов
+  const fetchRegionSuggestions = async (query) => {
+    if (!query) {
+      setRegionSuggestions([]);
+      setRegionOptions([]);
+      return;
+    }
+    try {
+      const { data } = await axios.post(
+        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address',
+        { query, from_bound:{ value:'region' }, to_bound:{ value:'region' } },
+        { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
+      );
+      setRegionSuggestions(data.suggestions.map(s => s.value));
+      setRegionOptions(data.suggestions);
+    } catch(e) { console.error('DaData region error', e); }
+  };
+  // Подсказки городов через axios с логами и bound 'city'
+  const fetchCitySuggestions = async (query) => {
+    console.log('Dadata city fetch:', query, 'regionFiasId:', regionFiasId);
+    if (!query) {
+      setCitySuggestions([]);
+      setCityOptions([]);
+      return;
+    }
+    // используем bound 'city' для поиска только по городам
+    const body = { query, from_bound:{ value:'city' }, to_bound:{ value:'city' } };
+    if (regionFiasId) body.locations = [{ region_fias_id: regionFiasId }];
+    console.log('Dadata city request body:', body);
+    try {
+      const { data } = await axios.post(
+        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address',
+        body,
+        { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
+      );
+      console.log('Dadata city resp:', data.suggestions);
+      setCitySuggestions(data.suggestions.map(s => s.value));
+      setCityOptions(data.suggestions);
+    } catch(e) {
+      console.error('DaData city error', e);
+    }
+  };
+  // Подсказки улиц через axios с логами и фильтром по city_fias_id
+  const fetchStreetSuggestions = async (query) => {
+    console.log('Dadata street fetch:', query, 'regionFiasId:', regionFiasId, 'cityFiasId:', cityFiasId);
+    if (!query) {
+      setStreetSuggestions([]);
+      setStreetOptions([]);
+      return;
+    }
+    const body = { query, from_bound:{ value:'street' }, to_bound:{ value:'street' } };
+    if (cityFiasId) body.locations = [{ city_fias_id: cityFiasId }];
+    try {
+      const { data } = await axios.post(
+        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address',
+        body,
+        { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
+      );
+      console.log('Dadata street resp:', data.suggestions);
+      setStreetOptions(data.suggestions);
+      setStreetSuggestions(data.suggestions.map(s => s.data.street_with_type));
+    } catch(e) { console.error('DaData street error', e); }
+  };
+
   // Обработчик изменения полей формы
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    
-    if (type === 'checkbox') {
-      setFormData(prev => ({
-        ...prev,
-        [name]: checked
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        [name]: value
-      }));
+    if (name==='fullName')      { fetchNameSuggestions(value); setFormData(prev=>({...prev,fullName:value})); return; }
+    if (name==='region') {
+      fetchRegionSuggestions(value);
+      setFormData(prev=>({...prev, region:value, city:'', street:''}));
+      const found = regionOptions.find(s => s.value === value);
+      setRegionFiasId(found?.data?.fias_id || '');
+      return;
     }
+    if (name==='city') {
+      fetchCitySuggestions(value);
+      setFormData(prev=>({...prev, city:value, street:''}));
+      const found = cityOptions.find(s => s.value === value);
+      // suggestion.data.fias_id now содержит city_fias_id при bound 'city'
+      setCityFiasId(found?.data?.fias_id || found?.data?.city_fias_id || '');
+      return;
+    }
+    if (name==='street') {
+      fetchStreetSuggestions(value);
+      setFormData(prev=>({...prev, street:value}));
+      const found = streetOptions.find(opt => opt.data.street_with_type === value);
+      setStreetFiasId(found?.data?.fias_id || found?.data?.street_fias_id || '');
+      return;
+    }
+    if (type === 'checkbox')    { setFormData(prev=>({...prev,[name]:checked})); return; }
+    setFormData(prev=>({...prev,[name]:value}));
   };
 
   // Обработчик применения промокода
@@ -251,19 +359,18 @@ const CheckoutPage = () => {
             </Card.Header>
             <Card.Body>
               <Form noValidate validated={validated} onSubmit={handleSubmit}>
-                <Form.Group className="mb-3">
+                <Form.Group controlId="fullName">
                   <Form.Label>ФИО получателя</Form.Label>
                   <Form.Control
-                    type="text"
                     name="fullName"
                     value={formData.fullName}
                     onChange={handleChange}
                     required
-                    placeholder="Иванов Иван Иванович"
+                    list="fullNameSuggestions"
                   />
-                  <Form.Control.Feedback type="invalid">
-                    Пожалуйста, введите ФИО получателя
-                  </Form.Control.Feedback>
+                  <datalist id="fullNameSuggestions">
+                    {nameSuggestions.map((s, i) => (<option key={i} value={s}/>))}
+                  </datalist>
                 </Form.Group>
                 
                 <Row>
@@ -305,49 +412,56 @@ const CheckoutPage = () => {
                   </Col>
                 </Row>
                 
-                <Form.Group className="mb-3">
+                <Form.Group className="mb-3" controlId="region">
                   <Form.Label>Регион</Form.Label>
                   <Form.Control
                     type="text"
                     name="region"
+                    list="regionSuggestions"
                     value={formData.region}
                     onChange={handleChange}
                     required
                     placeholder="Москва и Московская область"
                   />
+                  <datalist id="regionSuggestions">
+                    {regionSuggestions.map((r, i) => (<option key={i} value={r}/>))}
+                  </datalist>
                   <Form.Control.Feedback type="invalid">
                     Пожалуйста, укажите регион
                   </Form.Control.Feedback>
                 </Form.Group>
                 
-                <Form.Group className="mb-3">
+                <Form.Group className="mb-3" controlId="city">
                   <Form.Label>Город</Form.Label>
                   <Form.Control
                     type="text"
                     name="city"
+                    list="citySuggestions"
                     value={formData.city}
                     onChange={handleChange}
                     required
                     placeholder="Москва"
                   />
+                  <datalist id="citySuggestions">
+                    {citySuggestions.map((c, i) => (<option key={i} value={c}/>))}
+                  </datalist>
                   <Form.Control.Feedback type="invalid">
                     Пожалуйста, укажите город
                   </Form.Control.Feedback>
                 </Form.Group>
                 
-                <Form.Group className="mb-3">
+                <Form.Group controlId="street">
                   <Form.Label>Адрес доставки</Form.Label>
                   <Form.Control
-                    type="text"
                     name="street"
                     value={formData.street}
                     onChange={handleChange}
                     required
-                    placeholder="Улица, дом, квартира"
+                    list="streetSuggestions"
                   />
-                  <Form.Control.Feedback type="invalid">
-                    Пожалуйста, укажите адрес доставки
-                  </Form.Control.Feedback>
+                  <datalist id="streetSuggestions">
+                    {streetSuggestions.map((s,i)=>(<option key={i} value={s}/>))}
+                  </datalist>
                 </Form.Group>
                 
                 <Form.Group className="mb-3">

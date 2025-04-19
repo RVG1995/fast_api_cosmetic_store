@@ -70,11 +70,22 @@ async def invalidate_cache(entity_type: str = None):
         if entity_type:
             pattern = f"{CACHE_KEYS.get(entity_type, entity_type)}*"
             logger.info(f"Инвалидация кэша для {entity_type} по шаблону: {pattern}")
-            return await cache_delete_pattern(pattern)
+            await cache_delete_pattern(pattern)
+            
+            # Если инвалидируем продукты, то также инвалидируем кэш в формате, используемом cart_service
+            if entity_type == "products":
+                logger.info("Инвалидация кэша продуктов для cart_service")
+                await cache_delete_pattern("product:*")
+            return True
         else:
             # Инвалидировать весь кэш, связанный с продуктами
             for key_prefix in CACHE_KEYS.values():
                 await cache_delete_pattern(f"{key_prefix}*")
+            
+            # Инвалидируем кэш продуктов для cart_service
+            logger.info("Инвалидация кэша продуктов для cart_service")
+            await cache_delete_pattern("product:*")
+            
             logger.info("Инвалидация всего кэша")
             return True
     except Exception as e:

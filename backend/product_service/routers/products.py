@@ -468,6 +468,8 @@ async def update_product_form(
         await invalidate_cache("products")
         # Инвалидация кэша конкретного продукта
         await cache_delete_pattern(f"{CACHE_KEYS['products']}detail:{product_id}")
+        # Инвалидация кэша в формате cart_service для конкретного продукта
+        await cache_delete_pattern(f"product:{product_id}")
         logger.info(f"Продукт ID={product_id} успешно обновлен, кэш продуктов инвалидирован")
         
         return product
@@ -507,6 +509,8 @@ async def delete_product(
         
         # Инвалидация кэша продуктов
         await invalidate_cache("products")
+        # Инвалидация кэша в формате cart_service для конкретного продукта
+        await cache_delete_pattern(f"product:{product_id}")
         logger.info(f"Продукт ID={product_id} успешно удален, кэш продуктов инвалидирован")
     except IntegrityError as e:
         await session.rollback()

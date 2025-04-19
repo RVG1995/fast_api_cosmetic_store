@@ -97,7 +97,7 @@ async def get_products_public_batch(
     - **service_key**: Секретный ключ для доступа к API (передается в заголовке)
     """
     # Проверяем секретный ключ (должен совпадать с ключом в конфигурации)
-    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "your-internal-service-key")
+    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
     if service_key != INTERNAL_SERVICE_KEY:
         logger.warning(f"Попытка доступа к публичному batch API с неверным ключом: {service_key[:5]}...")
         raise HTTPException(
@@ -217,7 +217,7 @@ async def update_product_public_stock(
     - **service_key**: Секретный ключ для доступа к API (передается в заголовке)
     """
     # Проверяем секретный ключ (должен совпадать с ключом в конфигурации)
-    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "your-internal-service-key")
+    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
     if service_key != INTERNAL_SERVICE_KEY:
         logger.warning(f"Попытка доступа к публичному API с неверным ключом: {service_key[:5]}...")
         raise HTTPException(
@@ -284,7 +284,7 @@ async def update_product_admin_stock(
     - **service_key**: Секретный ключ для доступа к API (передается в заголовке Service-Key)
     """
     # Проверяем секретный ключ (должен совпадать с ключом в конфигурации)
-    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "your-internal-service-key")
+    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
     # Для тестирования жестко кодируем значение
     INTERNAL_SERVICE_KEY = "test"
     

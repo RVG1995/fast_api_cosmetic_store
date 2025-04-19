@@ -1,7 +1,7 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import text, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
@@ -61,6 +61,15 @@ class UserModel(Base):
         stmt = select(cls).filter(cls.reset_token == token)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+    
+    @classmethod
+    async def get_all_admins(cls, session: AsyncSession) -> List["UserModel"]:
+        """Получить всех пользователей с правами администратора или суперадминистратора"""
+        stmt = select(cls).filter(
+            (cls.is_admin == True) | (cls.is_super_admin == True)
+        )
+        result = await session.execute(stmt)
+        return result.scalars().all()
     
     async def activate(self, session: AsyncSession) -> None:
         """Активировать пользователя и удалить токен активации"""

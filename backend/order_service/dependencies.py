@@ -28,7 +28,7 @@ PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
 CART_SERVICE_URL = os.getenv("CART_SERVICE_URL", "http://localhost:8002")
 
 # Сервисный API-ключ для внутренней авторизации между микросервисами
-INTERNAL_SERVICE_KEY = os.getenv("SERVICE_API_KEY", "service_secret_key_for_internal_use")
+INTERNAL_SERVICE_KEY = os.getenv("SERVICE_API_KEY", "test")
 
 # Схема OAuth2 для получения токена
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)

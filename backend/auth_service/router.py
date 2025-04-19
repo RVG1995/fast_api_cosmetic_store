@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, BackgroundTasks, Request, Header
 from sqlalchemy import select 
 from typing import Optional, Annotated, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -700,7 +700,7 @@ async def request_password_reset(data: PasswordResetRequestSchema, session: Sess
         return {"status": "ok"}
     token = secrets.token_urlsafe(32)
     user.reset_token = token
-    user.reset_token_created_at = datetime.utcnow()
+    user.reset_token_created_at = datetime.now(timezone.utc)
     await session.commit()
     await send_password_reset_email(str(user.id), user.email, token)
     return {"status": "ok"}
@@ -717,3 +717,63 @@ async def reset_password(data: PasswordResetSchema, session: SessionDep):
     user.reset_token_created_at = None
     await session.commit()
     return {"status": "success"}
+
+# Добавляем функцию зависимости для проверки service_key или прав суперадмина
+async def verify_service_key_or_super_admin(
+    service_key: str = Header(None, alias="service-key"),
+    current_user: Optional[UserModel] = Depends(get_current_user)
+) -> bool:
+    """
+    Проверяет, что запрос содержит правильный сервисный ключ или
+    что пользователь имеет права суперадминистратора.
+    Одно из условий должно быть выполнено.
+    """
+    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
+    
+    # Проверка сервисного ключа
+    if service_key and service_key == INTERNAL_SERVICE_KEY:
+        logger.info("Запрос авторизован через сервисный ключ")
+        return True
+    
+    # Проверка прав суперадминистратора у текущего пользователя
+    if current_user and current_user.is_super_admin:
+        logger.info(f"Запрос авторизован суперадминистратором ID={current_user.id}")
+        return True
+    
+    # Если ни один из методов не подошел, выбрасываем исключение
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Требуется сервисный ключ или права суперадминистратора"
+    )
+
+# Добавляем новый эндпоинт для получения списка администраторов
+@router.get("/admins", summary="Получение списка всех администраторов и суперадминистраторов")
+async def get_all_admins(
+    session: SessionDep,
+    _: bool = Depends(verify_service_key_or_super_admin)
+) -> List[Dict[str, Any]]:
+    """
+    Получает список всех пользователей с правами администратора и суперадминистратора.
+    Возвращает только ID и информацию о правах, без персональных данных.
+    
+    Доступ:
+    - Только с сервисным ключом (service-key)
+    - Или для пользователей с правами суперадминистратора
+    """
+    logger.info("Запрос на получение списка администраторов")
+    
+    # Используем метод класса для получения всех администраторов
+    admins = await UserModel.get_all_admins(session)
+    
+    # Формируем список только с нужными полями
+    admins_list = [
+        {
+            "id": admin.id,
+            "is_admin": admin.is_admin,
+            "is_super_admin": admin.is_super_admin
+        }
+        for admin in admins
+    ]
+    
+    logger.info(f"Найдено {len(admins_list)} администраторов")
+    return admins_list

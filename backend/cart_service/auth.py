@@ -35,7 +35,7 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")  # 
 ALGORITHM = "HS256"
 
 # Сервисный API-ключ
-INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "service_secret_key_for_internal_use")
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
 
 logger.info(f"Загружена конфигурация JWT. SECRET_KEY: {SECRET_KEY[:5]}...")
 

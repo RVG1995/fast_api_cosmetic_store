@@ -3,6 +3,7 @@ import { productAPI } from '../../utils/api';
 import { reviewAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useConfirm } from '../../components/common/ConfirmContext';
 
 const AdminProducts = () => {
   const location = useLocation();
@@ -50,6 +51,8 @@ const AdminProducts = () => {
 
   // Добавляем состояние для хранения рейтингов товаров
   const [productRatings, setProductRatings] = useState({});
+
+  const confirm = useConfirm();
 
   // Загрузка всех необходимых данных при монтировании компонента
   useEffect(() => {
@@ -417,15 +420,17 @@ const AdminProducts = () => {
 
   // Удаление товара
   const handleDeleteProduct = async (productId) => {
-    if (window.confirm('Вы уверены, что хотите удалить этот товар?')) {
-      try {
-        await productAPI.deleteProduct(productId);
-        // После удаления обновляем список товаров
-        fetchProducts(pagination.currentPage);
-      } catch (err) {
-        console.error('Ошибка при удалении товара:', err);
-        alert('Не удалось удалить товар. Проверьте права доступа.');
-      }
+    const ok = await confirm({
+      title: 'Удалить товар?',
+      body: 'Вы действительно хотите удалить этот товар?'
+    });
+    if (!ok) return;
+    try {
+      await productAPI.deleteProduct(productId);
+      fetchProducts(pagination.currentPage);
+    } catch (err) {
+      console.error('Ошибка при удалении товара:', err);
+      alert('Не удалось удалить товар. Проверьте права доступа.');
     }
   };
 

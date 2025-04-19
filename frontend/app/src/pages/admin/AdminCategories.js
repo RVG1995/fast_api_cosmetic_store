@@ -3,8 +3,10 @@ import { productAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css'; // Используем те же стили, что и для товаров
 import { generateSlug } from '../../utils/slugUtils';
 import { useCategories } from '../../context/CategoryContext';
+import { useConfirm } from '../../components/common/ConfirmContext';
 
 const AdminCategories = () => {
+  const confirm = useConfirm();
   const { categories, loading, error, addCategory, updateCategory, deleteCategory } = useCategories();
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -80,14 +82,17 @@ const AdminCategories = () => {
 
   // Удаление категории
   const handleDeleteCategory = async (categoryId) => {
-    if (window.confirm('Вы уверены, что хотите удалить эту категорию? Это также удалит все связанные подкатегории и товары.')) {
-      try {
-        await productAPI.deleteCategory(categoryId);
-        deleteCategory(categoryId);
-      } catch (err) {
-        console.error('Ошибка при удалении категории:', err);
-        alert('Не удалось удалить категорию. Возможно, она используется в товарах или подкатегориях.');
-      }
+    const ok = await confirm({
+      title: 'Удалить категорию?',
+      body: 'Это также удалит все связанные подкатегории и товары. Продолжить?'
+    });
+    if (!ok) return;
+    try {
+      await productAPI.deleteCategory(categoryId);
+      deleteCategory(categoryId);
+    } catch (err) {
+      console.error('Ошибка при удалении категории:', err);
+      alert('Не удалось удалить категорию. Возможно, она используется в товарах или подкатегориях.');
     }
   };
 

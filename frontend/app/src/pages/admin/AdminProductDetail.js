@@ -3,8 +3,10 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { productAPI } from '../../utils/api';
 import '../../styles/AdminProductDetail.css';
 import ReviewList from '../../components/reviews/ReviewList';
+import { useConfirm } from '../../components/common/ConfirmContext';
 
 const AdminProductDetail = () => {
+  const confirm = useConfirm();
   const { productId } = useParams();
   const navigate = useNavigate();
   const [product, setProduct] = useState(null);
@@ -290,21 +292,24 @@ const AdminProductDetail = () => {
 
   // Обработчик удаления товара
   const handleDelete = async () => {
-    if (window.confirm('Вы действительно хотите удалить этот товар?')) {
-      try {
-        await productAPI.deleteProduct(productId);
-        navigate('/admin/products', { 
-          state: { 
-            notification: {
-              type: 'success',
-              message: 'Товар успешно удален'
-            }
+    const ok = await confirm({
+      title: 'Удалить товар?',
+      body: 'Вы действительно хотите удалить этот товар?'
+    });
+    if (!ok) return;
+    try {
+      await productAPI.deleteProduct(productId);
+      navigate('/admin/products', { 
+        state: { 
+          notification: {
+            type: 'success',
+            message: 'Товар успешно удален'
           }
-        });
-      } catch (err) {
-        console.error('Ошибка при удалении товара:', err);
-        setError('Не удалось удалить товар. Пожалуйста, попробуйте позже.');
-      }
+        }
+      });
+    } catch (err) {
+      console.error('Ошибка при удалении товара:', err);
+      setError('Не удалось удалить товар. Пожалуйста, попробуйте позже.');
     }
   };
 

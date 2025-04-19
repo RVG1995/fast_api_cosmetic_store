@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { formatPrice } from '../utils/helpers';
 import '../pages/CartPage.css';
+import { useConfirm } from '../components/common/ConfirmContext';
 
 const CartPage = () => {
   const { cart, loading, error, updateCartItem, removeFromCart, clearCart, fetchCart } = useCart();
@@ -15,6 +16,7 @@ const CartPage = () => {
   const updateTimers = useRef({});
   // Сохраняем исходный порядок элементов корзины
   const [itemsOrder, setItemsOrder] = useState([]);
+  const confirm = useConfirm();
   
   // Инициализируем локальное состояние количества товаров при загрузке/обновлении корзины
   useEffect(() => {
@@ -185,31 +187,34 @@ const CartPage = () => {
 
   // Обработчик очистки корзины
   const handleClearCart = async () => {
-    if (window.confirm('Вы уверены, что хотите очистить корзину?')) {
-      setIsClearingCart(true);
-      setUpdateMessage({ type: '', text: '' });
+    const ok = await confirm({
+      title: 'Очистить корзину?',
+      body: 'Вы действительно хотите удалить все товары из корзины?'
+    });
+    if (!ok) return;
+    setIsClearingCart(true);
+    setUpdateMessage({ type: '', text: '' });
 
-      try {
-        const result = await clearCart();
-        
-        if (result.success) {
-          setUpdateMessage({ type: 'success', text: 'Корзина очищена' });
-          // Обновляем корзину после успешной очистки
-          await fetchCart();
-        } else {
-          setUpdateMessage({ type: 'danger', text: result.message });
-        }
-      } catch (err) {
-        console.error('Ошибка при очистке корзины:', err);
-        setUpdateMessage({ type: 'danger', text: 'Ошибка при очистке корзины' });
-      } finally {
-        setIsClearingCart(false);
-        
-        // Автоматически скрываем сообщение через 3 секунды
-        setTimeout(() => {
-          setUpdateMessage({ type: '', text: '' });
-        }, 3000);
+    try {
+      const result = await clearCart();
+      
+      if (result.success) {
+        setUpdateMessage({ type: 'success', text: 'Корзина очищена' });
+        // Обновляем корзину после успешной очистки
+        await fetchCart();
+      } else {
+        setUpdateMessage({ type: 'danger', text: result.message });
       }
+    } catch (err) {
+      console.error('Ошибка при очистке корзины:', err);
+      setUpdateMessage({ type: 'danger', text: 'Ошибка при очистке корзины' });
+    } finally {
+      setIsClearingCart(false);
+      
+      // Автоматически скрываем сообщение через 3 секунды
+      setTimeout(() => {
+        setUpdateMessage({ type: '', text: '' });
+      }, 3000);
     }
   };
 

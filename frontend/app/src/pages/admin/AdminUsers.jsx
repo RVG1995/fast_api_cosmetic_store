@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { adminAPI } from '../../utils/api';
+import { useConfirm } from '../../components/common/ConfirmContext';
 
 const AdminUsers = () => {
+  const confirm = useConfirm();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -83,10 +85,12 @@ const AdminUsers = () => {
   };
 
   const handleRemoveAdmin = async (userId) => {
-    if (!window.confirm('Вы уверены, что хотите отозвать права администратора у этого пользователя?')) {
-      return;
-    }
-    
+    const ok = await confirm({
+      title: 'Отозвать права администратора?',
+      body: 'Вы действительно хотите отозвать права администратора у этого пользователя?'
+    });
+    if (!ok) return;
+
     try {
       await adminAPI.removeAdmin(userId);
       
@@ -101,10 +105,12 @@ const AdminUsers = () => {
   };
 
   const handleDelete = async (userId) => {
-    if (!window.confirm('Вы уверены, что хотите удалить этого пользователя?')) {
-      return;
-    }
-    
+    const ok = await confirm({
+      title: 'Удалить пользователя?',
+      body: 'Вы действительно хотите удалить этого пользователя?'
+    });
+    if (!ok) return;
+
     try {
       await adminAPI.deleteUser(userId);
       

@@ -3,8 +3,10 @@ import { productAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css'; // Используем те же стили, что и для товаров
 // Импорты react-bootstrap и axios удалены, так как не используются в компоненте
 import { generateSlug } from '../../utils/slugUtils';
+import { useConfirm } from '../../components/common/ConfirmContext';
 
 const AdminSubcategories = () => {
+  const confirm = useConfirm();
   const [subcategories, setSubcategories] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -124,14 +126,17 @@ const AdminSubcategories = () => {
 
   // Удаление подкатегории
   const handleDeleteSubcategory = async (subcategoryId) => {
-    if (window.confirm('Вы уверены, что хотите удалить эту подкатегорию? Это также может удалить связанные товары.')) {
-      try {
-        await productAPI.deleteSubcategory(subcategoryId);
-        setSubcategories(subcategories.filter(subcategory => subcategory.id !== subcategoryId));
-      } catch (err) {
-        console.error('Ошибка при удалении подкатегории:', err);
-        alert('Не удалось удалить подкатегорию. Возможно, она используется в товарах.');
-      }
+    const ok = await confirm({
+      title: 'Удалить подкатегорию?',
+      body: 'Это также может удалить связанные товары. Продолжить?'
+    });
+    if (!ok) return;
+    try {
+      await productAPI.deleteSubcategory(subcategoryId);
+      setSubcategories(subcategories.filter(subcategory => subcategory.id !== subcategoryId));
+    } catch (err) {
+      console.error('Ошибка при удалении подкатегории:', err);
+      alert('Не удалось удалить подкатегорию. Возможно, она используется в товарах.');
     }
   };
 

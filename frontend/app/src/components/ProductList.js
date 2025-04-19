@@ -7,6 +7,7 @@ import { AddToCartButton } from './AddToCartButton';
 import ProgressiveImage from './common/ProgressiveImage';
 import ErrorMessage from './common/ErrorMessage';
 import { API_URLS } from '../utils/constants';
+import { useConfirm } from './common/ConfirmContext';
 
 // Мемоизированный компонент карточки товара
 const ProductCard = memo(({ product, isAdmin, onDelete }) => {
@@ -69,6 +70,7 @@ const ProductCard = memo(({ product, isAdmin, onDelete }) => {
 });
 
 const ProductList = () => {
+  const confirm = useConfirm();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -102,16 +104,19 @@ const ProductList = () => {
 
   // Мемоизированный обработчик удаления
   const handleDelete = useCallback(async (id) => {
-    if (window.confirm('Вы уверены, что хотите удалить этот продукт?')) {
-      try {
-        await productAPI.deleteProduct(id);
-        setProducts(prevProducts => prevProducts.filter(product => product.id !== id));
-      } catch (err) {
-        console.error('Ошибка при удалении продукта:', err);
-        setError('Не удалось удалить продукт. Проверьте права доступа.');
-      }
+    const ok = await confirm({
+      title: 'Удалить продукт?',
+      body: 'Вы действительно хотите удалить этот продукт?'
+    });
+    if (!ok) return;
+    try {
+      await productAPI.deleteProduct(id);
+      setProducts(prev => prev.filter(product => product.id !== id));
+    } catch (err) {
+      console.error('Ошибка при удалении продукта:', err);
+      setError('Не удалось удалить продукт. Проверьте права доступа.');
     }
-  }, []);
+  }, [confirm]);
 
   // Отрисовка загрузки
   if (loading && products.length === 0) {

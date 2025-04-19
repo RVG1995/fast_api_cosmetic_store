@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ConfirmProvider } from './components/common/ConfirmContext';
 import reportWebVitals from './utils/reportWebVitals';
 import './styles/output.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -21,7 +22,9 @@ window.addEventListener('unhandledrejection', function(event) {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <App />
+    <ConfirmProvider>
+      <App />
+    </ConfirmProvider>
   </React.StrictMode>
 );
 

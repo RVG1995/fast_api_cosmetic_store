@@ -189,4 +189,28 @@
     font-size: 1.5rem;
     margin-bottom: 1rem;
   }
+}
+
+/* Стили для выпадающих подсказок */
+.suggestions-list {
+  position: absolute;
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.suggestion-item {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.suggestion-item:hover {
+  background-color: #f1f1f1;
+}
+/* класс для совместимости hover-bg-light */
+.hover-bg-light:hover {
+  background-color: #f1f1f1;
 } 

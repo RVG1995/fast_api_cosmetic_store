@@ -36,9 +36,6 @@ const CheckoutPage = () => {
   const [cartTotal, setCartTotal] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [nameSuggestions, setNameSuggestions] = useState([]);
-  const [regionSuggestions, setRegionSuggestions] = useState([]);
-  const [citySuggestions, setCitySuggestions] = useState([]);
-  const [streetSuggestions, setStreetSuggestions] = useState([]);
   // сохраним объекты подсказок для FIAS
   const [regionOptions, setRegionOptions] = useState([]);
   const [regionFiasId, setRegionFiasId] = useState('');
@@ -46,7 +43,6 @@ const CheckoutPage = () => {
   const [cityFiasId, setCityFiasId] = useState('');
   // сохраним подсказки улиц с FIAS
   const [streetOptions, setStreetOptions] = useState([]);
-  const [streetFiasId, setStreetFiasId] = useState('');
   
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
@@ -85,7 +81,6 @@ const CheckoutPage = () => {
   // Подсказки регионов
   const fetchRegionSuggestions = async (query) => {
     if (!query) {
-      setRegionSuggestions([]);
       setRegionOptions([]);
       return;
     }
@@ -95,7 +90,6 @@ const CheckoutPage = () => {
         { query, from_bound:{ value:'region' }, to_bound:{ value:'region' } },
         { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
       );
-      setRegionSuggestions(data.suggestions.map(s => s.value));
       setRegionOptions(data.suggestions);
     } catch(e) { console.error('DaData region error', e); }
   };
@@ -103,7 +97,6 @@ const CheckoutPage = () => {
   const fetchCitySuggestions = async (query) => {
     console.log('Dadata city fetch:', query, 'regionFiasId:', regionFiasId);
     if (!query) {
-      setCitySuggestions([]);
       setCityOptions([]);
       return;
     }
@@ -118,7 +111,6 @@ const CheckoutPage = () => {
         { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
       );
       console.log('Dadata city resp:', data.suggestions);
-      setCitySuggestions(data.suggestions.map(s => s.value));
       setCityOptions(data.suggestions);
     } catch(e) {
       console.error('DaData city error', e);
@@ -128,7 +120,6 @@ const CheckoutPage = () => {
   const fetchStreetSuggestions = async (query) => {
     console.log('Dadata street fetch:', query, 'regionFiasId:', regionFiasId, 'cityFiasId:', cityFiasId);
     if (!query) {
-      setStreetSuggestions([]);
       setStreetOptions([]);
       return;
     }
@@ -142,7 +133,6 @@ const CheckoutPage = () => {
       );
       console.log('Dadata street resp:', data.suggestions);
       setStreetOptions(data.suggestions);
-      setStreetSuggestions(data.suggestions.map(s => s.data.street_with_type));
     } catch(e) { console.error('DaData street error', e); }
   };
 
@@ -167,9 +157,7 @@ const CheckoutPage = () => {
     }
     if (name==='street') {
       fetchStreetSuggestions(value);
-      setFormData(prev=>({...prev, street:value}));
-      const found = streetOptions.find(opt => opt.data.street_with_type === value);
-      setStreetFiasId(found?.data?.fias_id || found?.data?.street_fias_id || '');
+      setFormData(prev => ({ ...prev, street: value }));
       return;
     }
     if (type === 'checkbox')    { setFormData(prev=>({...prev,[name]:checked})); return; }
@@ -359,18 +347,32 @@ const CheckoutPage = () => {
             </Card.Header>
             <Card.Body>
               <Form noValidate validated={validated} onSubmit={handleSubmit}>
-                <Form.Group controlId="fullName">
+                <Form.Group controlId="fullName" className="position-relative">
                   <Form.Label>ФИО получателя</Form.Label>
                   <Form.Control
+                    type="text"
                     name="fullName"
+                    autoComplete="off"
                     value={formData.fullName}
                     onChange={handleChange}
                     required
-                    list="fullNameSuggestions"
                   />
-                  <datalist id="fullNameSuggestions">
-                    {nameSuggestions.map((s, i) => (<option key={i} value={s}/>))}
-                  </datalist>
+                  {nameSuggestions.length > 0 && (
+                    <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
+                      {nameSuggestions.map((s, i) => (
+                        <div
+                          key={i}
+                          className="suggestion-item px-2 py-1 hover-bg-light"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, fullName: s }));
+                            setNameSuggestions([]);
+                          }}
+                        >
+                          {s}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </Form.Group>
                 
                 <Row>
@@ -412,56 +414,98 @@ const CheckoutPage = () => {
                   </Col>
                 </Row>
                 
-                <Form.Group className="mb-3" controlId="region">
+                <Form.Group className="mb-3 position-relative" controlId="region">
                   <Form.Label>Регион</Form.Label>
                   <Form.Control
                     type="text"
                     name="region"
-                    list="regionSuggestions"
+                    autoComplete="off"
                     value={formData.region}
                     onChange={handleChange}
                     required
                     placeholder="Москва и Московская область"
                   />
-                  <datalist id="regionSuggestions">
-                    {regionSuggestions.map((r, i) => (<option key={i} value={r}/>))}
-                  </datalist>
+                  {regionOptions.length > 0 && (
+                    <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
+                      {regionOptions.map((opt, i) => (
+                        <div
+                          key={i}
+                          className="suggestion-item hover-bg-light"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, region: opt.value, city: '', street: '' }));
+                            setRegionFiasId(opt.data.fias_id || '');
+                            setRegionOptions([]);
+                          }}
+                        >
+                          {opt.value}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <Form.Control.Feedback type="invalid">
                     Пожалуйста, укажите регион
                   </Form.Control.Feedback>
                 </Form.Group>
                 
-                <Form.Group className="mb-3" controlId="city">
+                <Form.Group className="mb-3 position-relative" controlId="city">
                   <Form.Label>Город</Form.Label>
                   <Form.Control
                     type="text"
                     name="city"
-                    list="citySuggestions"
+                    autoComplete="off"
                     value={formData.city}
                     onChange={handleChange}
                     required
                     placeholder="Москва"
                   />
-                  <datalist id="citySuggestions">
-                    {citySuggestions.map((c, i) => (<option key={i} value={c}/>))}
-                  </datalist>
+                  {cityOptions.length > 0 && (
+                    <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
+                      {cityOptions.map((opt, i) => (
+                        <div
+                          key={i}
+                          className="suggestion-item hover-bg-light"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, city: opt.value, street: '' }));
+                            setCityFiasId(opt.data.fias_id || opt.data.city_fias_id || '');
+                            setCityOptions([]);
+                          }}
+                        >
+                          {opt.value}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <Form.Control.Feedback type="invalid">
                     Пожалуйста, укажите город
                   </Form.Control.Feedback>
                 </Form.Group>
                 
-                <Form.Group controlId="street">
+                <Form.Group className="position-relative" controlId="street">
                   <Form.Label>Адрес доставки</Form.Label>
                   <Form.Control
+                    type="text"
                     name="street"
+                    autoComplete="off"
                     value={formData.street}
                     onChange={handleChange}
                     required
-                    list="streetSuggestions"
                   />
-                  <datalist id="streetSuggestions">
-                    {streetSuggestions.map((s,i)=>(<option key={i} value={s}/>))}
-                  </datalist>
+                  {streetOptions.length > 0 && (
+                    <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
+                      {streetOptions.map((opt, i) => (
+                        <div
+                          key={i}
+                          className="suggestion-item hover-bg-light"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, street: opt.data.street_with_type }));
+                            setStreetOptions([]);
+                          }}
+                        >
+                          {opt.data.street_with_type}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </Form.Group>
                 
                 <Form.Group className="mb-3">

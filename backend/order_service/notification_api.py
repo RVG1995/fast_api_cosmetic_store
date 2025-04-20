@@ -20,7 +20,6 @@ INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")  # устаре
 # Client credentials for service-to-service auth
 SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
 SERVICE_CLIENTS = {kv.split(":")[0]: kv.split(":")[1] for kv in SERVICE_CLIENTS_RAW.split(",") if ":" in kv}
-logger.info(f'Ключи сервисов {SERVICE_CLIENTS.keys()}')
 SERVICE_CLIENT_ID = os.getenv("SERVICE_CLIENT_ID","orders")
 SERVICE_TOKEN_URL = f"{AUTH_SERVICE_URL}/auth/token"
 SERVICE_TOKEN_EXPIRE_MINUTES = int(os.getenv("SERVICE_TOKEN_EXPIRE_MINUTES", "30"))
@@ -35,7 +34,6 @@ async def _get_service_token():
     if not secret:
         raise RuntimeError(f"Нет секрета для client_id={SERVICE_CLIENT_ID}")
     data = {"grant_type":"client_credentials","client_id":SERVICE_CLIENT_ID,"client_secret":secret}
-    logger.info(f"Requesting service token with data: {data}")
     async with httpx.AsyncClient() as client:
         r = await client.post(f"{AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
         r.raise_for_status()
@@ -75,7 +73,7 @@ async def check_notification_settings(user_id: str, event_type: str, payload: di
                 response = await client.post(
                     f"{NOTIFICATION_SERVICE_URL}/notifications/settings/events",
                     headers=headers, timeout=5.0,
-                    json={"event_type":event_type, "user_id":str(user_id), "payload":payload}
+                    json={"event_type":event_type, "user_id":user_id, "payload":payload}
                 )
                 if response.status_code == 401:
                     # token expired - clear cache and retry

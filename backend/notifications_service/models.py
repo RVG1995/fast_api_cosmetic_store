@@ -1,27 +1,29 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, UniqueConstraint, Text
+from sqlalchemy import Integer, String, Boolean, DateTime, UniqueConstraint, Text
 from sqlalchemy.sql import func
+from sqlalchemy.orm import Mapped, mapped_column
 from .database import Base
+from datetime import datetime
 
 
 class NotificationSetting(Base):
     __tablename__ = "notification_settings"
     __table_args__ = (UniqueConstraint('user_id', 'event_type', name='uq_user_event_type'),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, index=True)
-    email = Column(String, nullable=False)
-    push_enabled = Column(Boolean, default=True)
-    email_enabled = Column(Boolean, default=True)
-    event_type = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    push_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    email_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
 
 class SentNotification(Base):
     __tablename__ = "sent_notifications"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, index=True)
-    event_type = Column(String, index=True)
-    event_id = Column(String, index=True)
-    sent_at = Column(DateTime(timezone=True), server_default=func.now()) 
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    event_type: Mapped[str] = mapped_column(String, index=True)
+    event_id: Mapped[str] = mapped_column(String, index=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now()) 

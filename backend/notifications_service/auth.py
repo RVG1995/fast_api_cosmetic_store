@@ -2,7 +2,7 @@ import httpx
 import logging
 import jwt
 from typing import Optional, Dict, Any, List
-from fastapi import HTTPException, Depends, status, Cookie, Header, Request
+from fastapi import HTTPException, Depends, status, Header, Request
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 
 from .config import AUTH_SERVICE_URL, JWT_SECRET_KEY, ALGORITHM, INTERNAL_SERVICE_KEY

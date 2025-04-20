@@ -5,7 +5,7 @@ from typing import Optional
 
 class NotificationSettingBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    user_id: str = Field(..., description="ID пользователя", example="user123")
+    user_id: int = Field(..., description="ID пользователя", example="user123")
     event_type: str = Field(..., description="Тип события", example="review.created")
     email: str = Field(..., description="Email для уведомлений", example="admin@example.com")
     push_enabled: bool = Field(True, description="Включены push-уведомления")
@@ -30,5 +30,5 @@ class NotificationSettingResponse(NotificationSettingBase):
 
 class NotificationEvent(BaseModel):
     event_type: str
-    user_id: str
+    user_id: int
     payload: dict

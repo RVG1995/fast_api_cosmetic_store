@@ -41,7 +41,7 @@ USER_EVENT_TYPES = [
 @router.get("/settings", response_model=List[schemas.NotificationSettingResponse])
 async def get_settings(user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     logger.info(f"[GET /settings] user_id={user.id}")
-    user_id = str(user.id)
+    user_id = user.id
     
     # Определяем доступные типы событий на основе роли пользователя
     allowed_event_types = USER_EVENT_TYPES.copy()
@@ -152,7 +152,7 @@ async def create_setting(setting: schemas.NotificationSettingCreate, user: User 
         raise HTTPException(status_code=403, detail="You don't have permission to configure this notification type")
     
     data = setting.model_dump()
-    data['user_id'] = str(user.id)
+    data['user_id'] = user.id
     obj = models.NotificationSetting(**data)
     db.add(obj)
     try:
@@ -171,7 +171,7 @@ async def update_setting(event_type: str, update: schemas.NotificationSettingUpd
     if event_type in ADMIN_ONLY_EVENT_TYPES and not (user.is_admin or user.is_super_admin):
         raise HTTPException(status_code=403, detail="You don't have permission to configure this notification type")
     
-    user_id = str(user.id)
+    user_id = user.id
     result = await db.execute(
         select(models.NotificationSetting)
         .where(models.NotificationSetting.user_id == user_id, models.NotificationSetting.event_type == event_type)
@@ -202,7 +202,7 @@ async def admin_get_all_settings(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_admin)]
 )
 async def admin_delete_setting(
-    user_id: str,
+    user_id: int,
     event_type: str,
     db: AsyncSession = Depends(get_db)
 ):

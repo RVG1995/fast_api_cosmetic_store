@@ -20,7 +20,6 @@ EVENT_TYPE_REVIEW_REPLY = "review.reply"
 EVENT_TYPE_SERVICE_ERROR = "service.critical_error"
 EVENT_TYPE_ORDER_CREATED = "order.created"
 EVENT_TYPE_ORDER_STATUS_CHANGED = "order.status_changed"
-EVENT_TYPE_ORDER_STATUS_CHANGE = "order.status_change"
 EVENT_TYPE_PRODUCT_LOW_STOCK = "product.low_stock"
 
 # События, доступные только для администраторов
@@ -35,7 +34,6 @@ USER_EVENT_TYPES = [
     EVENT_TYPE_REVIEW_REPLY,
     EVENT_TYPE_ORDER_CREATED,
     EVENT_TYPE_ORDER_STATUS_CHANGED,
-    EVENT_TYPE_ORDER_STATUS_CHANGE
 ]
 
 @router.get("/settings", response_model=List[schemas.NotificationSettingResponse])
@@ -68,8 +66,8 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
                 user_id=user_id,
                 event_type=event_type,
                 email=user.email or f"user{user_id}@example.com",
-                email_enabled=True,
-                push_enabled=True
+                email_enabled=False,
+                push_enabled=False
             )
             db.add(new_setting)
             defaults.append(new_setting)
@@ -103,10 +101,6 @@ async def check_settings(
     
     # Обрабатываем специальный случай несоответствия между order.status_changed и order.status_change
     search_event_types = [event_type]
-    if event_type == EVENT_TYPE_ORDER_STATUS_CHANGED:
-        search_event_types.append(EVENT_TYPE_ORDER_STATUS_CHANGE)
-    elif event_type == EVENT_TYPE_ORDER_STATUS_CHANGE:
-        search_event_types.append(EVENT_TYPE_ORDER_STATUS_CHANGED)
     
     # Поиск настроек с учетом возможных вариантов имен события
     setting = None
@@ -125,7 +119,7 @@ async def check_settings(
     
     if not setting:
         # Возвращаем настройки по умолчанию, если не найдены
-        return {"email_enabled": True, "push_enabled": True}
+        return {"email_enabled": False, "push_enabled": False}
         
     return {
         "email_enabled": setting.email_enabled,

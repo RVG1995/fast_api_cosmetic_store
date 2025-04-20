@@ -2,6 +2,10 @@ import httpx
 import logging
 import os
 from typing import Optional, Dict, Any, List
+import asyncio
+from datetime import datetime, timezone
+import jwt
+from cache import get_cached_data, set_cached_data, redis_client
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -15,26 +19,38 @@ INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")  # устаре
 
 # Client credentials for service-to-service auth
 SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
-SERVICE_CLIENTS = {
-    k: v for k,v in []  # removed mapping, not used
-}
+SERVICE_CLIENTS = {kv.split(":")[0]: kv.split(":")[1] for kv in SERVICE_CLIENTS_RAW.split(",") if ":" in kv}
+logger.info(f'Ключи сервисов {SERVICE_CLIENTS.keys()}')
 SERVICE_CLIENT_ID = os.getenv("SERVICE_CLIENT_ID","orders")
 SERVICE_TOKEN_URL = f"{AUTH_SERVICE_URL}/auth/token"
+SERVICE_TOKEN_EXPIRE_MINUTES = int(os.getenv("SERVICE_TOKEN_EXPIRE_MINUTES", "30"))
 
-SERVICE_CLIENT_SECRET = os.getenv("SERVICE_CLIENT_SECRET")  # set in .env
 async def _get_service_token():
-    secret = SERVICE_CLIENT_SECRET
+    # try cache
+    token = await get_cached_data("service_token")
+    if token:
+        return token
+    # Получаем секрет из общего SERVICE_CLIENTS_RAW
+    secret = SERVICE_CLIENTS.get(SERVICE_CLIENT_ID)
     if not secret:
-        raise RuntimeError("SERVICE_CLIENT_SECRET not set")
-    data = {
-        "grant_type":"client_credentials",
-        "client_id": SERVICE_CLIENT_ID,
-        "client_secret": secret
-    }
+        raise RuntimeError(f"Нет секрета для client_id={SERVICE_CLIENT_ID}")
+    data = {"grant_type":"client_credentials","client_id":SERVICE_CLIENT_ID,"client_secret":secret}
+    logger.info(f"Requesting service token with data: {data}")
     async with httpx.AsyncClient() as client:
         r = await client.post(f"{AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
         r.raise_for_status()
-        return r.json()["access_token"]
+        new_token = r.json().get("access_token")
+    # cache with TTL from exp claim or default
+    ttl = SERVICE_TOKEN_EXPIRE_MINUTES*60 - 30
+    try:
+        payload = jwt.decode(new_token, options={"verify_signature": False})
+        exp = payload.get("exp")
+        if exp:
+            ttl = max(int(exp - datetime.now(timezone.utc).timestamp() - 5), 1)
+    except Exception:
+        pass
+    await set_cached_data("service_token", new_token, ttl)
+    return new_token
 
 async def check_notification_settings(user_id: str, event_type: str, payload: dict) -> Dict[str, bool]:
     """
@@ -50,26 +66,36 @@ async def check_notification_settings(user_id: str, event_type: str, payload: di
         Если произошла ошибка - возвращает {email_enabled: False, push_enabled: False}
     """
     try:
-        # Используем OAuth2 client_credentials вместо service-key
-        token = await _get_service_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        
-        url = f"{NOTIFICATION_SERVICE_URL}/notifications/settings/events"
-        
+        # perform with retry on 401
+        backoffs = [0.5, 1, 2]
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=headers, timeout=5.0, json={"event_type": event_type, "user_id": str(user_id), "payload": payload})
-            
-            if response.status_code == 200:
-                settings = response.json()
-                logger.info(f"Получены настройки уведомлений для пользователя {user_id}, тип события {event_type}: {settings}")
-                return settings
-            elif response.status_code == 404:
-                # Настройки не найдены, используем значения по умолчанию
-                logger.info(f"Настройки уведомлений для пользователя {user_id}, тип события {event_type} не найдены")
-                return {"email_enabled": True, "push_enabled": True}
-            else:
-                logger.warning(f"Ошибка при получении настроек уведомлений: {response.status_code}, {response.text}")
-                return {"email_enabled": True, "push_enabled": True}  # По умолчанию уведомления включены
+            for delay in backoffs:
+                token = await _get_service_token()
+                headers = {"Authorization": f"Bearer {token}"}
+                response = await client.post(
+                    f"{NOTIFICATION_SERVICE_URL}/notifications/settings/events",
+                    headers=headers, timeout=5.0,
+                    json={"event_type":event_type, "user_id":str(user_id), "payload":payload}
+                )
+                if response.status_code == 401:
+                    # token expired - clear cache and retry
+                    await redis_client.delete("service_token")
+                    await asyncio.sleep(delay)
+                    continue
+                break
+        
+        # now response contains result
+        if response.status_code == 200:
+            settings = response.json()
+            logger.info(f"Получены настройки уведомлений для пользователя {user_id}, тип события {event_type}: {settings}")
+            return settings
+        elif response.status_code == 404:
+            # Настройки не найдены, используем значения по умолчанию
+            logger.info(f"Настройки уведомлений для пользователя {user_id}, тип события {event_type} не найдены")
+            return {"email_enabled": True, "push_enabled": True}
+        else:
+            logger.warning(f"Ошибка при получении настроек уведомлений: {response.status_code}, {response.text}")
+            return {"email_enabled": True, "push_enabled": True}  # По умолчанию уведомления включены
                 
     except Exception as e:
         logger.error(f"Ошибка при запросе настроек уведомлений: {str(e)}")
@@ -85,6 +111,7 @@ async def get_admin_users(token: Optional[str] = None) -> List[Dict[str, Any]]:
         Список пользователей-администраторов
     """
     try:
+        # get token with cache
         token = await _get_service_token()
         headers = {"Authorization": f"Bearer {token}"}
 

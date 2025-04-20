@@ -34,6 +34,7 @@ class ProductAPI:
     async def get_product(self, product_id: int) -> Optional[ProductInfoSchema]:
         """Получение информации о продукте по ID"""
         cache_key = f"product:{product_id}"
+        from dependencies import _get_service_token
         
         try:
             # Попытка получить данные из кэша

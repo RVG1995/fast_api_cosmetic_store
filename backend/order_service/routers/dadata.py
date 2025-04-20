@@ -27,12 +27,23 @@ class SuggestRequest(BaseModel):
     to_bound: dict = Field(None, example={"value": "city"})
     locations: list = Field(None, description="Фильтры местоположения")
 
+def normalize_obj(obj):
+    if isinstance(obj, str):
+        return obj.strip().lower()
+    if isinstance(obj, list):
+        return [normalize_obj(i) for i in obj]
+    if isinstance(obj, dict):
+        return {k: normalize_obj(obj[k]) for k in sorted(obj)}
+    return obj
+
 @router.post("/address", summary="Proxy DaData address suggest")
 async def suggest_address(body: SuggestRequest):
     url = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address"
     payload = body.model_dump(exclude_none=True)
-    # кэш DaData address (24h TTL)
-    key = f"dadata:address:{hashlib.md5(json.dumps(payload, sort_keys=True).encode('utf-8')).hexdigest()}"
+    # нормализуем значения для кэша (без учёта регистра)
+    norm = normalize_obj(payload)
+    key_str = json.dumps(norm, ensure_ascii=False, sort_keys=True)
+    key = f"dadata:address:{hashlib.md5(key_str.encode('utf-8')).hexdigest()}"
     logger.info(f"Проверяю кэш подсказок адресов, ключ={key}")
     cached = await get_cached_data(key)
     if cached:
@@ -51,9 +62,10 @@ async def suggest_address(body: SuggestRequest):
 @router.post("/fio", summary="Proxy DaData FIO suggest")
 async def suggest_fio(body: dict):
     url = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/fio"
-    # кэш DaData fio
-    query = body.get("query", "")
-    key = f"dadata:fio:{hashlib.md5(query.encode('utf-8')).hexdigest()}"
+    # кэш DaData fio с нормализацией регистра
+    raw_q = body.get("query", "")
+    q_norm = raw_q.strip().lower()
+    key = f"dadata:fio:{hashlib.md5(q_norm.encode('utf-8')).hexdigest()}"
     logger.info(f"Проверяю кэш подсказок ФИО, ключ={key}")
     cached = await get_cached_data(key)
     if cached:

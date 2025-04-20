@@ -39,7 +39,7 @@ const AdminUsers = () => {
     };
 
     fetchPermissions();
-  }, []);
+  }, [checkPermission]);
 
   useEffect(() => {
     const fetchUsers = async () => {

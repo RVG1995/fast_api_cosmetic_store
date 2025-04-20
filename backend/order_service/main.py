@@ -21,6 +21,7 @@ from routers.orders import router as orders_router, admin_router as orders_admin
 from routers.order_statuses import router as order_statuses_router
 from routers.payment_statuses import router as payment_statuses_router
 from routers.promo_codes import router as promo_codes_router, admin_router as promo_codes_admin_router
+from routers.dadata import router as dadata_router
 from cache import close_redis
 from init_data import init_order_statuses
 # Загрузка переменных окружения
@@ -106,6 +107,7 @@ app.include_router(order_statuses_router)
 app.include_router(payment_statuses_router)
 app.include_router(promo_codes_router)
 app.include_router(promo_codes_admin_router)
+app.include_router(dadata_router)
 
 # Маршрут для проверки работоспособности сервиса
 @app.get("/api/health", tags=["health"])

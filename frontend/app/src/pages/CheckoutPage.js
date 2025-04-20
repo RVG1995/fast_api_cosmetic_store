@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useOrders } from '../context/OrderContext';
@@ -8,10 +8,14 @@ import { formatPrice } from '../utils/helpers';
 import PromoCodeForm from '../components/PromoCodeForm';
 import './CheckoutPage.css';
 import axios from 'axios';
-
-const DADATA_TOKEN = process.env.REACT_APP_DADATA_TOKEN;
+import { API_URLS } from '../utils/constants';
 
 const CheckoutPage = () => {
+  // кеш для DaData API запросов, чтобы избежать повторных обращений
+  const nameCache = useRef({});
+  const regionCache = useRef({});
+  const cityCache = useRef({});
+  const streetCache = useRef({});
   const navigate = useNavigate();
   const { cart, clearCart } = useCart();
   const { createOrder, loading, error, setError, promoCode, clearPromoCode } = useOrders();
@@ -66,14 +70,18 @@ const CheckoutPage = () => {
   const fetchNameSuggestions = async (query) => {
     console.log('Dadata FIO fetch:', query);
     if (!query) return setNameSuggestions([]);
+    if (nameCache.current[query]) {
+      return setNameSuggestions(nameCache.current[query]);
+    }
     try {
       const { data } = await axios.post(
-        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/fio',
-        { query },
-        { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
+        `${API_URLS.ORDER_SERVICE}/dadata/fio`,
+        { query }
       );
       console.log('Dadata FIO resp:', data.suggestions);
-      setNameSuggestions(data.suggestions.map(s => s.value));
+      const values = data.suggestions.map(s => s.value);
+      nameCache.current[query] = values;
+      setNameSuggestions(values);
     } catch (e) {
       console.error('DaData FIO error', e);
     }
@@ -84,12 +92,15 @@ const CheckoutPage = () => {
       setRegionOptions([]);
       return;
     }
+    if (regionCache.current[query]) {
+      return setRegionOptions(regionCache.current[query]);
+    }
     try {
       const { data } = await axios.post(
-        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address',
-        { query, from_bound:{ value:'region' }, to_bound:{ value:'region' } },
-        { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
+        `${API_URLS.ORDER_SERVICE}/dadata/address`,
+        { query, from_bound:{ value:'region' }, to_bound:{ value:'region' } }
       );
+      regionCache.current[query] = data.suggestions;
       setRegionOptions(data.suggestions);
     } catch(e) { console.error('DaData region error', e); }
   };
@@ -100,17 +111,20 @@ const CheckoutPage = () => {
       setCityOptions([]);
       return;
     }
-    // используем bound 'city' для поиска только по городам
     const body = { query, from_bound:{ value:'city' }, to_bound:{ value:'city' } };
     if (regionFiasId) body.locations = [{ region_fias_id: regionFiasId }];
+    const cityKey = regionFiasId ? `${query}-${regionFiasId}` : query;
+    if (cityCache.current[cityKey]) {
+      return setCityOptions(cityCache.current[cityKey]);
+    }
     console.log('Dadata city request body:', body);
     try {
       const { data } = await axios.post(
-        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address',
-        body,
-        { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
+        `${API_URLS.ORDER_SERVICE}/dadata/address`,
+        body
       );
       console.log('Dadata city resp:', data.suggestions);
+      cityCache.current[cityKey] = data.suggestions;
       setCityOptions(data.suggestions);
     } catch(e) {
       console.error('DaData city error', e);
@@ -125,13 +139,17 @@ const CheckoutPage = () => {
     }
     const body = { query, from_bound:{ value:'street' }, to_bound:{ value:'street' } };
     if (cityFiasId) body.locations = [{ city_fias_id: cityFiasId }];
+    const streetKey = cityFiasId ? `${query}-${cityFiasId}` : query;
+    if (streetCache.current[streetKey]) {
+      return setStreetOptions(streetCache.current[streetKey]);
+    }
     try {
       const { data } = await axios.post(
-        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address',
-        body,
-        { headers: { Authorization: `Token ${DADATA_TOKEN}`, 'Content-Type': 'application/json' } }
+        `${API_URLS.ORDER_SERVICE}/dadata/address`,
+        body
       );
       console.log('Dadata street resp:', data.suggestions);
+      streetCache.current[streetKey] = data.suggestions;
       setStreetOptions(data.suggestions);
     } catch(e) { console.error('DaData street error', e); }
   };

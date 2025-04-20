@@ -1,12 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
-import asyncio
 from contextlib import asynccontextmanager
 
 from .database import engine, Base
 from .settings_router import router as settings_router
-from .event_consumer import start_consumer
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +18,8 @@ async def lifespan(app: FastAPI):
     
     # Инициализация БД и запуск консьюмера
     await init_db()
-    app.state.rabbit_connection = await start_consumer()
-    logger.info("Notifications Service started")
     yield
-    # Shutdown: закрыть коннект
-    conn = getattr(app.state, 'rabbit_connection', None)
-    if conn:
-        await conn.stop()
-        logger.info("RabbitMQ connection closed")
+
 
 # Создаем приложение с lifespan
 app = FastAPI(title="Notifications Service", lifespan=lifespan)

@@ -27,3 +27,8 @@ class NotificationSettingResponse(NotificationSettingBase):
     created_at: datetime = Field(...)
     updated_at: datetime = Field(...)
     model_config = ConfigDict(from_attributes=True) 
+
+class NotificationEvent(BaseModel):
+    event_type: str
+    user_id: str
+    payload: dict

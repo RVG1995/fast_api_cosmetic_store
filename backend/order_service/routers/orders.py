@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 from datetime import datetime
 import hashlib
 import sys
+from notification_api import check_notification_settings
+from fastapi.encoders import jsonable_encoder
 
 from database import get_db
 from models import OrderModel, OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel
@@ -126,17 +128,13 @@ async def create_new_order(
                 }
                 logger.info(f"Для нового заказа {loaded_order.id} загружен промокод {promo_code.code}")
         
-        # Отправляем подтверждение заказа на email
+        # Отправляем подтверждение заказа на email через Notifications Service
         try:
-            from app.services.order_service import send_email_message
-            if order_data.email:
+            if order_data.email and user_id != None:
                 logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
-                # Передаем токен для проверки настроек уведомлений
-                task_id = await send_email_message(loaded_order, token)
-                if task_id:
-                    logger.info(f"Задача подтверждения заказа {loaded_order.id} отправлена в RabbitMQ, task_id: {task_id}")
-                else:
-                    logger.info(f"Уведомление о создании заказа {loaded_order.id} не отправлено (отключено в настройках)")
+                # CONVERT loaded_order to plain dict for JSON payload
+                payload = jsonable_encoder(loaded_order)
+                await check_notification_settings(loaded_order.user_id, "order.created", payload)
         except Exception as e:
             logger.error(f"Ошибка при отправке email о заказе: {str(e)}")
         

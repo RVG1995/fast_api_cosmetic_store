@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Optional
 import logging
+from .notifications_service import send_email_message
 
 from . import models, schemas
 from .database import get_db
@@ -87,11 +88,14 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
     return settings
 
 # Новый эндпоинт для проверки настроек пользователя
-@router.get("/settings/check/{user_id}/{event_type}", response_model=Dict[str, bool])
+@router.get(
+    "/settings/check/{user_id}/{event_type}",
+    response_model=Dict[str, bool],
+    dependencies=[Depends(verify_service_key)]
+)
 async def check_settings(
     user_id: str, 
     event_type: str,
-    service_key: bool = Depends(verify_service_key),
     db: AsyncSession = Depends(get_db)
 ):
     """Проверка настроек уведомлений для указанного пользователя и типа события"""
@@ -127,6 +131,16 @@ async def check_settings(
         "email_enabled": setting.email_enabled,
         "push_enabled": setting.push_enabled
     }
+
+
+@router.post("/settings/events", dependencies=[Depends(verify_service_key)])
+async def receive_notification(event: schemas.NotificationEvent, db: AsyncSession = Depends(get_db)):
+    logger.info(f"[POST /settings/events] event_type={event.event_type}, user_id={event.user_id}, payload={event.payload}")
+    flags = await check_settings(event.user_id, event.event_type, db)
+    if flags['email_enabled']:
+        if event.payload.get('email') and event.payload.get('user_id'):
+            await send_email_message(event.payload)
+
 
 @router.post("/settings", response_model=schemas.NotificationSettingResponse)
 async def create_setting(setting: schemas.NotificationSettingCreate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):

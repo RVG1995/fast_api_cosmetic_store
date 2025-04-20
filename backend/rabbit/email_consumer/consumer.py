@@ -199,12 +199,12 @@ def create_order_email_content(order_data):
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Подтверждение заказа #{order_data.get('order_number')}</title>
+        <title>Подтверждение заказа #{order_data.get('id')}</title>
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 650px; margin: 0 auto;">
         <div style="background-color: #f8f9fa; padding: 20px; text-align: center; margin-bottom: 20px;">
             <h1 style="color: #4a5568; margin: 0;">Ваш заказ подтвержден</h1>
-            <p style="font-size: 18px; margin-top: 10px;">Заказ #{order_data.get('order_number')}</p>
+            <p style="font-size: 18px; margin-top: 10px;">Заказ #{order_data.get('id')}</p>
         </div>
         
         <div style="padding: 0 20px;">
@@ -215,7 +215,7 @@ def create_order_email_content(order_data):
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                 <tr>
                     <td style="padding: 5px 0; width: 150px;"><strong>Номер заказа:</strong></td>
-                    <td>{order_data.get('order_number')}</td>
+                    <td>{order_data.get('id')}</td>
                 </tr>
                 <tr>
                     <td style="padding: 5px 0;"><strong>Дата:</strong></td>
@@ -508,7 +508,7 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
         
         # Извлекаем необходимые данные
         email = message_body["email"]
-        order_number = message_body["order_number"]
+        order_number = message_body.get("id") or message_body.get("id")
         
         # Формируем содержимое письма
         subject = f"Подтверждение заказа #{order_number}"
@@ -535,9 +535,11 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
             headers['x-retry-count'] = retry_count
             headers['x-last-error'] = str(e)
             
-            # Публикуем в очередь retry
+            # Публикуем в очередь retry через новое соединение
+            retry_connection = await get_connection_with_retry()
+            retry_channel = await retry_connection.channel()
             retry_queue = f"email_message.retry"
-            await message.channel.default_exchange.publish(
+            await retry_channel.default_exchange.publish(
                 aio_pika.Message(
                     body=message.body,
                     headers=headers,
@@ -545,6 +547,7 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
                 ),
                 routing_key=retry_queue
             )
+            await close_connection(retry_connection)
             logger.info(f"Сообщение помещено в очередь {retry_queue} для повторной попытки {retry_count}/{MAX_RETRY_COUNT}")
             await message.ack()
         else:
@@ -577,7 +580,7 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
             low_stock_products = message_body["low_stock_products"]
             
             # Формируем содержимое письма для администратора
-            admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+            admin_email = os.getenv("ADMIN_EMAIL", "rvg95@mail.ru")
             subject = f"Внимание! Товары с низким остатком ({len(low_stock_products)} шт.)"
             
             # Создаем HTML-таблицу с товарами
@@ -643,7 +646,7 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
             stock = message_body["stock"]
             
             # Формируем содержимое письма для администратора
-            admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+            admin_email = os.getenv("ADMIN_EMAIL", "rvg95@mail.ru")
             subject = f"Внимание! Низкий остаток товара: {product_name}"
             
             html_content = f"""
@@ -695,9 +698,11 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
             headers['x-retry-count'] = retry_count
             headers['x-last-error'] = str(e)
             
-            # Публикуем в очередь retry
+            # Публикуем в очередь retry через новое соединение
+            retry_connection = await get_connection_with_retry()
+            retry_channel = await retry_connection.channel()
             retry_queue = f"notification_message.retry"
-            await message.channel.default_exchange.publish(
+            await retry_channel.default_exchange.publish(
                 aio_pika.Message(
                     body=message.body,
                     headers=headers,
@@ -705,6 +710,7 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
                 ),
                 routing_key=retry_queue
             )
+            await close_connection(retry_connection)
             logger.info(f"Сообщение помещено в очередь {retry_queue} для повторной попытки {retry_count}/{MAX_RETRY_COUNT}")
             await message.ack()
         else:
@@ -770,9 +776,11 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
             headers['x-retry-count'] = retry_count
             headers['x-last-error'] = str(e)
             
-            # Публикуем в очередь retry
+            # Публикуем в очередь retry через новое соединение
+            retry_connection = await get_connection_with_retry()
+            retry_channel = await retry_connection.channel()
             retry_queue = f"update_message.retry"
-            await message.channel.default_exchange.publish(
+            await retry_channel.default_exchange.publish(
                 aio_pika.Message(
                     body=message.body,
                     headers=headers,
@@ -780,6 +788,7 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
                 ),
                 routing_key=retry_queue
             )
+            await close_connection(retry_connection)
             logger.info(f"Сообщение помещено в очередь {retry_queue} для повторной попытки {retry_count}/{MAX_RETRY_COUNT}")
             await message.ack()
         else:
@@ -887,9 +896,11 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
             headers['x-retry-count'] = retry_count
             headers['x-last-error'] = str(e)
             
-            # Публикуем в очередь retry
+            # Публикуем в очередь retry через новое соединение
+            retry_connection = await get_connection_with_retry()
+            retry_channel = await retry_connection.channel()
             retry_queue = f"registration_message.retry"
-            await message.channel.default_exchange.publish(
+            await retry_channel.default_exchange.publish(
                 aio_pika.Message(
                     body=message.body,
                     headers=headers,
@@ -897,6 +908,7 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
                 ),
                 routing_key=retry_queue
             )
+            await close_connection(retry_connection)
             logger.info(f"Сообщение помещено в очередь {retry_queue} для повторной попытки {retry_count}/{MAX_RETRY_COUNT}")
             await message.ack()
         else:

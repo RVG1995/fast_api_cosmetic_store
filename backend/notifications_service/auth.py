@@ -66,17 +66,7 @@ async def get_current_user(
             resp = await client.get(f"{AUTH_SERVICE_URL}/auth/users/me/profile", headers=headers, timeout=5.0)
         if resp.status_code != 200:
             logger.warning(f"Auth service returned {resp.status_code}: {resp.text}")
-            # Если Auth-сервис не вернул профиль, но у нас есть валидный токен с ID пользователя,
-            # создадим базовый профиль чтобы хотя бы основные функции работали
-            if user_id:
-                logger.info(f"Creating basic user profile for user_id={user_id}")
-                return User({
-                    "id": int(user_id),
-                    "is_active": True,
-                    "email": "",
-                    "first_name": "",
-                    "last_name": ""
-                })
+            # При ошибке получаем None, без создания базового профиля
             return None
         
         data = resp.json()
@@ -91,16 +81,7 @@ async def get_current_user(
         return User(data)
     except Exception as e:
         logger.error(f"Error calling auth service: {e}")
-        # Создаем базовый профиль, если есть ID пользователя
-        if user_id:
-            logger.info(f"Creating fallback user profile for user_id={user_id}")
-            return User({
-                "id": int(user_id),
-                "is_active": True,
-                "email": "",
-                "first_name": "",
-                "last_name": ""
-            })
+        # При исключении возвращаем None без доверия к токену
         return None
 
 async def require_user(current_user: Optional[User] = Depends(get_current_user)) -> User:

@@ -9,7 +9,7 @@ NOTIFICATION_SERVICE_URL = "http://localhost:8005"  # Адрес сервиса 
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")  # Адрес сервиса авторизации
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")  # Ключ для межсервисного взаимодействия
 
-async def check_notification_settings(user_id: str, event_type: str, token: Optional[str] = None) -> Dict[str, bool]:
+async def check_notification_settings(user_id: str, event_type: str, payload: dict) -> Dict[str, bool]:
     """
     Проверяет настройки уведомлений пользователя для указанного типа события
     
@@ -27,13 +27,11 @@ async def check_notification_settings(user_id: str, event_type: str, token: Opti
             "service-key": INTERNAL_SERVICE_KEY
         }
         
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
 
-        url = f"{NOTIFICATION_SERVICE_URL}/notifications/settings/check/{user_id}/{event_type}"
+        url = f"{NOTIFICATION_SERVICE_URL}/notifications/settings/events"
         
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=headers, timeout=5.0)
+            response = await client.post(url, headers=headers, timeout=5.0, json={"event_type": event_type, "user_id": str(user_id), "payload": payload})
             
             if response.status_code == 200:
                 settings = response.json()
@@ -49,7 +47,6 @@ async def check_notification_settings(user_id: str, event_type: str, token: Opti
                 
     except Exception as e:
         logger.error(f"Ошибка при запросе настроек уведомлений: {str(e)}")
-        return {"email_enabled": True, "push_enabled": True}  # В случае ошибки считаем, что уведомления включены
 
 async def get_admin_users(token: Optional[str] = None) -> List[Dict[str, Any]]:
     """

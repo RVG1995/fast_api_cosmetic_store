@@ -8,7 +8,7 @@ from .notifications_service import send_email_message
 
 from . import models, schemas
 from .database import get_db
-from .auth import require_user, require_admin, verify_service_key, User
+from .auth import require_user, require_admin, verify_service_jwt, User
 
 logger = logging.getLogger("notifications_service.settings_router")
 
@@ -91,7 +91,7 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
 @router.get(
     "/settings/check/{user_id}/{event_type}",
     response_model=Dict[str, bool],
-    dependencies=[Depends(verify_service_key)]
+    dependencies=[Depends(verify_service_jwt)]
 )
 async def check_settings(
     user_id: str, 
@@ -133,7 +133,7 @@ async def check_settings(
     }
 
 
-@router.post("/settings/events", dependencies=[Depends(verify_service_key)])
+@router.post("/settings/events", dependencies=[Depends(verify_service_jwt)])
 async def receive_notification(event: schemas.NotificationEvent, db: AsyncSession = Depends(get_db)):
     logger.info(f"[POST /settings/events] event_type={event.event_type}, user_id={event.user_id}, payload={event.payload}")
     flags = await check_settings(event.user_id, event.event_type, db)

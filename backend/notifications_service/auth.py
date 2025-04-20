@@ -3,13 +3,28 @@ import logging
 import jwt
 from typing import Optional, Dict, Any, List
 from fastapi import HTTPException, Depends, status, Cookie, Header, Request
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 
 from .config import AUTH_SERVICE_URL, JWT_SECRET_KEY, ALGORITHM, INTERNAL_SERVICE_KEY
 
 # Схема OAuth2 для получения токена из заголовка Authorization
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 logger = logging.getLogger("notifications_service.auth")
+
+bearer_scheme = HTTPBearer(auto_error=False)
+async def verify_service_jwt(
+    cred: HTTPAuthorizationCredentials = Depends(bearer_scheme)
+) -> bool:
+    """Проверяет JWT токен с scope 'service'"""
+    if not cred or not cred.credentials:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+    try:
+        payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    if payload.get("scope") != "service":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
+    return True
 
 class User:
     """Класс представления пользователя"""

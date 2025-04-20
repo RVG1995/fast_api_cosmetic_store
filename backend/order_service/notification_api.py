@@ -2,12 +2,39 @@ import httpx
 import logging
 import os
 from typing import Optional, Dict, Any, List
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 logger = logging.getLogger("order_service.notification_api")
 
 NOTIFICATION_SERVICE_URL = "http://localhost:8005"  # Адрес сервиса уведомлений
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")  # Адрес сервиса авторизации
-INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")  # Ключ для межсервисного взаимодействия
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")  # устаревший, не используется при client_credentials
+
+# Client credentials for service-to-service auth
+SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
+SERVICE_CLIENTS = {
+    k: v for k,v in []  # removed mapping, not used
+}
+SERVICE_CLIENT_ID = os.getenv("SERVICE_CLIENT_ID","orders")
+SERVICE_TOKEN_URL = f"{AUTH_SERVICE_URL}/auth/token"
+
+SERVICE_CLIENT_SECRET = os.getenv("SERVICE_CLIENT_SECRET")  # set in .env
+async def _get_service_token():
+    secret = SERVICE_CLIENT_SECRET
+    if not secret:
+        raise RuntimeError("SERVICE_CLIENT_SECRET not set")
+    data = {
+        "grant_type":"client_credentials",
+        "client_id": SERVICE_CLIENT_ID,
+        "client_secret": secret
+    }
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
+        r.raise_for_status()
+        return r.json()["access_token"]
 
 async def check_notification_settings(user_id: str, event_type: str, payload: dict) -> Dict[str, bool]:
     """
@@ -23,11 +50,10 @@ async def check_notification_settings(user_id: str, event_type: str, payload: di
         Если произошла ошибка - возвращает {email_enabled: False, push_enabled: False}
     """
     try:
-        headers = {
-            "service-key": INTERNAL_SERVICE_KEY
-        }
+        # Используем OAuth2 client_credentials вместо service-key
+        token = await _get_service_token()
+        headers = {"Authorization": f"Bearer {token}"}
         
-
         url = f"{NOTIFICATION_SERVICE_URL}/notifications/settings/events"
         
         async with httpx.AsyncClient() as client:
@@ -59,12 +85,8 @@ async def get_admin_users(token: Optional[str] = None) -> List[Dict[str, Any]]:
         Список пользователей-администраторов
     """
     try:
-        headers = {
-            "service-key": INTERNAL_SERVICE_KEY
-        }
-        
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+        token = await _get_service_token()
+        headers = {"Authorization": f"Bearer {token}"}
 
         url = f"{AUTH_SERVICE_URL}/auth/admins"
         

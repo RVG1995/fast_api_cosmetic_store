@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, BackgroundTasks, Request, Header
+from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, BackgroundTasks, Request, Header, Form
 from sqlalchemy import select 
 from typing import Optional, Annotated, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +7,7 @@ from models import UserModel, UserSessionModel
 import jwt
 from schema import TokenShema, UserCreateShema, UserReadShema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema
 from datetime import datetime, timedelta, timezone
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
 import secrets
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 import os
@@ -37,6 +37,12 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+# Client Credentials: используем единый ENV SERVICE_CLIENTS_RAW
+SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
+SERVICE_CLIENTS = {kv.split(":")[0]: kv.split(":")[1] for kv in SERVICE_CLIENTS_RAW.split(",") if ":" in kv}
+SERVICE_TOKEN_EXPIRE_MINUTES = int(os.getenv("SERVICE_TOKEN_EXPIRE_MINUTES", "15"))
+logger.info(f"SERVICE_CLIENTS keys: {list(SERVICE_CLIENTS.keys())}")
 
 router = APIRouter(prefix='/auth', tags=['Авторизация'])
 
@@ -745,12 +751,25 @@ async def verify_service_key_or_super_admin(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Требуется сервисный ключ или права суперадминистратора"
     )
-
+bearer_scheme = HTTPBearer(auto_error=False)
+async def verify_service_jwt(
+    cred: HTTPAuthorizationCredentials = Depends(bearer_scheme)
+) -> bool:
+    """Проверяет JWT токен с scope 'service'"""
+    if not cred or not cred.credentials:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+    try:
+        payload = jwt.decode(cred.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    if payload.get("scope") != "service":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
+    return True
 # Добавляем новый эндпоинт для получения списка администраторов
 @router.get("/admins", summary="Получение списка всех администраторов и суперадминистраторов")
 async def get_all_admins(
     session: SessionDep,
-    _: bool = Depends(verify_service_key_or_super_admin)
+    _: bool = Depends(verify_service_jwt)
 ) -> List[Dict[str, Any]]:
     """
     Получает список всех пользователей с правами администратора и суперадминистратора.
@@ -777,3 +796,21 @@ async def get_all_admins(
     
     logger.info(f"Найдено {len(admins_list)} администраторов")
     return admins_list
+
+@router.post("/token", response_model=TokenShema, summary="Client Credentials Token")
+async def service_token(
+    grant_type: str = Form(...),
+    client_id: str = Form(...),
+    client_secret: str = Form(...)
+):
+    logger.info(f"Token request received: grant_type={grant_type}, client_id={client_id}")
+    if grant_type != "client_credentials":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported grant_type")
+    # Получаем секрет из mapping и проверяем
+    secret = SERVICE_CLIENTS.get(client_id)
+    if not secret or secret != client_secret:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid client credentials")
+    expires = timedelta(minutes=SERVICE_TOKEN_EXPIRE_MINUTES)
+    token_data = {"sub": client_id, "scope": "service"}
+    access_token, jti = await TokenService.create_access_token(token_data, expires_delta=expires)
+    return {"access_token": access_token, "token_type": "bearer"}

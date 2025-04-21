@@ -37,12 +37,6 @@ class User:
         self.is_admin = data.get("is_admin", False)
         self.is_super_admin = data.get("is_super_admin", False)
 
-async def verify_service_key(service_key: str = Header(None, alias="service-key")) -> bool:
-    """Проверяет секретный ключ межсервисного взаимодействия"""
-    if not service_key or service_key != INTERNAL_SERVICE_KEY:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid service key")
-    return True
-
 async def get_current_user(
     request: Request,
     authorization: str = Depends(oauth2_scheme)

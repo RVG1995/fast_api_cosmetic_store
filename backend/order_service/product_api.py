@@ -34,7 +34,6 @@ class ProductAPI:
     async def get_product(self, product_id: int) -> Optional[ProductInfoSchema]:
         """Получение информации о продукте по ID"""
         cache_key = f"product:{product_id}"
-        from dependencies import _get_service_token
         
         try:
             # Попытка получить данные из кэша
@@ -107,6 +106,7 @@ class ProductAPI:
         Returns:
             bool: Успешность операции
         """
+        from dependencies import _get_service_token
         try:
             async with httpx.AsyncClient() as client:
                 # Получаем текущую информацию о продукте
@@ -117,19 +117,6 @@ class ProductAPI:
                 
                 # Вычисляем новое количество
                 new_stock = max(0, product.stock + quantity_change)
-                
-                # Настраиваем заголовки с секретным ключом и авторизацией, если доступна
-                headers = {
-                    "service-key": INTERNAL_SERVICE_KEY  # Добавляем секретный ключ (с маленькой буквы!)
-                }
-                
-                admin_headers = {
-                    "service-key": INTERNAL_SERVICE_KEY
-                }
-                
-                # Добавляем токен авторизации если он предоставлен
-                if token:
-                    admin_headers["Authorization"] = f"Bearer {token}"
                 
                 # Инвалидируем кэш до запроса, чтобы быть уверенными, что старые данные не используются
                 try:
@@ -148,17 +135,49 @@ class ProductAPI:
                     logger.info(f"Кэш продукта {product_id} и связанных списков инвалидирован перед обновлением")
                 except Exception as e:
                     logger.error(f"Ошибка при предварительной инвалидации кэша для продукта {product_id}: {str(e)}")
-                
+                backoffs = [0.5, 1, 2]
                 # Сначала пробуем использовать публичный API если нужно уменьшить количество
                 if quantity_change < 0:
-                    response = await client.put(
-                        f"{self.base_url}/products/{product_id}/public-stock",
-                        json={"stock": new_stock},
+                    for delay in backoffs:
+                        token = await _get_service_token()
+                        headers = {"Authorization": f"Bearer {token}"}
+                        response = await client.put(
+                            f"{self.base_url}/products/{product_id}/public-stock",
+                            json={"stock": new_stock},
+                            headers=headers
+                        )
+                        
+                        if response.status_code == 200:
+                            logger.info(f"Обновлено количество товара {product_id} через публичный API: {product.stock} -> {new_stock}")
+                            
+                            # Инвалидируем кэш после успешного обновления
+                            try:
+                                await redis_client.delete(f"product:{product_id}")
+                            except Exception as e:
+                                logger.error(f"Ошибка при инвалидации кэша: {str(e)}")
+                            
+                            return True
+                        if response.status_code == 401:
+                    # token expired - clear cache and retry
+                            await redis_client.delete("service_token")
+                            await asyncio.sleep(delay)
+                            continue
+                        break
+                
+                # Если публичный API недоступен или вернул ошибку или нужно увеличить количество, пробуем использовать админский API
+                # Это важно для действий администраторов или когда товар нужно пополнить
+                logger.info(f"Пробуем обновить количество товара {product_id} через админский API")
+                for delay in backoffs:
+                    token = await _get_service_token()
+                    headers = {"Authorization": f"Bearer {token}"}
+                    auth_response = await client.put(
+                        f"{self.base_url}/products/{product_id}/admin-stock",
+                        json={"stock": new_stock, "is_admin_update": True},
                         headers=headers
                     )
                     
-                    if response.status_code == 200:
-                        logger.info(f"Обновлено количество товара {product_id} через публичный API: {product.stock} -> {new_stock}")
+                    if auth_response.status_code == 200:
+                        logger.info(f"Обновлено количество товара {product_id} через админский API: {product.stock} -> {new_stock}")
                         
                         # Инвалидируем кэш после успешного обновления
                         try:
@@ -167,29 +186,14 @@ class ProductAPI:
                             logger.error(f"Ошибка при инвалидации кэша: {str(e)}")
                         
                         return True
-                
-                # Если публичный API недоступен или вернул ошибку или нужно увеличить количество, пробуем использовать админский API
-                # Это важно для действий администраторов или когда товар нужно пополнить
-                logger.info(f"Пробуем обновить количество товара {product_id} через админский API")
-                
-                auth_response = await client.put(
-                    f"{self.base_url}/products/{product_id}/admin-stock",
-                    json={"stock": new_stock, "is_admin_update": True},
-                    headers=admin_headers
-                )
-                
-                if auth_response.status_code == 200:
-                    logger.info(f"Обновлено количество товара {product_id} через админский API: {product.stock} -> {new_stock}")
-                    
-                    # Инвалидируем кэш после успешного обновления
-                    try:
-                        await redis_client.delete(f"product:{product_id}")
-                    except Exception as e:
-                        logger.error(f"Ошибка при инвалидации кэша: {str(e)}")
-                    
-                    return True
-                else:
-                    logger.error(f"Ошибка при обновлении товара {product_id} через админский API, статус: {auth_response.status_code}, ответ: {auth_response.text}")
+                    else:
+                        logger.error(f"Ошибка при обновлении товара {product_id} через админский API, статус: {auth_response.status_code}, ответ: {auth_response.text}")
+                    if response.status_code == 401:
+                    # token expired - clear cache and retry
+                        await redis_client.delete("service_token")
+                        await asyncio.sleep(delay)
+                        continue
+                    break
                 
                 # Если все попытки обновления не удались
                 logger.error(f"Не удалось обновить количество товара {product_id}. Новое количество было бы: {new_stock}")

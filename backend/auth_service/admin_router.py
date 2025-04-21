@@ -8,7 +8,7 @@ from models import UserModel
 from schema import AdminUserReadShema
 from router import get_current_user
 from database import get_session
-
+from utils import verify_service_jwt
 # Получаем сервисный ключ из переменных окружения
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
 
@@ -142,7 +142,7 @@ async def check_super_admin_access(
 async def get_user_by_id(
     user_id: int,
     session: AsyncSession = Depends(get_session),
-    is_service: bool = Depends(verify_service_key)
+    dependencies: bool = Depends(verify_service_jwt)
 ):
     """Получить информацию о конкретном пользователе по ID (для межсервисных запросов)"""
     user = await UserModel.get_by_id(session, user_id)

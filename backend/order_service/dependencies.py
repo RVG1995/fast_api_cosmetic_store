@@ -96,7 +96,7 @@ async def get_current_user(
     token: str = Cookie(None, alias="access_token"),
     authorization: str = Depends(oauth2_scheme),
     x_service_name: Optional[str] = Header(None),
-    service_key: Optional[str] = Header(None, alias="service-key")
+    service_jwt: Optional[bool] = Depends(bearer_scheme)
 )-> Optional[Dict[str, Any]]:
     logger.info(f"Получен токен из куки: {token}")
     logger.info(f"Получен токен из заголовка: {authorization}")
@@ -125,21 +125,28 @@ async def get_current_user(
         detail="Невозможно проверить учетные данные",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if actual_token == INTERNAL_SERVICE_KEY and x_service_name:
-        logger.info(f"Внутренний запрос от сервиса {x_service_name} авторизован")
-        # Возвращаем специальные данные для внутреннего сервиса с повышенными правами
-        return {
-            "user_id": None,
-            "is_admin": True,
-            "is_super_admin": True,
-            "is_service": True,
-            "service_name": x_service_name,
-            "token": actual_token
-        }
+    
+    # Проверяем, это сервисный JWT с параметром scope=service
+    try:
+        payload = jwt.decode(actual_token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("scope") == "service" and x_service_name:
+            logger.info(f"Внутренний запрос от сервиса {x_service_name} авторизован через JWT")
+            # Возвращаем специальные данные для внутреннего сервиса с повышенными правами
+            return {
+                "user_id": None,
+                "is_admin": True,
+                "is_super_admin": True,
+                "is_service": True,
+                "service_name": x_service_name,
+                "token": actual_token
+            }
+    except Exception:
+        # Если не сервисный JWT, продолжаем обычный путь аутентификации
+        pass
         
     try:
-        # Декодируем токен
-        logger.info(f"Попытка декодирования токена: {actual_token[:20]}...")
+        # Декодируем токен пользователя
+        logger.info(f"Попытка декодирования токена пользователя: {actual_token[:20]}...")
         payload = jwt.decode(actual_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         
         # Используем ключ "sub" вместо "user_id" как в других сервисах

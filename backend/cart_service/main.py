@@ -30,6 +30,7 @@ from cache import (
 import json
 from pydantic import BaseModel
 from sqlalchemy.dialects.postgresql import insert
+from dependencies import  _get_service_token
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -1099,25 +1100,48 @@ async def get_user_info(user_id: int) -> Dict[str, Any]:
         service_key = os.environ.get("INTERNAL_SERVICE_KEY", "test")
         
         logger.info(f"Запрос информации о пользователе {user_id} по URL: {auth_service_url}/admin/users/{user_id}")
-        
-        headers = {
-            "service-key": service_key
-        }
-        
+        backoffs = [0.5, 1, 2]        
         async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{auth_service_url}/admin/users/{user_id}",
-                headers=headers
-            )
-            
-            if response.status_code == 200:
-                user_data = response.json()
-                # Проверяем наличие полей first_name и last_name в ответе
-                if "first_name" not in user_data or "last_name" not in user_data:
-                    logger.warning(f"В ответе от сервиса авторизации отсутствуют поля first_name или last_name: {user_data}")
-                return user_data
-            
-            logger.warning(f"Не удалось получить информацию о пользователе {user_id}: код {response.status_code}, ответ: {response.text}")
+            total = len(backoffs)
+            for attempt, delay in enumerate(backoffs, start=1):
+                logger.info(f"get_user_info: attempt {attempt}/{total} for user {user_id}")
+                token = await _get_service_token()
+                headers = {"Authorization": f"Bearer {token}"}
+                try:
+                    response = await client.get(
+                        f"{auth_service_url}/admin/users/{user_id}",
+                        headers=headers,
+                        timeout=5.0
+                    )
+                except Exception as exc:
+                    logger.error(f"get_user_info: network error on attempt {attempt}: {exc}")
+                    if attempt < total:
+                        await asyncio.sleep(delay)
+                        continue
+                    break
+                logger.info(f"get_user_info: status={response.status_code}")
+                if response.status_code == 200:
+                    try:
+                        user_data = response.json()
+                    except Exception as parse_exc:
+                        logger.error(f"get_user_info: JSON parse error: {parse_exc}")
+                        return {}
+                    if "first_name" not in user_data or "last_name" not in user_data:
+                        logger.warning(f"get_user_info: missing name fields in response: {user_data}")
+                    return user_data
+                if response.status_code == 404:
+                    logger.warning(f"get_user_info: 404 Not Found on attempt {attempt}, returning empty response")
+                    return {}
+                if response.status_code == 401:
+                    logger.warning(f"get_user_info: 401 Unauthorized on attempt {attempt}, clearing cache and retry")
+                    await cache_delete("service_token")
+                    if attempt < total:
+                        await asyncio.sleep(delay)
+                        continue
+                    break
+                logger.error(f"get_user_info: unexpected status {response.status_code}, body={response.text}")
+                return {}
+            logger.error("get_user_info: completing all attempts, returning empty response")
             return {}
     except Exception as e:
         logger.error(f"Ошибка при запросе информации о пользователе {user_id}: {str(e)}")

@@ -104,13 +104,15 @@ async def cache_get(key: str) -> Optional[Any]:
         data = await redis.get(key)
         if data:
             logger.debug(f"Данные получены из кэша: {key}")
-            
-            # Функция десериализации строк ISO 8601 обратно в datetime объекты
+            parsed = json.loads(data)
+            # Если в кэше не словарь, возвращаем как есть (например, строку-токен)
+            if not isinstance(parsed, dict):
+                return parsed
+            # Функция десериализации datetime внутри словаря
             def datetime_parser(dct):
                 for k, v in dct.items():
                     if isinstance(v, str):
                         try:
-                            # Пытаемся распарсить строку в формате ISO 8601
                             if 'T' in v and ('+' in v or 'Z' in v or '-' in v[10:]):
                                 dct[k] = datetime.fromisoformat(v.replace('Z', '+00:00'))
                         except (ValueError, TypeError):
@@ -118,8 +120,7 @@ async def cache_get(key: str) -> Optional[Any]:
                     elif isinstance(v, dict):
                         dct[k] = datetime_parser(v)
                 return dct
-            
-            return datetime_parser(json.loads(data))
+            return datetime_parser(parsed)
             
         return None
     except Exception as e:

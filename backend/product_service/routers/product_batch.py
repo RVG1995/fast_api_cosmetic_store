@@ -5,6 +5,9 @@ from typing import List, Dict, Any, Optional, Annotated
 import os
 import logging
 import fastapi
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
+
 
 from models import ProductModel
 from database import get_session
@@ -22,6 +25,25 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+
+
+bearer_scheme = HTTPBearer(auto_error=False)
+async def verify_service_jwt(
+    cred: HTTPAuthorizationCredentials = Depends(bearer_scheme)
+) -> bool:
+    """Проверяет JWT токен с scope 'service'"""
+    if not cred or not cred.credentials:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+    try:
+        payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    if payload.get("scope") != "service":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
+    return True
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 @router.post('/batch', tags=["Products"])
@@ -29,7 +51,7 @@ async def get_products_batch(
     session: SessionDep,
     product_ids: List[int] = Body(..., embed=True, description="Список ID продуктов"),
     current_user: User = Depends(get_current_user),
-    service_key: Optional[str] = Header(None, alias="service-key", description="Секретный ключ для доступа к API (альтернатива авторизации)")
+    dependencies=[Depends(verify_service_jwt)]
 ):
     """
     Получить информацию о нескольких продуктах по их ID.
@@ -37,16 +59,12 @@ async def get_products_batch(
     Требуются права администратора или валидный ключ сервиса.
     """
     logger.info(f"Пакетный запрос информации о продуктах: {product_ids}")
-    logger.info(f"Заголовок service-key: '{service_key}'")    
-    # Проверка авторизации: или авторизованный пользователь с правами администратора или валидный ключ сервиса
-    INTERNAL_SERVICE_KEY = "test"  # Жестко задаем значение для тестирования
-    logger.info(f"Ожидаемый ключ сервиса: '{INTERNAL_SERVICE_KEY}'")
     
     authorized = False
     
     # Проверка через ключ сервиса с маленькой буквы
-    if service_key and service_key.strip('"') == INTERNAL_SERVICE_KEY:
-        logger.info("Авторизация через ключ сервиса (service-key) успешна")
+    if dependencies:
+        logger.info("Авторизация через ключ сервиса (dependencies) успешна")
         authorized = True
     # Проверка через пользователя
     elif current_user:
@@ -87,24 +105,13 @@ async def get_products_batch(
 async def get_products_public_batch(
     session: SessionDep,
     product_ids: List[int] = Body(..., embed=True, description="Список ID продуктов"),
-    service_key: str = Header(..., alias="service-key", description="Секретный ключ для доступа к API")
-):
+    dependencies=[Depends(verify_service_jwt)]):
     """
     Публичный API для получения информации о нескольких продуктах по их ID.
     Доступен только для внутренних сервисов с правильным ключом.
     
     - **product_ids**: Список ID продуктов
-    - **service_key**: Секретный ключ для доступа к API (передается в заголовке)
-    """
-    # Проверяем секретный ключ (должен совпадать с ключом в конфигурации)
-    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
-    if service_key != INTERNAL_SERVICE_KEY:
-        logger.warning(f"Попытка доступа к публичному batch API с неверным ключом: {service_key[:5]}...")
-        raise HTTPException(
-            status_code=403, 
-            detail="Доступ запрещен: неверный ключ сервиса"
-        )
-    
+    """    
     logger.info(f"Публичный пакетный запрос информации о продуктах: {product_ids}")
     
     if not product_ids:
@@ -206,7 +213,7 @@ async def update_product_public_stock(
     product_id: int,
     session: SessionDep,
     data: dict = Body(..., description="Данные для обновления остатка"),
-    service_key: str = Header(..., alias="service-key", description="Секретный ключ для доступа к API")
+    dependencies=[Depends(verify_service_jwt)]
 ):
     """
     Публичный API для обновления количества товара на складе.
@@ -214,17 +221,7 @@ async def update_product_public_stock(
     
     - **product_id**: ID продукта
     - **data**: Данные для обновления (должны содержать поле 'stock')
-    - **service_key**: Секретный ключ для доступа к API (передается в заголовке)
     """
-    # Проверяем секретный ключ (должен совпадать с ключом в конфигурации)
-    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
-    if service_key != INTERNAL_SERVICE_KEY:
-        logger.warning(f"Попытка доступа к публичному API с неверным ключом: {service_key[:5]}...")
-        raise HTTPException(
-            status_code=403, 
-            detail="Доступ запрещен: неверный ключ сервиса"
-        )
-    
     # Проверяем наличие обязательного поля
     if 'stock' not in data:
         raise HTTPException(status_code=400, detail="Поле 'stock' обязательно")
@@ -273,29 +270,14 @@ async def update_product_admin_stock(
     product_id: int,
     session: SessionDep,
     data: dict = Body(..., description="Данные для обновления остатка"),
-    service_key: str = Header(..., alias="Service-Key", description="Секретный ключ для доступа к API")
-):
+    dependencies=[Depends(verify_service_jwt)]):
     """
     Админский API для обновления количества товара на складе без ограничений.
     Доступен только для внутренних сервисов с правильным ключом.
     
     - **product_id**: ID продукта
     - **data**: Данные для обновления (должны содержать поле 'stock')
-    - **service_key**: Секретный ключ для доступа к API (передается в заголовке Service-Key)
     """
-    # Проверяем секретный ключ (должен совпадать с ключом в конфигурации)
-    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
-    # Для тестирования жестко кодируем значение
-    INTERNAL_SERVICE_KEY = "test"
-    
-    logger.info(f"Запрос на админское обновление остатка товара {product_id} с ключом {service_key}")
-    
-    if service_key != INTERNAL_SERVICE_KEY:
-        logger.warning(f"Попытка доступа к админскому API с неверным ключом: {service_key}")
-        raise HTTPException(
-            status_code=403, 
-            detail="Доступ запрещен: неверный ключ сервиса"
-        )
     
     # Проверяем наличие обязательного поля
     if 'stock' not in data:

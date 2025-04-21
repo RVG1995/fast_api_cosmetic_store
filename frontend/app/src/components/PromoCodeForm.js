@@ -5,7 +5,7 @@ import { formatPrice } from '../utils/helpers';
 
 const PromoCodeForm = ({ email, phone, cartTotal, onPromoCodeApplied }) => {
   const [promoCodeInput, setPromoCodeInput] = useState('');
-  const { checkPromoCode, promoCode, clearPromoCode, calculateDiscount, loading, error, setError } = useOrders();
+  const { checkPromoCode, promoCode, clearPromoCode, calculateDiscount, loading, error } = useOrders();
   const [validationErrors, setValidationErrors] = useState(null);
   
   // Обработчик изменения поля ввода промокода

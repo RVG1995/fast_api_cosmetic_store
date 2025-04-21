@@ -475,6 +475,7 @@ async def cancel_order_endpoint(
 @router.post("/{order_id}/reorder", status_code=status.HTTP_201_CREATED)
 async def reorder_endpoint(
     order_id: int = Path(..., ge=1),
+    personal_data_agreement: bool = Body(..., embed=True, description="Согласие на обработку персональных данных"),
     current_user: Dict[str, Any] = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
@@ -489,6 +490,12 @@ async def reorder_endpoint(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Для повторения заказа необходимо авторизоваться"
+            )
+        # Проверяем согласие на обработку персональных данных
+        if not personal_data_agreement:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для повторения заказа необходимо согласие на обработку персональных данных"
             )
         
         user_id = current_user.get("user_id")
@@ -552,6 +559,7 @@ async def reorder_endpoint(
             city=original_order.city,
             street=original_order.street,
             comment=f"Повторный заказ на основе заказа #{original_order.id}",
+            personal_data_agreement=personal_data_agreement,
             items=order_items
         )
         

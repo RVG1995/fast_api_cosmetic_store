@@ -238,90 +238,37 @@ class ProductAPI:
         # Если есть что запрашивать из сервиса
         if products_to_fetch:
             try:
+                backoffs = [0.5, 1, 2]
                 async with httpx.AsyncClient() as client:
-                    # Настраиваем заголовки для авторизации и секретный ключ сервиса
-                    headers = {
-                        "service-key": INTERNAL_SERVICE_KEY  # Добавляем секретный ключ (с маленькой буквы!)
-                    }
-                    if token:
-                        headers["Authorization"] = f"Bearer {token}"
-                    
-                    logger.info(f"Запрос на /products/public-batch с заголовками: {headers}")
-                    logger.info(f"service-key: '{INTERNAL_SERVICE_KEY}'")
-                
-                    # Используем публичный эндпоинт с секретным ключом
-                    response = await client.post(
-                        f"{self.base_url}/products/public-batch",
-                        json={"product_ids": products_to_fetch},
-                        headers=headers
-                    )
-                    
-                    if response.status_code == 200:
-                        products_data = response.json()
-                        
-                        for product_data in products_data:
-                            product_id = product_data["id"]
-                            product = ProductInfoSchema(**product_data)
-                            result[product_id] = product
-                            
-                            # Кэшируем результат
-                            try:
-                                cache_key = f"product:{product_id}"
-                                await redis_client.set(
-                                    cache_key, 
-                                    json.dumps(product_data), 
-                                    ex=CACHE_TTL
-                                )
-                            except Exception as e:
-                                logger.error(f"Ошибка при записи в кэш для продукта {product_id}: {str(e)}")
-                    else:
-                        logger.error(f"Ошибка при получении списка продуктов через /public-batch, статус: {response.status_code}, ответ: {response.text}")
-                        
-                        # Пробуем использовать обычный API с ключом сервиса, даже если нет токена
-                        logger.info("Пробуем получить данные через API /batch с ключом сервиса")
-                        # Выводим stack trace для отладки
-                        import traceback
-                        logger.info(f"DEBUG: Текущий контекст - stack trace: {traceback.format_stack()}")
-                        logger.info(f"Запрос на /products/batch с заголовками: {headers}")
-                        # Проверяем содержимое заголовков именно перед отправкой
-                        logger.info(f"DEBUG: Заголовки для /products/batch - service-key: '{headers.get('service-key')}'")
-                        
-                        # Пробуем с заглавной буквы (как в оригинале)
-                        batch_headers = {
-                            "service-key": INTERNAL_SERVICE_KEY  # С большой буквы
-                        }
-                        if token:
-                            batch_headers["Authorization"] = f"Bearer {token}"
-                        
-                        logger.info(f"Новые заголовки для /products/batch: {batch_headers}")
-                        
-                        auth_response = await client.post(
+                    from dependencies import _get_service_token
+                    # Запросим batch-эндпоинт с JWT
+                    for attempt, delay in enumerate(backoffs, start=1):
+                        token = await _get_service_token()
+                        headers = {"Authorization": f"Bearer {token}"}
+                        logger.info(f"get_products_batch: attempt {attempt}, headers={headers}")
+                        response = await client.post(
                             f"{self.base_url}/products/batch",
                             json={"product_ids": products_to_fetch},
-                            headers=batch_headers  # Используем новые заголовки
+                            headers=headers,
+                            timeout=5.0
                         )
-                        
-                        if auth_response.status_code == 200:
-                            auth_products_data = auth_response.json()
-                            
-                            for product_data in auth_products_data:
-                                product_id = product_data["id"]
-                                product = ProductInfoSchema(**product_data)
-                                result[product_id] = product
-                                
-                                # Кэшируем результат
+                        logger.info(f"get_products_batch: status={response.status_code}")
+                        if response.status_code == 200:
+                            products_data = response.json()
+                            for pd in products_data:
+                                pid = pd["id"]
+                                result[pid] = ProductInfoSchema(**pd)
                                 try:
-                                    cache_key = f"product:{product_id}"
-                                    await redis_client.set(
-                                        cache_key, 
-                                        json.dumps(product_data), 
-                                        ex=CACHE_TTL
-                                    )
-                                except Exception as e:
+                                    cache_key = f"product:{pid}"
+                                    await redis_client.set(cache_key, json.dumps(pd), ex=CACHE_TTL)
+                                except Exception:
                                     logger.error(f"Ошибка при записи в кэш для продукта {product_id}: {str(e)}")
-                        else:
-                            logger.error(f"Ошибка при получении списка продуктов через авторизованный API, статус: {auth_response.status_code}")
-                        
+                            break
+                        if response.status_code == 401 and attempt < len(backoffs):
+                            await asyncio.sleep(delay)
+                            continue
+                        logger.error(f"get_products_batch: unexpected status {response.status_code}, body={response.text}")
+                        break
             except Exception as e:
                 logger.error(f"Ошибка при получении списка продуктов: {str(e)}")
         

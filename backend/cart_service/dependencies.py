@@ -30,8 +30,6 @@ INTERNAL_SERVICE_KEY = os.getenv("SERVICE_API_KEY", "test")
 
 NOTIFICATION_SERVICE_URL = "http://localhost:8005"  # Адрес сервиса уведомлений
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")  # Адрес сервиса авторизации
-INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")  # устаревший, не используется при client_credentials
-
 # Client credentials for service-to-service auth
 SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
 SERVICE_CLIENTS = {kv.split(":")[0]: kv.split(":")[1] for kv in SERVICE_CLIENTS_RAW.split(",") if ":" in kv}

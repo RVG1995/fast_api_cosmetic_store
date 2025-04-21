@@ -75,6 +75,10 @@ async def get_current_user(
         logger.info(f"Попытка декодирования токена: {access_token[:20]}...")
         logger.info(f"Используемый SECRET_KEY: {SECRET_KEY}")
         payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        # Если это JWT сервисного доступа, возвращаем None, без попытки parsing sub в int
+        if payload.get("scope") == "service":
+            logger.info("get_current_user: service JWT detected, returning None for user")
+            return None
         user_id = payload.get("sub")
         if user_id is None:
             logger.warning("В токене отсутствует sub с ID пользователя")

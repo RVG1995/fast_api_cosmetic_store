@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import pathlib
 from redis import asyncio as aioredis
 from datetime import datetime, timedelta
+from dependencies import _get_service_token
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
@@ -229,54 +230,61 @@ class ProductAPI:
         
         # Если остались ID для запроса
         if to_fetch_ids:
+            backoffs = [0.5, 1, 2]
             # Попробуем сначала сделать пакетный запрос для всех продуктов
             try:
                 batch_url = f"{self.base_url}/products/batch"
                 logger.info(f"Попытка пакетного запроса для {len(to_fetch_ids)} продуктов")
                 
                 async with httpx.AsyncClient() as client:
+                    for delay in backoffs:
                     # Добавляем заголовок service-key для авторизации
-                    headers = {
-                        "service-key": INTERNAL_SERVICE_KEY
-                    }
-                    
-                    response = await client.post(
-                        batch_url, 
-                        json={"product_ids": to_fetch_ids}, 
-                        headers=headers,
-                        timeout=15.0
-                    )
-                    
-                    if response.status_code == 200:
-                        batch_data = response.json()
-                        logger.info(f"Успешно получены данные для {len(batch_data)} продуктов в пакетном запросе")
+                        token = await _get_service_token()
+                        headers = {"Authorization": f"Bearer {token}"}
                         
-                        # Сохраняем результаты в Redis и добавляем в итоговый словарь
-                        for product_data in batch_data:
-                            product_id = product_data.get("id")
-                            if product_id:
-                                # Добавляем в результат
-                                result[product_id] = product_data
-                                
-                                # Сохраняем в Redis, если подключение доступно
-                                if redis:
-                                    try:
-                                        cache_key = f"product:{product_id}"
-                                        await redis.setex(
-                                            cache_key,
-                                            self.cache_ttl,
-                                            json.dumps(product_data)
-                                        )
-                                    except Exception as e:
-                                        logger.warning(f"Ошибка при сохранении в Redis: {str(e)}")
+                        response = await client.post(
+                            batch_url, 
+                            json={"product_ids": to_fetch_ids}, 
+                            headers=headers,
+                            timeout=15.0
+                        )
                         
-                        # Если все ID были успешно получены, возвращаем результат
-                        if all(pid in result for pid in to_fetch_ids):
-                            return result
-                        
-                        # Иначе обновляем список ID для запроса
-                        to_fetch_ids = [pid for pid in to_fetch_ids if pid not in result]
-                        logger.info(f"Осталось получить данные для {len(to_fetch_ids)} продуктов индивидуально")
+                        if response.status_code == 200:
+                            batch_data = response.json()
+                            logger.info(f"Успешно получены данные для {len(batch_data)} продуктов в пакетном запросе")
+                            
+                            # Сохраняем результаты в Redis и добавляем в итоговый словарь
+                            for product_data in batch_data:
+                                product_id = product_data.get("id")
+                                if product_id:
+                                    # Добавляем в результат
+                                    result[product_id] = product_data
+                                    
+                                    # Сохраняем в Redis, если подключение доступно
+                                    if redis:
+                                        try:
+                                            cache_key = f"product:{product_id}"
+                                            await redis.setex(
+                                                cache_key,
+                                                self.cache_ttl,
+                                                json.dumps(product_data)
+                                            )
+                                        except Exception as e:
+                                            logger.warning(f"Ошибка при сохранении в Redis: {str(e)}")
+                            
+                            # Если все ID были успешно получены, возвращаем результат
+                            if all(pid in result for pid in to_fetch_ids):
+                                return result
+                            
+                            # Иначе обновляем список ID для запроса
+                            to_fetch_ids = [pid for pid in to_fetch_ids if pid not in result]
+                            logger.info(f"Осталось получить данные для {len(to_fetch_ids)} продуктов индивидуально")
+                        if response.status_code == 401:
+                            # token expired - clear cache and retry
+                            await redis_client.delete("service_token")
+                            await asyncio.sleep(delay)
+                            continue
+                        break
             except Exception as e:
                 logger.warning(f"Ошибка при выполнении пакетного запроса: {str(e)}")
                 # Продолжаем с индивидуальными запросами

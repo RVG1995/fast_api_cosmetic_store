@@ -23,6 +23,7 @@ import OrderStatusBadge from '../../components/OrderStatusBadge';
 import './OrderDetailPage.css';
 import axios from 'axios';
 import { API_URLS } from '../../utils/constants';
+import { useConfirm } from '../../components/common/ConfirmContext';
 
 const OrderDetailPage = () => {
   const { orderId } = useParams();
@@ -40,9 +41,10 @@ const OrderDetailPage = () => {
   const [canReorder, setCanReorder] = useState(false);
   const [cannotReorderReason, setCannotReorderReason] = useState('');
   const [checkingReorderAvailability, setCheckingReorderAvailability] = useState(false);
+  const confirm = useConfirm();
   
   // Загрузка заказа при монтировании компонента
-  const loadOrder = async () => {
+  const loadOrder = useCallback(async () => {
     console.log('=== ДИАГНОСТИКА ЗАГРУЗКИ ЗАКАЗА ===');
     console.log('ID заказа:', orderId);
     console.log('Пользователь:', user);
@@ -104,7 +106,7 @@ const OrderDetailPage = () => {
         setLoadError(`Ошибка при загрузке заказа: ${err.message}`);
       }
     }
-  };
+  }, [orderId, user]);
   
   // Функция для проверки возможности повторения заказа
   const checkReorderAvailability = async (orderData) => {
@@ -193,11 +195,11 @@ const OrderDetailPage = () => {
     }
   };
   
-  // Запускаем загрузку заказа при монтировании компонента
+  // Запускаем загрузку заказа при монтировании и при изменении loadOrder
   useEffect(() => {
     console.log('OrderDetailPage: useEffect вызван');
     loadOrder();
-  }, [orderId]);
+  }, [loadOrder]);
   
   // Диагностика условий отображения кнопки отмены
   useEffect(() => {
@@ -281,6 +283,16 @@ const OrderDetailPage = () => {
       return;
     }
     
+    // Запрашиваем согласие на обработку персональных данных
+    const agreed = await confirm({
+      title: 'Согласие на обработку персональных данных',
+      body: 'Для повторения заказа необходимо дать согласие на обработку персональных данных. Продолжить?'
+    });
+    if (!agreed) {
+      setReorderError('Для повторения заказа необходимо согласиться на обработку персональных данных');
+      return;
+    }
+    
     setReorderLoading(true);
     setReorderError(null);
     
@@ -295,7 +307,7 @@ const OrderDetailPage = () => {
       const url = `${API_URLS.ORDER_SERVICE}/orders/${orderId}/reorder`;
       console.log('URL запроса повторения заказа:', url);
       
-      const response = await axios.post(url, {}, config);
+      const response = await axios.post(url, { personal_data_agreement: agreed }, config);
       console.log('Ответ от сервера:', response.data);
       
       if (response.data.success) {
@@ -323,12 +335,13 @@ const OrderDetailPage = () => {
     );
   }
   
-  // Отображение ошибки
-  if (error && !order) {
+  // Отображение ошибок загрузки и контекста
+  if ((error || loadError) && !order) {
+    const message = loadError || (typeof error === 'object' ? JSON.stringify(error) : error);
     return (
       <Container className="order-detail-container py-5">
         <Alert variant="danger">
-          {typeof error === 'object' ? JSON.stringify(error) : error}
+          {message}
           <div className="mt-3">
             <Button variant="outline-primary" onClick={() => navigate('/orders')}>
               Вернуться к списку заказов

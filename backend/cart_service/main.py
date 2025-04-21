@@ -1096,9 +1096,7 @@ async def get_user_info(user_id: int) -> Dict[str, Any]:
     Получает информацию о пользователе из сервиса авторизации
     """
     try:
-        auth_service_url = os.environ.get("AUTH_SERVICE_URL", "http://localhost:8000")
-        service_key = os.environ.get("INTERNAL_SERVICE_KEY", "test")
-        
+        auth_service_url = os.environ.get("AUTH_SERVICE_URL", "http://localhost:8000")        
         logger.info(f"Запрос информации о пользователе {user_id} по URL: {auth_service_url}/admin/users/{user_id}")
         backoffs = [0.5, 1, 2]        
         async with httpx.AsyncClient() as client:

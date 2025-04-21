@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import logging
 import pathlib
 import uuid
+from dependencies import verify_service_jwt
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
@@ -175,62 +176,35 @@ async def get_current_user(
         return None
 
 async def get_current_admin_user(
-    request: Request,
-    token: Annotated[Optional[str], Depends(get_token_from_cookie_or_header)],
-    service_key: Optional[str] = Header(None, alias="service-key")
+    current_user: Optional[User] = Depends(get_current_user)
 ) -> Optional[User]:
     """
     Проверяет, что текущий пользователь является администратором,
-    или что запрос содержит правильный сервисный ключ.
-    
-    Если пользователь не аутентифицирован и сервисный ключ неверный, 
-    выбрасывает исключение 401 Unauthorized.
+    Если пользователь не аутентифицирован или не имеет прав администратора, 
+    выбрасывает исключение 401 Unauthorized или 403 Forbidden.
     
     Args:
-        request: Объект запроса
-        token: JWT токен
-        service_key: Секретный ключ для межсервисного взаимодействия
-        
+        current_user: Текущий пользователь, полученный из токена
+         
     Returns:
-        Optional[User]: Пользователь с админ-правами, или None для сервисного ключа
+        User: Пользователь с админ-правами
     """
-    # Проверка сервисного ключа для межсервисного взаимодействия
-    if service_key and service_key == INTERNAL_SERVICE_KEY:
-        logger.info("Запрос авторизован через сервисный ключ")
-        # Для сервисного запроса возвращаем None (означает, что авторизация прошла через ключ)
-        return None
-    
-    # Если нет сервисного ключа, проверяем наличие пользователя с правами админа
-    access_token = None
-    authorization = None
-    
-    # Получаем токен из cookie, если есть
-    for cookie in request.cookies:
-        if cookie == "access_token":
-            access_token = request.cookies[cookie]
-            break
-    
-    # Получаем токен из заголовка Authorization, если есть
-    if "authorization" in request.headers:
-        authorization = request.headers["authorization"]
-    
-    user = await get_current_user(request, access_token, authorization)
-    
-    if not user:
-        logger.warning("Отсутствует авторизованный пользователь и сервисный ключ")
+    # Проверяем, что пользователь аутентифицирован
+    if not current_user:
+        logger.warning("get_current_admin_user: Пользователь не аутентифицирован")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Требуется авторизация или сервисный ключ",
-            headers={"WWW-Authenticate": "Bearer"}
+            detail="Требуется авторизация",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Проверяем, что пользователь имеет права администратора
-    if not (user.is_admin or user.is_super_admin):
-        logger.warning(f"Пользователь {user.id} не имеет прав администратора")
+         
+    # Проверяем, что пользователь имеет права администратора или суперадминистратора
+    if not current_user.is_admin and not current_user.is_super_admin:
+        logger.warning(f"get_current_admin_user: Пользователь {current_user.id} не имеет прав администратора")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недостаточно прав для выполнения операции"
+            detail="Недостаточно прав для выполнения операции",
         )
-    
-    logger.info(f"Администратор {user.id} успешно авторизован")
-    return user 
+        
+    logger.info(f"get_current_admin_user: Пользователь {current_user.id} успешно авторизован как администратор")
+    return current_user 

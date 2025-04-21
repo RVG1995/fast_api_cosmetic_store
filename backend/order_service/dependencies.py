@@ -30,8 +30,6 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
 CART_SERVICE_URL = os.getenv("CART_SERVICE_URL", "http://localhost:8002")
 
-# Сервисный API-ключ для внутренней авторизации между микросервисами
-INTERNAL_SERVICE_KEY = os.getenv("SERVICE_API_KEY", "test")
 
 NOTIFICATION_SERVICE_URL = "http://localhost:8005"  # Адрес сервиса уведомлений
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")  # Адрес сервиса авторизации

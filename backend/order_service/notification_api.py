@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import jwt
 from cache import get_cached_data, set_cached_data, redis_client
 from dotenv import load_dotenv
-from dependencies import _get_service_token,NOTIFICATION_SERVICE_URL,AUTH_SERVICE_URL
+from dependencies import _get_service_token, NOTIFICATION_SERVICE_URL, AUTH_SERVICE_URL
 
 # Load environment variables from .env
 load_dotenv()

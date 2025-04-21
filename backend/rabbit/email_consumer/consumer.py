@@ -24,8 +24,8 @@ load_dotenv()
 
 # Настройки RabbitMQ
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "user")
+RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "password")
 
 # Настройки для Dead Letter Exchange
 DLX_NAME = "dead_letter_exchange"
@@ -166,7 +166,8 @@ def create_order_email_content(order_data):
     
     # Информация о промокоде и скидке
     discount_info = ""
-    promo_code = order_data.get('promo_code')
+    # Берем promo_code из promo_code или promo_code_dict
+    promo_code = order_data.get('promo_code') or order_data.get('promo_code_dict')
     discount_amount = order_data.get('discount_amount', 0)
     
     if promo_code and discount_amount > 0:
@@ -312,7 +313,8 @@ def create_status_update_email_content(order_data):
         status = status.get('name', 'Новый')
 
     # Отладочное логирование для промокода и скидки
-    promo_code = order_data.get('promo_code')
+    # Берем promo_code из promo_code или promo_code_dict
+    promo_code = order_data.get('promo_code') or order_data.get('promo_code_dict')
     discount_amount = order_data.get('discount_amount', 0)
     
     if promo_code:

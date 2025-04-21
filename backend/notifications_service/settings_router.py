@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Optional
 import logging
-from .notifications_service import send_email_message
+from .notifications_service import send_email_message,update_order_status
 
 from . import models, schemas
 from .database import get_db
@@ -131,9 +131,15 @@ async def check_settings(
 async def receive_notification(event: schemas.NotificationEvent, db: AsyncSession = Depends(get_db)):
     logger.info(f"[POST /settings/events] event_type={event.event_type}, user_id={event.user_id}, payload={event.payload}")
     flags = await check_settings(event.user_id, event.event_type, db)
-    if flags['email_enabled']:
+    if flags['email_enabled'] == True and event.event_type == 'order.created':
         if event.payload.get('email') and event.payload.get('user_id'):
             await send_email_message(event.payload)
+    elif flags['email_enabled'] == True and event.event_type == 'order.status_changed':
+        if event.payload.get('email') and event.payload.get('user_id'):
+            await update_order_status(
+                event.payload,
+                event.payload.get('status')
+            )
 
 
 @router.post("/settings", response_model=schemas.NotificationSettingResponse)

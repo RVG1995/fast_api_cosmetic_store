@@ -924,21 +924,22 @@ async def update_order_status(
                 }
                 logger.info(f"Для заказа {updated_order.id} загружен промокод {promo_code.code} (при обновлении статуса)")
         
-        # Получаем токен авторизации из текущего пользователя
-        token = current_user.get("token")
-        
-        # Отправляем уведомление об изменении статуса ПОСЛЕ того, как загрузили промокод
+        # Отправляем уведомление об изменении статуса через Notifications Service
         try:
-            from app.services.order_service import update_order_status
-            if order.email:
-                # Передаем токен для проверки настроек уведомлений
-                result = await update_order_status(updated_order, new_status_name, token)
-                if result:
-                    logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
-                else:
-                    logger.info(f"Уведомление об изменении статуса заказа {order_id} не отправлено (отключено в настройках)")
+            from fastapi.encoders import jsonable_encoder
+            # Подготавливаем payload: убираем историю статусов и обновляем статус
+            payload = jsonable_encoder(updated_order, exclude={'status_history'})
+            payload.pop('status', None)
+            payload['status'] = new_status_name
+            if updated_order.email:
+                await check_notification_settings(
+                    updated_order.user_id,
+                    "order.status_changed",
+                    payload
+                )
+            logger.info(f"Отправлено событие 'order.status_changed' для заказа {order_id}")
         except Exception as e:
-            logger.error(f"Ошибка при отправке уведомления об изменении статуса: {str(e)}")
+            logger.error(f"Ошибка при отправке события изменения статуса: {e}")
         
         return OrderResponse.model_validate(updated_order)
     except HTTPException:

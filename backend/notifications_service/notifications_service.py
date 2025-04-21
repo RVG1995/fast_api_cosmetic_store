@@ -180,23 +180,25 @@ async def update_order_status(
         # Объявляем очередь с использованием общей функции
         queue = await declare_queue(channel, "update_message")
         
-        # Логируем информацию о промокоде для отладки
-        if hasattr(order_data, 'promo_code_dict'):
-            logger.info(f"Для заказа {order_data.id} перед отправкой update_message найден promo_code_dict: {order_data.promo_code_dict}")
+        # Подготовка информации о заказе для логов (словарь или объект)
+        if isinstance(order_data, dict):
+            order_id = order_data.get('id') or order_data.get('order_number')
+            promo_code = order_data.get('promo_code') or order_data.get('promo_code_dict')
         else:
-            logger.warning(f"Для заказа {order_data.id} перед отправкой update_message отсутствует promo_code_dict")
-            
-        if hasattr(order_data, 'promo_code_id') and order_data.promo_code_id:
-            logger.info(f"Для заказа {order_data.id} найден promo_code_id: {order_data.promo_code_id}")
-        
-        # Создаем сообщение
-        message_body = create_order_email_content(order_data, new_status_name)  
-        
-        # Проверяем, что промокод есть в сообщении
-        if 'promo_code' in message_body and message_body['promo_code']:
-            logger.info(f"Промокод успешно добавлен в сообщение: {message_body['promo_code']}")
+            order_id = getattr(order_data, 'id', None)
+            promo_code = getattr(order_data, 'promo_code_dict', None)
+        if promo_code:
+            logger.info(f"Для заказа {order_id} найден promo_code: {promo_code}")
         else:
-            logger.warning(f"Промокод отсутствует в сообщении для заказа {order_data.id}")
+            logger.warning(f"Для заказа {order_id} перед отправкой update_message отсутствует promo_code")
+
+        # Формируем тело сообщения для RabbitMQ
+        if isinstance(order_data, dict):
+            message_body = dict(order_data)
+            message_body['status'] = new_status_name
+            message_body['event_type'] = 'order.status_changed'
+        else:
+            message_body = create_order_email_content(order_data, new_status_name)
         
         # Отправляем сообщение
         await channel.default_exchange.publish(

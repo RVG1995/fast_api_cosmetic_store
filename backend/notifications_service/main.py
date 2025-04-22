@@ -6,6 +6,7 @@ import os
 
 from .database import engine, Base
 from .settings_router import router as settings_router
+from .cache import get_redis, close_redis, invalidate_settings_cache, cache_set_settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,12 @@ async def lifespan(app: FastAPI):
     
     # Инициализация БД и запуск консьюмера
     await init_db()
+    # Инициализация Redis для кэша уведомлений
+    await get_redis()
     yield
+    # Закрытие соединения с Redis
+    await close_redis()
+    await engine.dispose()
 
 
 # Создаем приложение с lifespan

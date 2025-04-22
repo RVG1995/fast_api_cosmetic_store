@@ -50,4 +50,9 @@ INITIAL_RECONNECT_DELAY = float(os.getenv("INITIAL_RECONNECT_DELAY", "1"))
 MAX_RECONNECT_DELAY = float(os.getenv("MAX_RECONNECT_DELAY", "30"))
 CONNECTION_CHECK_INTERVAL = float(os.getenv("CONNECTION_CHECK_INTERVAL", "5"))
 
-EVENT_TYPE_ORDER_STATUS_CHANGED = "order.status_changed" 
+EVENT_TYPE_ORDER_STATUS_CHANGED = "order.status_changed"
+
+# Redis settings for notifications cache
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# TTL for notification settings cache in seconds
+SETTINGS_CACHE_TTL = int(os.getenv("NOTIFICATIONS_SETTINGS_CACHE_TTL", "60")) 

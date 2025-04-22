@@ -4,6 +4,7 @@ import { reviewAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useConfirm } from '../../components/common/ConfirmContext';
+import AdminBackButton from '../../components/common/AdminBackButton';
 
 const AdminProducts = () => {
   const location = useLocation();
@@ -466,6 +467,8 @@ const AdminProducts = () => {
 
   return (
     <div className="admin-products-page container py-4">
+      {/* Кнопка возврата в админку */}
+      <AdminBackButton to="/admin" label="Назад в админку" variant="outline-secondary" className="mb-4" />
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2>Управление товарами</h2>
         <button 

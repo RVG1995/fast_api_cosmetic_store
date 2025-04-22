@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { adminAPI } from '../../utils/api';
 import { useConfirm } from '../../components/common/ConfirmContext';
+import { useNavigate } from 'react-router-dom';
 
 const AdminUsers = () => {
+  const navigate = useNavigate();
   const confirm = useConfirm();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -132,6 +134,14 @@ const AdminUsers = () => {
 
   return (
     <div className="container py-5">
+      <button
+        type="button"
+        className="btn btn-secondary mb-3"
+        onClick={() => navigate(-1)}
+        aria-label="Назад"
+      >
+        ← Назад
+      </button>
       <h2 className="mb-4">Управление пользователями</h2>
       
       {error && <div className="alert alert-danger">{error}</div>}

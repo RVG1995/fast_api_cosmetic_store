@@ -4,6 +4,7 @@ import { productAPI } from '../../utils/api';
 import '../../styles/AdminProductDetail.css';
 import ReviewList from '../../components/reviews/ReviewList';
 import { useConfirm } from '../../components/common/ConfirmContext';
+import AdminBackButton from '../../components/common/AdminBackButton';
 
 const AdminProductDetail = () => {
   const confirm = useConfirm();
@@ -334,9 +335,7 @@ const AdminProductDetail = () => {
           <p>{error}</p>
           <p>Возможно, товар был удален или перемещен.</p>
         </div>
-        <Link to="/admin/products" className="btn btn-primary">
-          Вернуться к списку товаров
-        </Link>
+        <AdminBackButton to="/admin/products" label="Вернуться к списку товаров" />
       </div>
     );
   }
@@ -348,9 +347,7 @@ const AdminProductDetail = () => {
           <h4 className="alert-heading">Товар не найден</h4>
           <p>Запрашиваемый товар не существует или был удален.</p>
         </div>
-        <Link to="/admin/products" className="btn btn-primary">
-          Вернуться к списку товаров
-        </Link>
+        <AdminBackButton to="/admin/products" label="Вернуться к списку товаров" />
       </div>
     );
   }
@@ -374,13 +371,7 @@ const AdminProductDetail = () => {
             <i className="bi bi-trash me-1"></i>
             Удалить
           </button>
-          <Link
-            to="/admin/products"
-            className="btn btn-outline-secondary ms-2"
-          >
-            <i className="bi bi-arrow-left me-1"></i>
-            Назад к списку
-          </Link>
+          <AdminBackButton to="/admin/products" label="Назад к списку товаров" variant="outline-secondary ms-2" />
         </div>
       </div>
 
@@ -739,10 +730,7 @@ const AdminProductDetail = () => {
         </>
       )}
       
-      <Link to="/admin/products" className="btn btn-outline-secondary mt-3">
-        <i className="bi bi-arrow-left me-1"></i>
-        Назад к списку товаров
-      </Link>
+      <AdminBackButton to="/admin/products" label="Вернуться к списку товаров" />
     </div>
   );
 };

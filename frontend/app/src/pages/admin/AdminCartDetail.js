@@ -7,6 +7,7 @@ import {
 import axios from 'axios';
 import { formatDateTime } from '../../utils/dateUtils';
 import { API_URLS, STORAGE_KEYS } from '../../utils/constants';
+import AdminBackButton from '../../components/common/AdminBackButton';
 
 const AdminCartDetail = () => {
   const { cartId } = useParams();
@@ -73,9 +74,10 @@ const AdminCartDetail = () => {
       <Container className="py-5">
         <Alert variant="danger">{error}</Alert>
         <div className="text-center mt-3">
-          <Button variant="primary" onClick={handleBackClick}>
-            Вернуться к списку корзин
-          </Button>
+          <AdminBackButton
+            to="/admin/carts"
+            label="Вернуться к списку корзин"
+          />
         </div>
       </Container>
     );
@@ -86,9 +88,10 @@ const AdminCartDetail = () => {
       <Container className="py-5">
         <Alert variant="warning">Корзина не найдена или была удалена</Alert>
         <div className="text-center mt-3">
-          <Button variant="primary" onClick={handleBackClick}>
-            Вернуться к списку корзин
-          </Button>
+          <AdminBackButton
+            to="/admin/carts"
+            label="Вернуться к списку корзин"
+          />
         </div>
       </Container>
     );
@@ -108,9 +111,11 @@ const AdminCartDetail = () => {
     <Container className="py-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2>Информация о корзине #{cart.id}</h2>
-        <Button variant="outline-primary" onClick={handleBackClick}>
-          Назад к списку корзин
-        </Button>
+        <AdminBackButton
+          to="/admin/carts"
+          label="Назад к списку корзин"
+          variant="outline-primary"
+        />
       </div>
 
       <Row>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Row, Col, Table, Badge, Button, Form, Alert, Spinner, Modal } from 'react-bootstrap';
+import { Card, Row, Col, Table, Badge, Button, Form, Alert, Spinner, Modal, Container } from 'react-bootstrap';
 import { useOrders } from '../../context/OrderContext';
 import { useAuth } from '../../context/AuthContext';
 import { formatDateTime } from '../../utils/dateUtils';
@@ -8,6 +8,7 @@ import { formatPrice } from '../../utils/helpers';
 import OrderStatusBadge from '../../components/OrderStatusBadge';
 import axios from 'axios';
 import { API_URLS } from '../../utils/constants';
+import AdminBackButton from '../../components/common/AdminBackButton';
 
 // Компонент для редактирования товаров в заказе
 const OrderItemsEditor = ({ order, onOrderUpdated }) => {
@@ -725,18 +726,16 @@ const AdminOrderDetail = () => {
   // Если произошла локальная ошибка загрузки
   if (loadError) {
     return (
-      <div className="container py-5">
+      <Container className="py-5">
         <Alert variant="danger">
           {loadError}
         </Alert>
-        <Button 
-          variant="primary" 
-          onClick={() => navigate('/admin/orders')}
+        <AdminBackButton 
+          to="/admin/orders" 
+          label="Вернуться к списку заказов" 
           className="mt-3"
-        >
-          Вернуться к списку заказов
-        </Button>
-      </div>
+        />
+      </Container>
     );
   }
   
@@ -868,11 +867,11 @@ const AdminOrderDetail = () => {
   // Если заказ не загружен, показываем индикатор загрузки
   if ((loading || contextLoading) && !order) {
     return (
-      <div className="container py-5 text-center">
+      <Container className="py-5 text-center">
         <Spinner animation="border" role="status">
           <span className="visually-hidden">Загрузка...</span>
         </Spinner>
-      </div>
+      </Container>
     );
   }
   
@@ -880,50 +879,39 @@ const AdminOrderDetail = () => {
   if ((error || contextError) && !order) {
     const errorMessage = error || contextError;
     return (
-      <div className="container py-5">
+      <Container className="py-5">
         <Alert variant="danger">
           {typeof errorMessage === 'object' ? JSON.stringify(errorMessage) : (errorMessage || 'Произошла ошибка при загрузке данных заказа')}
         </Alert>
-        <Button 
-          variant="primary" 
-          onClick={() => navigate('/admin/orders')}
+        <AdminBackButton 
+          to="/admin/orders" 
+          label="Вернуться к списку заказов" 
           className="mt-3"
-        >
-          Вернуться к списку заказов
-        </Button>
-      </div>
+        />
+      </Container>
     );
   }
   
   // Если заказ не найден
   if (!order) {
     return (
-      <div className="container py-5">
+      <Container className="py-5">
         <Alert variant="warning">
           Заказ с ID {orderId} не найден
         </Alert>
-        <Button 
-          variant="primary" 
-          onClick={() => navigate('/admin/orders')}
+        <AdminBackButton 
+          to="/admin/orders" 
+          label="Вернуться к списку заказов" 
           className="mt-3"
-        >
-          Вернуться к списку заказов
-        </Button>
-      </div>
+        />
+      </Container>
     );
   }
   
   return (
-    <div className="container py-4">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2>Детали заказа #{order.id}-{new Date(order.created_at).getFullYear()}</h2>
-        <Button 
-          variant="outline-secondary" 
-          onClick={() => navigate('/admin/orders')}
-        >
-          Вернуться к списку
-        </Button>
-      </div>
+    <Container className="py-4">
+      <AdminBackButton to="/admin/orders" label="Вернуться к списку заказов" />
+      <h2 className="mb-4">Информация о заказе #{order.id}</h2>
       
       {updateSuccess && (
         <Alert variant="success" className="mb-4">
@@ -1235,7 +1223,7 @@ const AdminOrderDetail = () => {
           </Button>
         </Modal.Footer>
       </Modal>
-    </div>
+    </Container>
   );
 };
 

@@ -70,6 +70,13 @@ class UserModel(Base):
         )
         result = await session.execute(stmt)
         return result.scalars().all()
+
+    @classmethod
+    async def get_all_users(cls, session: AsyncSession) -> List["UserModel"]:
+        """Получить всех пользователей"""
+        stmt = select(cls)
+        result = await session.execute(stmt)
+        return result.scalars().all()
     
     async def activate(self, session: AsyncSession) -> None:
         """Активировать пользователя и удалить токен активации"""

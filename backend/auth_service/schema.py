@@ -27,7 +27,7 @@ class UserCreateShema(BaseModel):
         return value
 
 
-class UserReadShema(BaseModel):
+class UserReadSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     first_name: str
@@ -35,12 +35,12 @@ class UserReadShema(BaseModel):
     email: EmailStr
     
 # Отдельная схема для админ-данных, включающая административные поля
-class AdminUserReadShema(UserReadShema):
+class AdminUserReadShema(UserReadSchema):
     is_active: bool 
     is_admin: bool
     is_super_admin: bool
 
-class TokenShema(BaseModel):
+class TokenSchema(BaseModel):
     access_token: str
     token_type: str
 

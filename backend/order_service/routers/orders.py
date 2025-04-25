@@ -20,7 +20,8 @@ from models import OrderModel, OrderStatusModel, OrderStatusHistoryModel, PromoC
 from schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderDetailResponse, 
     OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics, BatchStatusUpdate,
-    OrderItemsUpdate, OrderItemsUpdateResponse, PromoCodeResponse, OrderResponseWithPromo, OrderDetailResponseWithPromo
+    OrderItemsUpdate, OrderItemsUpdateResponse, PromoCodeResponse, OrderResponseWithPromo, OrderDetailResponseWithPromo,
+    AdminOrderCreate
 )
 from services import (
     create_order, get_order_by_id, get_orders, update_order, 
@@ -1200,4 +1201,146 @@ async def check_can_review_store(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при проверке возможности оставить отзыв на магазин"
+        )
+
+
+@admin_router.post("", response_model=OrderResponseWithPromo, status_code=status.HTTP_201_CREATED)
+async def create_order_admin(
+    order_data: AdminOrderCreate,
+    current_user: Dict[str, Any] = Depends(get_admin_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Создание нового заказа из админки. Доступно только для администраторов.
+    
+    - **order_data**: Данные для создания заказа
+    """
+    try:
+        logger.info(f"Получен запрос на создание заказа из админки: {order_data}")
+        
+        # Получаем токен авторизации администратора для запросов к другим сервисам
+        token = current_user.get("token")
+        
+        # Если передан user_id, используем его, иначе заказ создается без привязки к пользователю
+        user_id = order_data.user_id
+
+        # Преобразуем данные из AdminOrderCreate в OrderCreate
+        create_data = OrderCreate(
+            items=order_data.items,
+            full_name=order_data.full_name,
+            email=order_data.email,
+            phone=order_data.phone,
+            region=order_data.region,
+            city=order_data.city,
+            street=order_data.street,
+            comment=order_data.comment,
+            promo_code=order_data.promo_code,
+            personal_data_agreement=True  # Для админа всегда True
+        )
+        
+        # Проверяем наличие товаров
+        product_ids = [item.product_id for item in order_data.items]
+        availability = await check_products_availability(product_ids, token)
+        
+        # Проверяем, все ли товары доступны
+        unavailable_products = [pid for pid, available in availability.items() if not available]
+        if unavailable_products:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Товары с ID {unavailable_products} недоступны для заказа",
+            )
+        
+        # Создаем заказ через общую функцию
+        order = await create_order(
+            session=session,
+            user_id=user_id,
+            order_data=create_data,
+            product_service_url=PRODUCT_SERVICE_URL,
+            token=token
+        )
+        
+        # Если указан начальный статус и он отличается от дефолтного
+        if order_data.status_id:
+            try:
+                status_data = OrderStatusHistoryCreate(
+                    status_id=order_data.status_id,
+                    notes="Статус установлен при создании заказа администратором"
+                )
+                order = await change_order_status(
+                    session=session,
+                    order_id=order.id,
+                    status_data=status_data,
+                    user_id=current_user["user_id"],
+                    is_admin=True
+                )
+                logger.info(f"Для нового заказа {order.id} установлен статус {order_data.status_id}")
+            except Exception as e:
+                logger.warning(f"Не удалось установить начальный статус {order_data.status_id} для заказа {order.id}: {str(e)}")
+        
+        # Устанавливаем флаг оплаты, если указан
+        if order_data.is_paid:
+            order.is_paid = True
+            await session.commit()
+            logger.info(f"Для нового заказа {order.id} установлен флаг оплаты")
+        
+        # Явно коммитим сессию, чтобы убедиться, что все связанные данные загружены
+        await session.commit()
+        
+        # Вручную запрашиваем заказ со всеми связанными данными
+        loaded_order = await get_order_by_id(session, order.id)
+        
+        # Если у заказа есть промокод, загружаем его
+        if loaded_order.promo_code_id:
+            # Загружаем промокод
+            promo_code = await session.get(PromoCodeModel, loaded_order.promo_code_id)
+            if promo_code:
+                # Создаем словарь с данными промокода для передачи в RabbitMQ
+                loaded_order.promo_code_dict = {
+                    "code": promo_code.code,
+                    "discount_percent": promo_code.discount_percent or 0
+                }
+                logger.info(f"Для нового заказа {loaded_order.id} загружен промокод {promo_code.code}")
+        
+        # Отправляем подтверждение заказа на email через Notifications Service
+        try:
+            if order_data.email and user_id != None:
+                logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
+                # CONVERT loaded_order to plain dict for JSON payload
+                payload = jsonable_encoder(loaded_order)
+                await check_notification_settings(loaded_order.user_id, "order.created", payload)
+        except Exception as e:
+            logger.error(f"Ошибка при отправке email о заказе: {str(e)}")
+        
+        # Явно инвалидируем кэш заказов перед возвратом ответа
+        await invalidate_order_cache(order.id)
+        logger.info(f"Кэш заказа {order.id} и связанных списков инвалидирован перед возвратом ответа")
+        
+        # Преобразуем модель в схему без промокода
+        order_response = OrderResponse.model_validate(loaded_order)
+        
+        # Создаем расширенный ответ с возможностью добавления промокода
+        response_with_promo = OrderResponseWithPromo(**order_response.model_dump())
+        
+        # Если у заказа есть промокод, загружаем его данные вручную
+        if loaded_order.promo_code_id:
+            try:
+                promo_code = await session.get(PromoCodeModel, loaded_order.promo_code_id)
+                if promo_code:
+                    response_with_promo.promo_code = PromoCodeResponse.model_validate(promo_code)
+                    logger.info(f"Для нового заказа {loaded_order.id} загружен промокод {promo_code.code}")
+            except Exception as e:
+                logger.warning(f"Не удалось загрузить промокод {loaded_order.promo_code_id} для заказа {loaded_order.id}: {str(e)}")
+        
+        return response_with_promo
+    except ValueError as e:
+        logger.error(f"Ошибка при создании заказа из админки: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Непредвиденная ошибка при создании заказа из админки: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Произошла ошибка при создании заказа",
         ) 

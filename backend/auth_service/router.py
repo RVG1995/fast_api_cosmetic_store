@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_session
 from models import UserModel, UserSessionModel
 import jwt
-from schema import TokenShema, UserCreateShema, UserReadShema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema
+from schema import TokenSchema, UserCreateShema, UserReadSchema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema
 from datetime import datetime, timedelta, timezone
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
 import secrets
@@ -16,6 +16,7 @@ from utils import get_password_hash, verify_password  # Импортируем �
 from app.services.email_service import send_email_activation_message, send_password_reset_email
 import logging
 import uuid  # Если это еще не импортировано
+from auth_utils import get_current_user, get_admin_user  # Импортируем из auth_utils.py
 
 # Импортируем наши сервисы
 from app.services import (
@@ -48,97 +49,6 @@ router = APIRouter(prefix='/auth', tags=['Авторизация'])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
-async def get_current_user(
-    session: SessionDep, 
-    token: str = Cookie(None, alias="access_token"),
-    authorization: str = Depends(oauth2_scheme)
-) -> UserModel:
-    """
-    Получение текущего пользователя на основе JWT токена
-    
-    Args:
-        session: Сессия базы данных
-        token: Токен из cookies
-        authorization: Токен из заголовка Authorization
-        
-    Returns:
-        UserModel: Объект пользователя
-        
-    Raises:
-        HTTPException: При ошибке аутентификации
-    """
-    logger.debug(f"Получен токен из куки: {token and 'Yes' or 'No'}")
-    logger.debug(f"Получен токен из заголовка: {authorization and 'Yes' or 'No'}")
-
-    actual_token = None
-    
-    # Если токен есть в куках, используем его
-    if token:
-        actual_token = token
-    # Если в куках нет, но есть в заголовке, используем его
-    elif authorization:
-        if authorization.startswith('Bearer '):
-            actual_token = authorization[7:]
-        else:
-            actual_token = authorization
-    
-    if actual_token is None:
-        logger.error("Токен не найден ни в куках, ни в заголовке")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Токен не найден в cookies или заголовке Authorization",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Невозможно проверить учетные данные",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    
-    try:
-        # Используем сервис для декодирования токена
-        payload = await TokenService.decode_token(actual_token)
-        user_id = payload.get("sub")
-        
-        if user_id is None:
-            logger.error("В токене отсутствует поле sub")
-            raise credentials_exception
-            
-        # Проверяем, не отозван ли токен
-        jti = payload.get("jti")
-        if jti and not await session_service.is_session_active(session, jti):
-            logger.warning(f"Попытка использования отозванного токена с JTI: {jti}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Токен был отозван",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Ошибка декодирования токена: {str(e)}")
-        raise credentials_exception
-    
-    # Получаем пользователя с использованием кэширования
-    user = await user_service.get_user_by_id(session, int(user_id))
-    if user is None:
-        logger.error(f"Пользователь с ID {user_id} не найден")
-        raise credentials_exception
-        
-    # Проверяем, активен ли пользователь
-    if not user.is_active:
-        logger.warning(f"Попытка авторизации с неактивным аккаунтом, ID: {user_id}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Аккаунт не активирован",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-        
-    return user
-
-
 conf = ConnectionConfig(
     MAIL_USERNAME = os.getenv('MAIL_USERNAME'),
     MAIL_PASSWORD = os.getenv('MAIL_PASSWORD'),
@@ -149,12 +59,12 @@ conf = ConnectionConfig(
     MAIL_SSL_TLS = os.getenv('MAIL_SSL_TLS', 'True').lower() == 'true'
 )
 
-@router.post("/register", response_model=UserReadShema, status_code=status.HTTP_201_CREATED, summary="Регистрация")
+@router.post("/register", response_model=UserReadSchema, status_code=status.HTTP_201_CREATED, summary="Регистрация")
 async def register(
     user: UserCreateShema,
     session: SessionDep,
     request: Request
-) -> UserReadShema:
+) -> UserReadSchema:
     """
     Регистрация нового пользователя
     
@@ -164,7 +74,7 @@ async def register(
         request: Объект запроса
         
     Returns:
-        UserReadShema: Данные созданного пользователя
+        UserReadSchema: Данные созданного пользователя
         
     Raises:
         HTTPException: При ошибке регистрации
@@ -194,7 +104,7 @@ async def register(
         
         logger.info(f"Пользователь зарегистрирован: {user.email}, ID: {new_user.id}")
         
-        return UserReadShema(
+        return UserReadSchema(
             id=new_user.id,
             first_name=new_user.first_name,
             last_name=new_user.last_name,
@@ -210,13 +120,13 @@ async def register(
             detail="Произошла ошибка при регистрации. Пожалуйста, попробуйте позже."
         )
 
-@router.post("/login", response_model=TokenShema, summary="Вход")
+@router.post("/login", response_model=TokenSchema, summary="Вход")
 async def login(
     session: SessionDep, 
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(), 
     response: Response = None
-) -> TokenShema:
+) -> TokenSchema:
     """
     Авторизация пользователя и получение JWT токена
     
@@ -227,7 +137,7 @@ async def login(
         response: Объект ответа
         
     Returns:
-        TokenShema: JWT токен
+        TokenSchema: JWT токен
         
     Raises:
         HTTPException: При ошибке авторизации
@@ -535,8 +445,8 @@ async def read_users_me_profile(current_user: UserModel = Depends(get_current_us
             is_super_admin=current_user.is_super_admin
         )
     else:
-        from schema import UserReadShema
-        return UserReadShema(**base_data)
+        from schema import UserReadSchema
+        return UserReadSchema(**base_data)
 
 @router.get("/activate/{token}", summary="Активация аккаунта")
 async def activate_user(
@@ -797,7 +707,25 @@ async def get_all_admins(
     logger.info(f"Найдено {len(admins_list)} администраторов")
     return admins_list
 
-@router.post("/token", response_model=TokenShema, summary="Client Credentials Token")
+
+@router.get("/all/users", summary="Получение списка всех пользователей")
+async def get_all_users(
+    session: SessionDep,
+    _: bool = Depends(get_admin_user)
+) -> List[Dict[str, Any]]:
+    """
+    Получает список всех пользователей.
+    Доступ:
+    - Только для администраторов
+    """
+    logger.info("Запрос на получение списка всех пользователей")
+    
+    # Используем метод класса для получения всех пользователей
+    users = await UserModel.get_all_users(session)
+    return users
+
+
+@router.post("/token", response_model=TokenSchema, summary="Client Credentials Token")
 async def service_token(
     grant_type: str = Form(...),
     client_id: str = Form(...),

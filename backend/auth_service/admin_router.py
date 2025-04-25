@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import UserModel
 from schema import AdminUserReadShema
-from router import get_current_user
+from auth_utils import get_current_user, get_admin_user, get_super_admin_user
 from database import get_session
 from utils import verify_service_jwt
 # Получаем сервисный ключ из переменных окружения
@@ -22,28 +22,6 @@ async def verify_service_key(service_key: str = Header(None, alias="service-key"
             detail="Отсутствует или неверный сервисный ключ"
         )
     return True
-
-async def get_admin_user(
-    current_user: UserModel = Depends(get_current_user),
-) -> UserModel:
-    """Проверяет, что текущий пользователь - администратор"""
-    if not (current_user.is_admin or current_user.is_super_admin):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недостаточно прав доступа",
-        )
-    return current_user
-
-async def get_super_admin_user(
-    current_user: UserModel = Depends(get_current_user),
-) -> UserModel:
-    """Проверяет, что текущий пользователь - суперадминистратор"""
-    if not current_user.is_super_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недостаточно прав доступа",
-        )
-    return current_user
 
 @router.get("/users", response_model=List[AdminUserReadShema])
 async def get_all_users(

@@ -437,3 +437,39 @@ class OrderSchema(BaseModel):
     status_history: List[OrderStatusHistorySchema] = []
     
     model_config = ConfigDict(from_attributes=True) 
+
+class AdminOrderCreate(BaseModel):
+    """Схема для создания заказа администратором"""
+    items: List[OrderItemCreate] = Field(..., min_items=1)
+    
+    # Данные о клиенте и доставке
+    full_name: str = Field(..., min_length=2, max_length=255)
+    email: EmailStr
+    phone: str = Field(..., min_length=11, max_length=12)
+    region: str = Field(..., min_length=2, max_length=100)
+    city: str = Field(..., min_length=2, max_length=100)
+    street: str = Field(..., min_length=5, max_length=255)
+    comment: Optional[str] = None
+    
+    # Поле для привязки к пользователю (опционально)
+    user_id: Optional[int] = None
+    
+    # Поле для установки статуса (опционально)
+    status_id: Optional[int] = None
+    
+    # Флаг оплаты (опционально)
+    is_paid: bool = False
+    
+    # Поле для промокода
+    promo_code: Optional[str] = Field(None, min_length=3, max_length=50)
+    
+    @field_validator('phone')
+    def validate_phone_format(cls, v):
+        if not (v.startswith('+7') or v.startswith('8')):
+            raise ValueError('Телефон должен начинаться с "+7" или "8"')
+        if not (v.startswith('+7') and len(v) == 12) and not (v.startswith('8') and len(v) == 11):
+            raise ValueError('Неверный формат телефона. Примеры: 89999999999 или +79999999999')
+        # Проверяем, что строка состоит только из цифр (кроме символа '+')
+        if not all(c.isdigit() for c in v.replace('+', '')):
+            raise ValueError('Телефон должен содержать только цифры')
+        return v

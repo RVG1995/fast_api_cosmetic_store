@@ -916,6 +916,30 @@ export const OrderProvider = ({ children }) => {
     return 0;
   }, [promoCode]);
 
+  // Создание заказа из админки
+  const createAdminOrder = async (orderData) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await axios.post(
+        `${ORDER_SERVICE_URL}/admin/orders`, 
+        orderData, 
+        { withCredentials: true }
+      );
+      
+      console.log('Ответ от сервера createAdminOrder:', response.data);
+      return response.data;
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || err.message || 'Ошибка при создании заказа';
+      console.error('Ошибка при создании заказа из админки:', errorMsg);
+      setError(errorMsg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Значение контекста
   const contextValue = {
     orders,
@@ -940,7 +964,8 @@ export const OrderProvider = ({ children }) => {
     promoCode,
     checkPromoCode,
     clearPromoCode,
-    calculateDiscount
+    calculateDiscount,
+    createAdminOrder
   };
 
   return (

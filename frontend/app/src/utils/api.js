@@ -154,7 +154,7 @@ export const userAPI = {
 
 // API для работы с админ-панелью 
 export const adminAPI = {
-  getAllUsers: async () => await authApi.get('/admin/users'),
+  getAllUsers: async () => await authApi.get('/auth/all/users'),
   activateUser: async (userId) => await authApi.patch(`/admin/users/${userId}/activate`),
   makeAdmin: async (userId) => await authApi.patch(`/admin/users/${userId}/make-admin`),
   removeAdmin: async (userId) => await authApi.patch(`/admin/users/${userId}/remove-admin`),

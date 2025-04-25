@@ -722,7 +722,21 @@ async def get_all_users(
     
     # Используем метод класса для получения всех пользователей
     users = await UserModel.get_all_users(session)
-    return users
+    
+    # Преобразуем объекты UserModel в словари
+    users_list = [
+        {
+            "id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "is_active": user.is_active,
+        }
+        for user in users
+    ]
+    
+    logger.info(f"Найдено {len(users_list)} пользователей")
+    return users_list
 
 
 @router.post("/token", response_model=TokenSchema, summary="Client Credentials Token")

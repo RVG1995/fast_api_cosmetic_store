@@ -5,6 +5,7 @@ import { useOrders } from '../../context/OrderContext';
 import { formatDateTime } from '../../utils/dateUtils';
 import { formatPrice } from '../../utils/helpers';
 import OrderStatusBadge from '../../components/OrderStatusBadge';
+import AdminOrderForm from '../../components/admin/AdminOrderForm';
 import './AdminOrders.css';
 
 const AdminOrders = () => {
@@ -27,6 +28,9 @@ const AdminOrders = () => {
   const [updateInProgress, setUpdateInProgress] = useState(false);
   const [updateResults, setUpdateResults] = useState({ success: 0, errors: 0 });
   const [showResultsModal, setShowResultsModal] = useState(false);
+  
+  // Состояние для модального окна создания заказа
+  const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
 
   // Загрузка статусов заказов при монтировании компонента
   useEffect(() => {
@@ -244,6 +248,55 @@ const AdminOrders = () => {
     setShowResultsModal(false);
   };
 
+  // Обработчик открытия модального окна создания заказа
+  const handleOpenCreateOrderModal = () => {
+    setShowCreateOrderModal(true);
+  };
+
+  // Обработчик закрытия модального окна создания заказа
+  const handleCloseCreateOrderModal = () => {
+    setShowCreateOrderModal(false);
+  };
+
+  // Обработчик успешного создания заказа
+  const handleOrderCreated = (orderData) => {
+    // Обновляем список заказов
+    setCurrentPage(1); // Переходим на первую страницу
+    
+    // Перезагружаем список заказов
+    const loadOrders = async () => {
+      try {
+        const params = {
+          page: 1,
+          size: 10
+        };
+        
+        if (filters.status_id) params.status_id = Number(filters.status_id);
+        if (filters.order_id) params.id = Number(filters.order_id);
+        if (filters.date_from) params.date_from = filters.date_from;
+        if (filters.date_to) params.date_to = filters.date_to;
+        if (filters.username) params.username = filters.username;
+        
+        const response = await getAllOrders(params);
+        
+        if (response && response.items) {
+          setOrders(response.items);
+          
+          // Обновляем пагинацию
+          const total = typeof response.total === 'number' ? response.total : 0;
+          const size = typeof response.size === 'number' && response.size > 0 ? response.size : 10;
+          let calculatedPages = Math.max(1, Math.ceil(total / size));
+          setTotalPages(calculatedPages);
+        }
+      } catch (err) {
+        console.error('Ошибка при загрузке заказов:', err);
+      }
+    };
+    
+    loadOrders();
+    setShowCreateOrderModal(false);
+  };
+
   // Формирование элементов пагинации
   const renderPagination = () => {
     console.log('Рендеринг пагинации, totalPages:', totalPages, 'currentPage:', currentPage);
@@ -385,7 +438,17 @@ const AdminOrders = () => {
 
   return (
     <div className="container py-4 admin-orders-container">
-      <h2 className="mb-4">Управление заказами</h2>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2>Управление заказами</h2>
+        <Button 
+          variant="success" 
+          onClick={handleOpenCreateOrderModal}
+          className="me-2"
+        >
+          <i className="bi bi-plus-circle me-2"></i>
+          Создать заказ
+        </Button>
+      </div>
       
       {error && (
         <div className="alert alert-danger">
@@ -640,6 +703,25 @@ const AdminOrders = () => {
             Закрыть
           </Button>
         </Modal.Footer>
+      </Modal>
+      
+      {/* Модальное окно создания заказа */}
+      <Modal 
+        show={showCreateOrderModal} 
+        onHide={handleCloseCreateOrderModal}
+        size="xl"
+        backdrop="static"
+        keyboard={false}
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Создание нового заказа</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <AdminOrderForm 
+            onClose={handleCloseCreateOrderModal}
+            onSuccess={handleOrderCreated}
+          />
+        </Modal.Body>
       </Modal>
     </div>
   );

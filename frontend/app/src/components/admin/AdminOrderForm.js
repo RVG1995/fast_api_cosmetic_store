@@ -42,9 +42,16 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+
+  // Состояние для промокода
+  const [promoCodeLoading, setPromoCodeLoading] = useState(false);
+  const [promoCodeError, setPromoCodeError] = useState(null);
+  const [appliedPromoCode, setAppliedPromoCode] = useState(null);
+  const [orderTotal, setOrderTotal] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
   
   // Получаем методы из контекста заказов
-  const { getOrderStatuses, createAdminOrder } = useOrders();
+  const { getOrderStatuses, createAdminOrder, checkPromoCode, calculateDiscount } = useOrders();
 
   // Загрузка статусов заказа
   useEffect(() => {
@@ -236,10 +243,104 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     });
   };
 
-  // Вычисление общей суммы заказа
+  // Вычисляем общую сумму заказа
   const totalPrice = useMemo(() => {
     return formData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   }, [formData.items]);
+
+  // Рассчитываем итоговую сумму заказа при изменении товаров
+  useEffect(() => {
+    const total = formData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    setOrderTotal(total);
+    
+    // Перерасчет скидки, если применен промокод
+    if (appliedPromoCode) {
+      let discount = 0;
+      if (appliedPromoCode.discountPercent) {
+        discount = Math.floor(total * appliedPromoCode.discountPercent / 100);
+      } else if (appliedPromoCode.discountAmount) {
+        discount = Math.min(appliedPromoCode.discountAmount, total);
+      }
+      setDiscountAmount(discount);
+    }
+  }, [formData.items, appliedPromoCode]);
+
+  // Обработчик проверки промокода
+  const handleCheckPromoCode = async () => {
+    if (!formData.promo_code || formData.promo_code.trim() === '') {
+      setPromoCodeError('Введите промокод');
+      return;
+    }
+    
+    if (!formData.email || !formData.email.includes('@')) {
+      setPromoCodeError('Введите корректный email для проверки промокода');
+      return;
+    }
+    
+    try {
+      setPromoCodeLoading(true);
+      setPromoCodeError(null);
+      
+      // Проверка телефона для API
+      let phone = formData.phone || '';
+      if (phone && !phone.startsWith('8') && !phone.startsWith('+7')) {
+        phone = '8' + phone;
+      }
+      
+      // Если телефон пустой или слишком короткий, используем дефолтное значение
+      if (!phone || phone.length < 11) {
+        phone = '80000000000';
+      }
+      
+      const result = await checkPromoCode(formData.promo_code, formData.email, phone);
+      
+      if (result && result.is_valid) {
+        const promoData = {
+          code: formData.promo_code,
+          discountPercent: result.discount_percent,
+          discountAmount: result.discount_amount,
+          promoCodeId: result.promo_code?.id
+        };
+        
+        setAppliedPromoCode(promoData);
+        
+        // Рассчитываем скидку
+        let discount = 0;
+        if (result.discount_percent) {
+          discount = Math.floor(orderTotal * result.discount_percent / 100);
+        } else if (result.discount_amount) {
+          discount = Math.min(result.discount_amount, orderTotal);
+        }
+        
+        setDiscountAmount(discount);
+      } else {
+        setPromoCodeError('Недействительный промокод');
+        setAppliedPromoCode(null);
+        setDiscountAmount(0);
+      }
+    } catch (err) {
+      console.error('Ошибка при проверке промокода:', err);
+      setPromoCodeError('Ошибка при проверке промокода');
+      setAppliedPromoCode(null);
+      setDiscountAmount(0);
+    } finally {
+      setPromoCodeLoading(false);
+    }
+  };
+
+  // Обработчик удаления промокода
+  const handleRemovePromoCode = () => {
+    setFormData({
+      ...formData,
+      promo_code: ''
+    });
+    setAppliedPromoCode(null);
+    setDiscountAmount(0);
+    setPromoCodeError(null);
+  };
+
+  // Вычисляем итоговую стоимость с учетом скидки
+  const finalTotal = Math.max(0, orderTotal - discountAmount);
 
   // Обработчик отправки формы
   const handleSubmit = async (e) => {
@@ -286,8 +387,10 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
         orderData.phone = '80000000000';
       }
       
-      // Обработка промокода - если пустой или меньше 3 символов, устанавливаем null
-      if (!orderData.promo_code || orderData.promo_code.length < 3) {
+      // Если промокод был проверен и применен, добавляем его ID
+      if (appliedPromoCode && appliedPromoCode.promoCodeId) {
+        orderData.promo_code_id = appliedPromoCode.promoCodeId;
+      } else if (!orderData.promo_code || orderData.promo_code.length < 3) {
         orderData.promo_code = null;
       }
       
@@ -424,12 +527,57 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Промокод</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="promo_code"
-                    value={formData.promo_code}
-                    onChange={handleChange}
-                  />
+                  <div className="d-flex">
+                    <Form.Control
+                      type="text"
+                      name="promo_code"
+                      value={formData.promo_code}
+                      onChange={handleChange}
+                      disabled={!!appliedPromoCode}
+                    />
+                    {!appliedPromoCode ? (
+                      <Button 
+                        variant="outline-primary" 
+                        className="ms-2"
+                        onClick={handleCheckPromoCode}
+                        disabled={promoCodeLoading}
+                      >
+                        {promoCodeLoading ? (
+                          <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" />
+                        ) : (
+                          "Проверить"
+                        )}
+                      </Button>
+                    ) : (
+                      <Button 
+                        variant="outline-danger" 
+                        className="ms-2"
+                        onClick={handleRemovePromoCode}
+                      >
+                        Удалить
+                      </Button>
+                    )}
+                  </div>
+                  {promoCodeError && (
+                    <Form.Text className="text-danger">{promoCodeError}</Form.Text>
+                  )}
+                  {appliedPromoCode && (
+                    <Alert variant="success" className="mt-2 mb-0">
+                      <div>
+                        <strong>Промокод применен: {appliedPromoCode.code}</strong>
+                      </div>
+                      <div>
+                        {appliedPromoCode.discountPercent ? (
+                          <span>Скидка {appliedPromoCode.discountPercent}%</span>
+                        ) : (
+                          <span>Скидка {formatPrice(appliedPromoCode.discountAmount)} ₽</span>
+                        )}
+                        {orderTotal > 0 && (
+                          <span className="ms-2">({formatPrice(discountAmount)} ₽)</span>
+                        )}
+                      </div>
+                    </Alert>
+                  )}
                 </Form.Group>
               </Col>
             </Row>
@@ -599,9 +747,33 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                   <tfoot>
                     <tr>
                       <th colSpan="3">Итого:</th>
-                      <th>{formatPrice(totalPrice)}</th>
+                      <th>
+                        {appliedPromoCode && discountAmount > 0 ? (
+                          <>
+                            <span style={{ textDecoration: 'line-through', color: '#999' }}>
+                              {formatPrice(totalPrice)} ₽
+                            </span>{' '}
+                            <span className="text-success">
+                              {formatPrice(totalPrice - discountAmount)} ₽
+                            </span>
+                          </>
+                        ) : (
+                          formatPrice(totalPrice)
+                        )}
+                      </th>
                       <th></th>
                     </tr>
+                    {appliedPromoCode && discountAmount > 0 && (
+                      <tr>
+                        <td colSpan="3" className="text-end text-success">
+                          <strong>Скидка по промокоду:</strong>
+                        </td>
+                        <td className="text-success">
+                          <strong>-{formatPrice(discountAmount)} ₽</strong>
+                        </td>
+                        <td></td>
+                      </tr>
+                    )}
                   </tfoot>
                 </table>
               </div>

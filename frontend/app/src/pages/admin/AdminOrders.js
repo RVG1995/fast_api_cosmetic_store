@@ -440,14 +440,35 @@ const AdminOrders = () => {
     <div className="container py-4 admin-orders-container">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2>Управление заказами</h2>
-        <Button 
-          variant="success" 
-          onClick={handleOpenCreateOrderModal}
-          className="me-2"
-        >
-          <i className="bi bi-plus-circle me-2"></i>
-          Создать заказ
-        </Button>
+        <div>
+          <Button 
+            variant={isEditMode ? "secondary" : "primary"} 
+            onClick={toggleEditMode}
+            className="me-2"
+            disabled={loading || updateInProgress}
+          >
+            {isEditMode ? "Отменить изменения" : "Изменить статусы"}
+          </Button>
+          
+          {isEditMode && (
+            <Button 
+              variant="success" 
+              onClick={saveStatusChanges}
+              className="me-2"
+              disabled={loading || updateInProgress || !hasStatusChanges()}
+            >
+              {updateInProgress ? "Сохранение..." : "Сохранить изменения"}
+            </Button>
+          )}
+          
+          <Button 
+            variant="success" 
+            onClick={handleOpenCreateOrderModal}
+          >
+            <i className="bi bi-plus-circle me-2"></i>
+            Создать заказ
+          </Button>
+        </div>
       </div>
       
       {error && (
@@ -547,28 +568,6 @@ const AdminOrders = () => {
           </Form>
         </Card.Body>
       </Card>
-      
-      {/* Кнопки управления режимом редактирования */}
-      <div className="mb-3 d-flex">
-        <Button 
-          variant={isEditMode ? "secondary" : "primary"} 
-          onClick={toggleEditMode}
-          className="me-2"
-          disabled={loading || updateInProgress}
-        >
-          {isEditMode ? "Отменить изменения" : "Изменить статусы"}
-        </Button>
-        
-        {isEditMode && (
-          <Button 
-            variant="success" 
-            onClick={saveStatusChanges}
-            disabled={loading || updateInProgress || !hasStatusChanges()}
-          >
-            {updateInProgress ? "Сохранение..." : "Сохранить изменения"}
-          </Button>
-        )}
-      </div>
       
       {/* Таблица заказов */}
       <Card>

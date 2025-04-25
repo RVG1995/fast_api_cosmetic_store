@@ -1224,17 +1224,41 @@ async def create_order_admin(
         # Если передан user_id, используем его, иначе заказ создается без привязки к пользователю
         user_id = order_data.user_id
 
+        # Обработка пустого промокода
+        promo_code = order_data.promo_code
+        if promo_code == "" or (promo_code and len(promo_code) < 3):
+            promo_code = None
+            
+        # Нормализация телефона
+        phone = order_data.phone
+        # Добавляем префикс, если его нет
+        if phone and not (phone.startswith('8') or phone.startswith('+7')):
+            phone = '8' + phone
+        
+        # Убеждаемся, что телефон имеет нужную длину
+        if phone and len(phone) < 11:
+            if phone.startswith('8'):
+                # Дополняем до 11 цифр для формата 8XXXXXXXXXX
+                missing_digits = 11 - len(phone)
+                if missing_digits > 0:
+                    phone = phone + '0' * missing_digits
+            elif phone.startswith('+7'):
+                # Дополняем до 12 цифр для формата +7XXXXXXXXXX
+                missing_digits = 12 - len(phone)
+                if missing_digits > 0:
+                    phone = phone + '0' * missing_digits
+
         # Преобразуем данные из AdminOrderCreate в OrderCreate
         create_data = OrderCreate(
             items=order_data.items,
             full_name=order_data.full_name,
             email=order_data.email,
-            phone=order_data.phone,
+            phone=phone,  # Используем нормализованный телефон
             region=order_data.region,
             city=order_data.city,
             street=order_data.street,
             comment=order_data.comment,
-            promo_code=order_data.promo_code,
+            promo_code=promo_code,  # Используем обработанный промокод
             personal_data_agreement=True  # Для админа всегда True
         )
         

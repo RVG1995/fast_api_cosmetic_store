@@ -235,6 +235,31 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
         is_paid: Boolean(formData.is_paid)
       };
       
+      // Обработка телефона
+      if (orderData.phone) {
+        // Добавляем префикс 8, если его нет
+        if (!orderData.phone.startsWith('8') && !orderData.phone.startsWith('+7')) {
+          orderData.phone = '8' + orderData.phone;
+        }
+        
+        // Проверяем минимальную длину
+        if (orderData.phone.startsWith('8') && orderData.phone.length < 11) {
+          const missingDigits = 11 - orderData.phone.length;
+          orderData.phone = orderData.phone + '0'.repeat(missingDigits);
+        } else if (orderData.phone.startsWith('+7') && orderData.phone.length < 12) {
+          const missingDigits = 12 - orderData.phone.length;
+          orderData.phone = orderData.phone + '0'.repeat(missingDigits);
+        }
+      } else {
+        // Если телефон пустой, заполняем его дефолтным значением
+        orderData.phone = '80000000000';
+      }
+      
+      // Обработка промокода - если пустой или меньше 3 символов, устанавливаем null
+      if (!orderData.promo_code || orderData.promo_code.length < 3) {
+        orderData.promo_code = null;
+      }
+      
       // Отправляем запрос для создания заказа через контекст
       const response = await createAdminOrder(orderData);
       
@@ -242,7 +267,19 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
       if (onSuccess) onSuccess(response);
     } catch (err) {
       console.error('Ошибка при создании заказа:', err);
-      setError(err.response?.data?.detail || 'Не удалось создать заказ');
+      
+      // Проверяем, является ли detail массивом ошибок валидации
+      const detail = err.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        // Форматируем ошибки в текстовый формат
+        const errorMessages = detail.map(item => 
+          `${item.loc[item.loc.length - 1]}: ${item.msg}`
+        ).join(', ');
+        setError(`Ошибка валидации: ${errorMessages}`);
+      } else {
+        // Если не массив, используем старую логику
+        setError(detail || 'Не удалось создать заказ');
+      }
     } finally {
       setLoading(false);
     }

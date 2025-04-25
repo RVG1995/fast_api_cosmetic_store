@@ -178,21 +178,52 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   const handleAddProduct = () => {
     if (!selectedProduct) return;
     
-    setFormData({
-      ...formData,
-      items: [
-        ...formData.items,
-        {
-          product_id: selectedProduct.id,
-          quantity: parseInt(quantity, 10),
-          product_name: selectedProduct.name,
-          price: selectedProduct.price
-        }
-      ]
-    });
+    // Проверяем, есть ли уже этот товар в списке
+    const existingItemIndex = formData.items.findIndex(
+      item => item.product_id === selectedProduct.id
+    );
+    
+    if (existingItemIndex !== -1) {
+      // Если товар уже есть, увеличиваем количество
+      const newItems = [...formData.items];
+      newItems[existingItemIndex].quantity += parseInt(quantity, 10);
+      
+      setFormData({
+        ...formData,
+        items: newItems
+      });
+    } else {
+      // Если товара нет, добавляем новый
+      setFormData({
+        ...formData,
+        items: [
+          ...formData.items,
+          {
+            product_id: selectedProduct.id,
+            quantity: parseInt(quantity, 10),
+            product_name: selectedProduct.name,
+            price: selectedProduct.price
+          }
+        ]
+      });
+    }
     
     setSelectedProduct(null);
     setQuantity(1);
+  };
+
+  // Обработчик изменения количества товара
+  const handleQuantityChange = (index, newQuantity) => {
+    // Проверяем, что количество положительное
+    if (newQuantity < 1) newQuantity = 1;
+    
+    const newItems = [...formData.items];
+    newItems[index].quantity = parseInt(newQuantity, 10);
+    
+    setFormData({
+      ...formData,
+      items: newItems
+    });
   };
 
   // Обработчик удаления продукта из заказа
@@ -541,7 +572,17 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                       <tr key={index}>
                         <td>{item.product_name}</td>
                         <td>{formatPrice(item.price)}</td>
-                        <td>{item.quantity}</td>
+                        <td>
+                          <Form.Control
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => handleQuantityChange(index, e.target.value)}
+                            size="sm"
+                            style={{ width: '80px' }}
+                            className="text-center"
+                          />
+                        </td>
                         <td>{formatPrice(item.price * item.quantity)}</td>
                         <td>
                           <Button 

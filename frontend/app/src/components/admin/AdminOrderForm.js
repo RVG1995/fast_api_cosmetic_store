@@ -277,6 +277,12 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
       return;
     }
     
+    // Проверка на наличие товаров в заказе
+    if (formData.items.length === 0) {
+      setPromoCodeError('Добавьте хотя бы один товар перед применением промокода');
+      return;
+    }
+    
     try {
       setPromoCodeLoading(true);
       setPromoCodeError(null);

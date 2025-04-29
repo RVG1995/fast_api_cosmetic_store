@@ -1,24 +1,24 @@
+"""
+Модуль для работы с продуктами в API.
+Содержит эндпоинты для создания, чтения, обновления и удаления продуктов,
+а также для поиска и проверки доступности товаров.
+"""
+import os
 import uuid
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Body, Header,APIRouter
-from database import setup_database, get_session, engine
-from models import SubCategoryModel,CategoryModel, ProductModel,CountryModel, BrandModel
-from auth import require_admin, get_current_user, User
-from schema import BrandAddSchema, BrandSchema, BrandUpdateSchema, CategoryAddSchema, CategorySchema, CategoryUpdateSchema, CountryAddSchema, CountrySchema, CountryUpdateSchema, ProductAddSchema,ProductSchema, ProductUpdateSchema, SubCategoryAddSchema, SubCategorySchema, SubCategoryUpdateSchema, PaginatedProductResponse, ProductDetailSchema
+import logging
+from typing import List, Optional, Annotated, Dict
+
+from fastapi import Depends, HTTPException, UploadFile, File, Form, Query, Body, APIRouter, status
+from database import get_session
+from models import ProductModel
+from auth import require_admin, get_current_user
+from schema import PaginatedProductResponse, ProductDetailSchema, ProductSchema, ProductAddSchema
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import load_only
-import os
-import logging
-from sqlalchemy import func
-import json
-from typing import List, Optional, Union, Annotated, Any, Dict
-from fastapi.staticfiles import StaticFiles
-# Импортируем функции для работы с кэшем
-from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, CACHE_TTL, close_redis_connection
 from sqlalchemy.orm import selectinload
+# Импортируем функции для работы с кэшем
+from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, CACHE_TTL
 
 # Определяем директорию для сохранения изображений
 UPLOAD_DIR = "static/images"
@@ -44,7 +44,7 @@ admin_router = APIRouter(
 
 SessionDep = Annotated[AsyncSession,Depends(get_session)]
 
-@router.post("", response_model=ProductSchema, status_code=201)
+@router.post("", response_model=ProductSchema, status_code=201,dependencies=[Depends(require_admin)])
 async def add_product(
     name: str = Form(...),
     price: str = Form(...),
@@ -55,12 +55,30 @@ async def add_product(
     country_id: str = Form(...),
     brand_id: str = Form(...),
     image: Optional[UploadFile] = File(None),
-    admin = Depends(require_admin),
     session: AsyncSession = Depends(get_session)
 ):
-    logger.info(f"Получен запрос на создание продукта: {name}, цена: {price}")
-    logger.info(f"Параметры: description={description}, stock={stock}, category_id={category_id}, subcategory_id={subcategory_id}, country_id={country_id}, brand_id={brand_id}")
-    logger.info(f"Изображение: {image and image.filename}")
+    """Добавляет новый продукт в базу данных.
+    
+    Args:
+        name: Название продукта
+        price: Цена продукта
+        description: Описание продукта (опционально)
+        stock: Количество на складе
+        category_id: ID категории
+        subcategory_id: ID подкатегории (опционально)
+        country_id: ID страны
+        brand_id: ID бренда
+        image: Изображение продукта (опционально)
+        admin: Данные администратора
+        session: Сессия базы данных
+        
+    Returns:
+        ProductSchema: Созданный продукт
+    """
+    logger.info("Получен запрос на создание продукта: %s, цена: %s", name, price)
+    logger.info("Параметры: description=%s, stock=%s, category_id=%s, subcategory_id=%s, country_id=%s, brand_id=%s", 
+                description, stock, category_id, subcategory_id, country_id, brand_id)
+    logger.info("Изображение: %s", image and image.filename)
 
     # Конвертация строковых значений в нужные типы
     try:
@@ -71,8 +89,8 @@ async def add_product(
         country_id_int = int(country_id)
         brand_id_int = int(brand_id)
     except ValueError as e:
-        logger.error(f"Ошибка конвертации типов: {str(e)}")
-        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}")
+        logger.error("Ошибка конвертации типов: %s", str(e))
+        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}") from e
 
     # Если image равен None, принудительно делаем его None
     if not image:
@@ -82,7 +100,7 @@ async def add_product(
     image_url = None
     if image:
         try:
-            logger.info(f"Обработка изображения: {image.filename}")
+            logger.info("Обработка изображения: %s", image.filename)
             extension = os.path.splitext(image.filename)[1]
             unique_filename = f"{uuid.uuid4().hex}{extension}"
             file_path = os.path.join(UPLOAD_DIR, unique_filename)
@@ -91,10 +109,10 @@ async def add_product(
                 buffer.write(await image.read())
             
             image_url = f"/static/images/{unique_filename}"
-            logger.info(f"Изображение сохранено по пути: {image_url}")
+            logger.info("Изображение сохранено по пути: %s", image_url)
         except Exception as e:
-            logger.error(f"Ошибка при сохранении изображения: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Ошибка при сохранении изображения: {str(e)}")
+            logger.error("Ошибка при сохранении изображения: %s", str(e))
+            raise HTTPException(status_code=500, detail=f"Ошибка при сохранении изображения: {str(e)}") from e
 
     try:
         product_data = ProductAddSchema(
@@ -126,17 +144,17 @@ async def add_product(
         
         # Инвалидация кэша продуктов после добавления нового продукта
         await invalidate_cache("products")
-        logger.info(f"Продукт успешно создан: ID={product.id}, кэш продуктов инвалидирован")
+        logger.info("Продукт успешно создан: ID=%s, кэш продуктов инвалидирован", product.id)
         
         return product
     except IntegrityError as e:
         await session.rollback()
         error_detail = str(e.orig) if e.orig else str(e)
-        logger.error(f"Ошибка целостности данных: {error_detail}")
-        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+        logger.error("Ошибка целостности данных: %s", error_detail)
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}") from e
     except Exception as e:
-        logger.error(f"Непредвиденная ошибка: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка при создании продукта: {str(e)}")
+        logger.error("Непредвиденная ошибка: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка при создании продукта: {str(e)}") from e
 
 @router.get('', response_model=PaginatedProductResponse)
 async def get_products(
@@ -149,13 +167,28 @@ async def get_products(
     country_id: Optional[int] = Query(None, description="ID страны для фильтрации"),
     sort: Optional[str] = Query(None, description="Сортировка (newest, price_asc, price_desc)"),
 ):
+    """Получение списка продуктов с пагинацией и фильтрацией.
+    
+    Args:
+        session: Сессия базы данных
+        page: Текущая страница пагинации
+        limit: Количество записей на страницу
+        category_id: ID категории для фильтрации (опционально)
+        subcategory_id: ID подкатегории для фильтрации (опционально)
+        brand_id: ID бренда для фильтрации (опционально)
+        country_id: ID страны для фильтрации (опционально)
+        sort: Сортировка (newest, price_asc, price_desc) (опционально)
+        
+    Returns:
+        PaginatedProductResponse: Пагинированный список продуктов
+    """
     # Формируем ключ кэша на основе параметров запроса
     cache_key = f"{CACHE_KEYS['products']}list:page={page}:limit={limit}:cat={category_id}:subcat={subcategory_id}:brand={brand_id}:country={country_id}:sort={sort}"
     
     # Пробуем получить данные из кэша
     cached_data = await cache_get(cache_key)
     if cached_data:
-        logger.info(f"Данные о продуктах получены из кэша: page={page}, limit={limit}")
+        logger.info("Данные о продуктах получены из кэша: page=%s, limit=%s", page, limit)
         return cached_data
     
     # Расчет пропуска записей для пагинации
@@ -192,11 +225,11 @@ async def get_products(
     
     # Сохраняем данные в кэш
     await cache_set(cache_key, response_data)
-    logger.info(f"Данные о продуктах сохранены в кэш: page={page}, limit={limit}, total={total}")
+    logger.info("Данные о продуктах сохранены в кэш: page=%s, limit=%s, total=%s", page, limit, total)
     
     return response_data
 
-@router.get('/admin', response_model=PaginatedProductResponse)
+@router.get('/admin', response_model=PaginatedProductResponse,dependencies=[Depends(require_admin)])
 async def get_admin_products(
     session: SessionDep,
     page: int = Query(1, description="Текущая страница пагинации"),
@@ -206,15 +239,30 @@ async def get_admin_products(
     brand_id: Optional[int] = Query(None, description="ID бренда для фильтрации"),
     country_id: Optional[int] = Query(None, description="ID страны для фильтрации"),
     sort: Optional[str] = Query(None, description="Сортировка (newest, price_asc, price_desc)"),
-    admin = Depends(require_admin)  # Только администраторы могут использовать этот эндпоинт
 ):
+    """Получение списка продуктов для администраторов с пагинацией и фильтрацией.
+    
+    Args:
+        session: Сессия базы данных
+        page: Текущая страница пагинации
+        limit: Количество записей на страницу
+        category_id: ID категории для фильтрации (опционально)
+        subcategory_id: ID подкатегории для фильтрации (опционально)
+        brand_id: ID бренда для фильтрации (опционально)
+        country_id: ID страны для фильтрации (опционально)
+        sort: Сортировка (newest, price_asc, price_desc) (опционально)
+        admin: Данные администратора
+        
+    Returns:
+        PaginatedProductResponse: Пагинированный список продуктов
+    """
     # Формируем ключ кэша на основе параметров запроса
     cache_key = f"{CACHE_KEYS['products']}admin:page={page}:limit={limit}:cat={category_id}:subcat={subcategory_id}:brand={brand_id}:country={country_id}:sort={sort}"
     
     # Пробуем получить данные из кэша
     cached_data = await cache_get(cache_key)
     if cached_data:
-        logger.info(f"Админские данные о продуктах получены из кэша: page={page}, limit={limit}")
+        logger.info("Админские данные о продуктах получены из кэша: page=%s, limit=%s", page, limit)
         return cached_data
     
     # Расчет пропуска записей для пагинации
@@ -253,7 +301,7 @@ async def get_admin_products(
     # Сохраняем данные в кэш с уменьшенным TTL для админского интерфейса
     # Для админского интерфейса устанавливаем меньшее время жизни кэша, чтобы данные быстрее обновлялись
     await cache_set(cache_key, response_data, CACHE_TTL // 2)
-    logger.info(f"Админские данные о продуктах сохранены в кэш: page={page}, limit={limit}, total={total}")
+    logger.info("Админские данные о продуктах сохранены в кэш: page=%s, limit=%s, total=%s", page, limit, total)
     
     return response_data
 
@@ -269,7 +317,7 @@ async def search_products(session: SessionDep, name: str):
     # Пробуем получить данные из кэша
     cached_data = await cache_get(cache_key)
     if cached_data:
-        logger.info(f"Результаты поиска '{name}' получены из кэша: {len(cached_data)} товаров")
+        logger.info("Результаты поиска '%s' получены из кэша: %s товаров", name, len(cached_data))
         return cached_data
     
     # Формируем поисковый запрос с использованием LIKE
@@ -307,19 +355,20 @@ async def search_products(session: SessionDep, name: str):
     
     # Сохраняем результаты в кэш с меньшим TTL, так как поисковые запросы часто меняются
     await cache_set(cache_key, response_list, CACHE_TTL // 2)
-    logger.info(f"Результаты поиска '{name}' сохранены в кэш: {len(response_list)} товаров")
+    logger.info("Результаты поиска '%s' сохранены в кэш: %s товаров", name, len(response_list))
     
     return response_list
 
 @router.get('/{product_id}',response_model = ProductDetailSchema)
 async def get_product_id(product_id: int, session: SessionDep):
+    """Получает детальную информацию о продукте по его ID."""
     # Формируем ключ кэша
     cache_key = f"{CACHE_KEYS['products']}detail:{product_id}"
     
     # Пробуем получить данные из кэша
     cached_data = await cache_get(cache_key)
     if cached_data:
-        logger.info(f"Данные о продукте ID={product_id} получены из кэша")
+        logger.info("Данные о продукте ID=%s получены из кэша", product_id)
         return cached_data
     
     # Используем оптимизированный метод для получения продукта с его связанными данными
@@ -378,11 +427,11 @@ async def get_product_id(product_id: int, session: SessionDep):
     
     # Сохраняем данные в кэш
     await cache_set(cache_key, response_dict)
-    logger.info(f"Данные о продукте ID={product_id} сохранены в кэш")
+    logger.info("Данные о продукте ID=%s сохранены в кэш", product_id)
     
     return response_dict
 
-@router.put("/{product_id}/form", response_model=ProductSchema)
+@router.put("/{product_id}/form", response_model=ProductSchema,dependencies=[Depends(require_admin)])
 async def update_product_form(
     product_id: int,
     name: Optional[str] = Form(None),
@@ -394,13 +443,13 @@ async def update_product_form(
     country_id: Optional[str] = Form(None),
     brand_id: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
-    admin = Depends(require_admin),
     session: AsyncSession = Depends(get_session)
 ):
-    logger.info(f"Получен запрос на обновление продукта ID={product_id}")
-    logger.info(f"Параметры: name={name}, price={price}, description={description}, stock={stock}")
-    logger.info(f"category_id={category_id}, subcategory_id={subcategory_id}, country_id={country_id}, brand_id={brand_id}")
-    logger.info(f"Изображение: {image and image.filename}")
+    """Обновляет информацию о продукте через форму."""
+    logger.info("Получен запрос на обновление продукта ID=%s", product_id)
+    logger.info("Параметры: name=%s, price=%s, description=%s, stock=%s", name, price, description, stock)
+    logger.info("category_id=%s, subcategory_id=%s, country_id=%s, brand_id=%s", category_id, subcategory_id, country_id, brand_id)
+    logger.info("Изображение: %s", image and image.filename)
     
     # Ищем продукт по id
     query = select(ProductModel).filter(ProductModel.id == product_id)
@@ -408,7 +457,7 @@ async def update_product_form(
     product = result.scalars().first()
     
     if not product:
-        logger.error(f"Продукт с ID={product_id} не найден")
+        logger.error("Продукт с ID=%s не найден", product_id)
         raise HTTPException(status_code=404, detail="Product not found")
 
     try:
@@ -437,10 +486,10 @@ async def update_product_form(
             if subcategory_id == "":
                 # Если передана пустая строка, явно устанавливаем None
                 product.subcategory_id = None
-                logger.info(f"subcategory_id установлен в None для продукта ID={product_id}")
+                logger.info("subcategory_id установлен в None для продукта ID=%s", product_id)
             else:
                 product.subcategory_id = int(subcategory_id)
-                logger.info(f"subcategory_id установлен в {subcategory_id} для продукта ID={product_id}")
+                logger.info("subcategory_id установлен в %s для продукта ID=%s", subcategory_id, product_id)
                 
         if country_id is not None:
             product.country_id = int(country_id)
@@ -458,7 +507,7 @@ async def update_product_form(
                 buffer.write(await image.read())
             
             product.image = f"/static/images/{unique_filename}"
-            logger.info(f"Изображение сохранено по пути: {product.image}")
+            logger.info("Изображение сохранено по пути: %s", product.image)
             
         # Сохраняем обновленный продукт
         await session.commit()
@@ -470,30 +519,30 @@ async def update_product_form(
         await cache_delete_pattern(f"{CACHE_KEYS['products']}detail:{product_id}")
         # Инвалидация кэша в формате cart_service для конкретного продукта
         await cache_delete_pattern(f"product:{product_id}")
-        logger.info(f"Продукт ID={product_id} успешно обновлен, кэш продуктов инвалидирован")
+        logger.info("Продукт ID=%s успешно обновлен, кэш продуктов инвалидирован", product_id)
         
         return product
         
     except ValueError as e:
         await session.rollback()
-        logger.error(f"Ошибка конвертации типов: {str(e)}")
-        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}")
+        logger.error("Ошибка конвертации типов: %s", str(e))
+        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}") from e
     except IntegrityError as e:
         await session.rollback()
         error_detail = str(e.orig) if e.orig else str(e)
-        logger.error(f"Ошибка целостности данных: {error_detail}")
-        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+        logger.error("Ошибка целостности данных: %s", error_detail)
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}") from e
     except Exception as e:
         await session.rollback()
-        logger.error(f"Непредвиденная ошибка при обновлении продукта: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении продукта: {str(e)}")
+        logger.error("Непредвиденная ошибка при обновлении продукта: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении продукта: {str(e)}") from e
 
-@router.delete("/{product_id}", status_code=204)
+@router.delete("/{product_id}", status_code=204,dependencies=[Depends(require_admin)])
 async def delete_product(
     product_id: int,
     session: AsyncSession = Depends(get_session),
-    admin: dict = Depends(require_admin)
 ):
+    """Удаляет продукт по его ID."""
     # Ищем продукт по id
     query = select(ProductModel).filter(ProductModel.id == product_id)
     result = await session.execute(query)
@@ -511,20 +560,19 @@ async def delete_product(
         await invalidate_cache("products")
         # Инвалидация кэша в формате cart_service для конкретного продукта
         await cache_delete_pattern(f"product:{product_id}")
-        logger.info(f"Продукт ID={product_id} успешно удален, кэш продуктов инвалидирован")
+        logger.info("Продукт ID=%s успешно удален, кэш продуктов инвалидирован", product_id)
     except IntegrityError as e:
         await session.rollback()
         error_detail = str(e.orig) if e.orig else str(e)
-        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}") from e
     
     # Возвращаем None для статуса 204 No Content
     return None
 
-@router.post("/check-availability", response_model=Dict[str, bool])
+@router.post("/check-availability", response_model=Dict[str, bool],dependencies=[Depends(get_current_user)])
 async def check_products_availability(
     product_ids: List[int] = Body(..., embed=True),
-    session: AsyncSession = Depends(get_session),
-    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+    session: AsyncSession = Depends(get_session)
 ):
     """
     Проверяет доступность товаров для заказа.
@@ -534,7 +582,7 @@ async def check_products_availability(
     Возвращает словарь, где ключи - это ID товаров, а значения - флаги доступности (True/False)
     """
     try:
-        logger.info(f"Проверка доступности товаров: {product_ids}")
+        logger.info("Проверка доступности товаров: %s", product_ids)
         result = {}
         
         # Получаем товары из базы данных
@@ -554,12 +602,12 @@ async def check_products_availability(
             
             # Преобразуем product_id в строку для корректной сериализации в JSON
             result[str(product_id)] = is_available
-            logger.info(f"Товар {product_id}: {'доступен' if is_available else 'недоступен'}")
+            logger.info("Товар %s: %s", product_id, 'доступен' if is_available else 'недоступен')
         
         return result
     except Exception as e:
-        logger.error(f"Ошибка при проверке доступности товаров: {str(e)}")
+        logger.error("Ошибка при проверке доступности товаров: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Произошла ошибка при проверке доступности товаров: {str(e)}"
-        )
+        ) from e

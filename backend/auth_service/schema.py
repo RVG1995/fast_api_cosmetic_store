@@ -1,9 +1,14 @@
-from pydantic import BaseModel, ConfigDict,EmailStr,Field, model_validator, field_validator
+"""Схемы Pydantic для аутентификации и управления пользователями."""
+
 import re
 from typing import Optional, List
 from datetime import datetime
 
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator, field_validator
+
 class UserCreateShema(BaseModel):
+    """Схема для создания нового пользователя."""
+    
     first_name: str = Field(...,min_length=2,max_length=50, description="Имя")
     last_name: str = Field(...,min_length=2,max_length=50, description="Фамилия")
     email: EmailStr
@@ -11,7 +16,8 @@ class UserCreateShema(BaseModel):
     confirm_password: str = Field(..., min_length=8, max_length=100, description="Подтверждение пароля")
     
     @model_validator(mode="after")
-    def check_passwords_match(cls, model: "UserCreateShema") -> "UserCreateShema":
+    def check_passwords_match(self, model: "UserCreateShema") -> "UserCreateShema":
+        """Проверяет совпадение паролей при создании пользователя."""
         if model.password != model.confirm_password:
             raise ValueError("Пароли не совпадают")
         return model
@@ -20,6 +26,7 @@ class UserCreateShema(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
+        """Проверяет сложность пароля."""
         if not re.search(r"\d", value):
             raise ValueError("Пароль должен содержать хотя бы одну цифру")
         if not re.search(r"[A-Za-z]", value):
@@ -28,6 +35,7 @@ class UserCreateShema(BaseModel):
 
 
 class UserReadSchema(BaseModel):
+    """Схема для чтения данных пользователя."""
     model_config = ConfigDict(from_attributes=True)
     id: int
     first_name: str
@@ -36,15 +44,18 @@ class UserReadSchema(BaseModel):
     
 # Отдельная схема для админ-данных, включающая административные поля
 class AdminUserReadShema(UserReadSchema):
+    """Схема для чтения данных администратора."""
     is_active: bool 
     is_admin: bool
     is_super_admin: bool
 
 class TokenSchema(BaseModel):
+    """Схема для JWT токена."""
     access_token: str
     token_type: str
 
 class TokenDataShema(BaseModel):
+    """Схема для данных JWT токена."""
     email: Optional[str] = None
 
 class PasswordChangeSchema(BaseModel):
@@ -54,7 +65,7 @@ class PasswordChangeSchema(BaseModel):
     confirm_password: str = Field(..., min_length=8, max_length=100, description="Подтверждение нового пароля")
     
     @model_validator(mode="after")
-    def check_passwords_match(cls, model: "PasswordChangeSchema") -> "PasswordChangeSchema":
+    def check_passwords_match(self, model: "PasswordChangeSchema") -> "PasswordChangeSchema":
         """Проверяет, что новый пароль и подтверждение пароля совпадают"""
         if model.new_password != model.confirm_password:
             raise ValueError("Новый пароль и подтверждение не совпадают")
@@ -106,9 +117,11 @@ class PermissionResponseSchema(BaseModel):
     has_permission: Optional[bool] = None
 
 class PasswordResetRequestSchema(BaseModel):
+    """Схема для запроса сброса пароля."""
     email: EmailStr
 
 class PasswordResetSchema(BaseModel):
+    """Схема для сброса пароля."""
     token: str
     new_password: str = Field(..., min_length=8, max_length=100)
     confirm_password: str = Field(..., min_length=8, max_length=100)

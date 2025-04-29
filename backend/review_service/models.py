@@ -1,19 +1,26 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, Boolean, Text, func, select, Enum, Float
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
-from typing import Optional, List, Tuple, Dict, Any
-from sqlalchemy.orm import selectinload
+"""Модуль моделей для сервиса отзывов.
+
+Содержит модели данных для работы с отзывами, комментариями администраторов и реакциями пользователей.
+"""
+
 import enum
 import logging
+from datetime import datetime
+from typing import Optional, List, Tuple, Dict
+
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, selectinload
+from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, Boolean, Text, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+import sqlalchemy.exc
 
 # Настройка логирования
 logger = logging.getLogger("review_service")
 
 class Base(DeclarativeBase):
-    pass
+    """Базовый класс для всех моделей SQLAlchemy."""
 
 class ReviewTypeEnum(enum.Enum):
+    """Перечисление типов отзывов (товар или магазин)."""
     PRODUCT = "product"
     STORE = "store"
 
@@ -56,8 +63,8 @@ class ReviewModel(Base):
             )
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            logger.error(f"Ошибка при получении отзыва по ID {review_id}: {str(e)}")
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            logger.error("Ошибка при получении отзыва по ID %d: %s", review_id, str(e))
             return None
     
     @classmethod
@@ -93,7 +100,7 @@ class ReviewModel(Base):
             total = count_result.scalar() or 0
             
             # Логируем информацию
-            logger.info(f"Найдено {total} отзывов для товара {product_id} (include_hidden={include_hidden})")
+            logger.info("Найдено %d отзывов для товара %d (include_hidden=%s)", total, product_id, include_hidden)
             
             # Добавляем сортировку, пагинацию и подгрузку связанных данных
             offset = (page - 1) * limit
@@ -107,11 +114,11 @@ class ReviewModel(Base):
             reviews = result.scalars().all()
             
             # Логируем результат
-            logger.info(f"Получено {len(reviews)} отзывов для товара {product_id}")
+            logger.info("Получено %d отзывов для товара %d", len(reviews), product_id)
             
             return reviews, total
-        except Exception as e:
-            logger.error(f"Ошибка при получении отзывов для товара {product_id}: {str(e)}")
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            logger.error("Ошибка при получении отзывов для товара %d: %s", product_id, str(e))
             return [], 0
     
     @classmethod
@@ -144,7 +151,7 @@ class ReviewModel(Base):
             total = count_result.scalar() or 0
             
             # Логируем информацию
-            logger.info(f"Найдено {total} отзывов для магазина (include_hidden={include_hidden})")
+            logger.info("Найдено %d отзывов для магазина (include_hidden=%s)", total, include_hidden)
             
             # Добавляем сортировку, пагинацию и подгрузку связанных данных
             offset = (page - 1) * limit
@@ -158,11 +165,11 @@ class ReviewModel(Base):
             reviews = result.scalars().all()
             
             # Логируем результат
-            logger.info(f"Получено {len(reviews)} отзывов для магазина")
+            logger.info("Получено %d отзывов для магазина", len(reviews))
             
             return reviews, total
-        except Exception as e:
-            logger.error(f"Ошибка при получении отзывов для магазина: {str(e)}")
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            logger.error("Ошибка при получении отзывов для магазина: %s", str(e))
             return [], 0
     
     @classmethod
@@ -197,8 +204,8 @@ class ReviewModel(Base):
             reviews = result.scalars().all()
             
             return reviews, total
-        except Exception as e:
-            logger.error(f"Ошибка при получении отзывов пользователя {user_id}: {str(e)}")
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            logger.error("Ошибка при получении отзывов пользователя %d: %s", user_id, str(e))
             return [], 0
     
     @classmethod
@@ -213,8 +220,8 @@ class ReviewModel(Base):
             result = await session.execute(query)
             avg_rating = result.scalar() or 0.0
             return float(avg_rating)
-        except Exception as e:
-            logger.error(f"Ошибка при получении среднего рейтинга товара {product_id}: {str(e)}")
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            logger.error("Ошибка при получении среднего рейтинга товара %d: %s", product_id, str(e))
             return 0.0
     
     @classmethod
@@ -228,12 +235,12 @@ class ReviewModel(Base):
             result = await session.execute(query)
             avg_rating = result.scalar() or 0.0
             return float(avg_rating)
-        except Exception as e:
-            logger.error(f"Ошибка при получении среднего рейтинга магазина: {str(e)}")
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            logger.error("Ошибка при получении среднего рейтинга магазина: %s", str(e))
             return 0.0
     
     @classmethod
-    async def check_user_can_review_product(cls, session: AsyncSession, user_id: int, product_id: int) -> bool:
+    async def check_user_can_review_product(cls, user_id: int, product_id: int) -> bool:
         """
         Проверка, может ли пользователь оставить отзыв на товар
         (заказал и товар доставлен)
@@ -242,12 +249,12 @@ class ReviewModel(Base):
         
         try:
             return await order_api.check_user_can_review_product(user_id, product_id)
-        except Exception as e:
-            logger.error(f"Ошибка при проверке возможности оставить отзыв на товар {product_id} пользователем {user_id}: {str(e)}")
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError, ImportError) as e:
+            logger.error("Ошибка при проверке возможности оставить отзыв на товар %d пользователем %d: %s", product_id, user_id, str(e))
             return False
     
     @classmethod
-    async def check_user_can_review_store(cls, session: AsyncSession, user_id: int) -> bool:
+    async def check_user_can_review_store(cls, user_id: int) -> bool:
         """
         Проверка, может ли пользователь оставить отзыв на магазин
         (имеет хотя бы один доставленный заказ)
@@ -256,8 +263,8 @@ class ReviewModel(Base):
         
         try:
             return await order_api.check_user_can_review_store(user_id)
-        except Exception as e:
-            logger.error(f"Ошибка при проверке возможности оставить отзыв на магазин пользователем {user_id}: {str(e)}")
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError, ImportError) as e:
+            logger.error("Ошибка при проверке возможности оставить отзыв на магазин пользователем %d: %s", user_id, str(e))
             return False
     
     def get_reaction_stats(self) -> Dict[str, int]:
@@ -273,9 +280,9 @@ class ReviewModel(Base):
                 elif reaction.reaction_type == ReactionTypeEnum.DISLIKE.value:
                     dislikes += 1
             
-            logger.info(f"Подсчитаны реакции для отзыва {self.id}: likes={likes}, dislikes={dislikes}")
+            logger.info("Подсчитаны реакции для отзыва %d: likes=%d, dislikes=%d", self.id, likes, dislikes)
         else:
-            logger.warning(f"У отзыва {self.id} не загружены реакции, статистика может быть неточной")
+            logger.warning("У отзыва %d не загружены реакции, статистика может быть неточной", self.id)
         
         return {
             "likes": likes,
@@ -305,12 +312,13 @@ class AdminCommentModel(Base):
         """Получение комментария по ID"""
         try:
             return await session.get(cls, comment_id)
-        except Exception as e:
-            logger.error(f"Ошибка при получении комментария по ID {comment_id}: {str(e)}")
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            logger.error("Ошибка при получении комментария по ID %d: %s", comment_id, str(e))
             return None
 
 
 class ReactionTypeEnum(enum.Enum):
+    """Перечисление типов реакций на отзывы (лайк или дизлайк)."""
     LIKE = "like"
     DISLIKE = "dislike"
 
@@ -346,6 +354,6 @@ class ReviewReactionModel(Base):
             )
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            logger.error(f"Ошибка при получении реакции пользователя {user_id} на отзыв {review_id}: {str(e)}")
-            return None 
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            logger.error("Ошибка при получении реакции пользователя %d на отзыв %d: %s", user_id, review_id, str(e))
+            return None

@@ -1,23 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Query, Path
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional, Dict, Any
 import logging
 import os
-from math import ceil
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from sqlalchemy.exc import SQLAlchemyError
-import sys
 
-from database import get_session, setup_database, init_db
-from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel
-from auth import User, get_current_user, check_admin_access, check_authenticated
-from product_api import ProductAPI, get_product_api
-from cart_api import CartAPI, get_cart_api
-from email_service import EmailService
+from database import setup_database
 from database import engine
-from routers.orders import router as orders_router, admin_router as orders_admin_router
+from routers.orders import router as order_router
+from routers.admin_orders import admin_router
 from routers.order_statuses import router as order_statuses_router
 from routers.payment_statuses import router as payment_statuses_router
 from routers.promo_codes import router as promo_codes_router, admin_router as promo_codes_admin_router
@@ -36,7 +27,7 @@ logger = logging.getLogger("order_service")
 
 # Определяем функцию жизненного цикла
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(fastapi_app: FastAPI):
     """
     Выполняется при запуске и остановке приложения.
     Инициализирует базу данных при запуске и закрывает соединения при остановке.
@@ -101,8 +92,8 @@ app.add_middleware(
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "static/uploads")
 
 # Подключение роутеров
-app.include_router(orders_router)
-app.include_router(orders_admin_router)
+app.include_router(order_router)
+app.include_router(admin_router)
 app.include_router(order_statuses_router)
 app.include_router(payment_statuses_router)
 app.include_router(promo_codes_router)

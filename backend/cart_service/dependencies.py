@@ -1,15 +1,15 @@
-from typing import Optional, Dict, Any
-from fastapi import Depends, HTTPException, status, Header,Cookie
-from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
+"""Зависимости и утилиты аутентификации для сервиса корзины."""
+
 import os
-import jwt
-from jwt.exceptions import PyJWTError
 import logging
+from datetime import datetime, timezone
+import jwt
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
 from dotenv import load_dotenv
 from cache import cache_get, cache_set
-from datetime import datetime, timezone
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -32,7 +32,11 @@ NOTIFICATION_SERVICE_URL = "http://localhost:8005"  # Адрес сервиса 
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")  # Адрес сервиса авторизации
 # Client credentials for service-to-service auth
 SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
-SERVICE_CLIENTS = {kv.split(":")[0]: kv.split(":")[1] for kv in SERVICE_CLIENTS_RAW.split(",") if ":" in kv}
+SERVICE_CLIENTS = {
+    kv.split(":")[0]: kv.split(":")[1] 
+    for kv in SERVICE_CLIENTS_RAW.split(",") 
+    if ":" in kv
+}
 SERVICE_CLIENT_ID = os.getenv("SERVICE_CLIENT_ID","carts")
 SERVICE_TOKEN_URL = f"{AUTH_SERVICE_URL}/auth/token"
 SERVICE_TOKEN_EXPIRE_MINUTES = int(os.getenv("SERVICE_TOKEN_EXPIRE_MINUTES", "30"))
@@ -57,8 +61,8 @@ async def _get_service_token():
         try:
             r = await client.post(f"{AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
             r.raise_for_status()
-        except Exception as e:
-            logger.error(f"_get_service_token: failed fetch token: {e}")
+        except (httpx.HTTPError, httpx.RequestError) as e:
+            logger.error("_get_service_token: failed fetch token: %s", e)
             raise
         new_token = r.json().get("access_token")
         if not new_token:
@@ -70,7 +74,7 @@ async def _get_service_token():
         exp = payload.get("exp")
         if exp:
             ttl = max(int(exp - datetime.now(timezone.utc).timestamp() - 5), 1)
-    except Exception:
+    except (jwt.InvalidTokenError, jwt.ExpiredSignatureError, jwt.DecodeError):
         pass
     await cache_set("service_token_carts", new_token, ttl)
     return new_token
@@ -83,8 +87,8 @@ async def verify_service_jwt(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
         payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
     return True

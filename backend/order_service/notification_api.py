@@ -1,20 +1,29 @@
-import httpx
-import logging
-import os
-from typing import Optional, Dict, Any, List
+"""API для работы с уведомлениями и административными функциями."""
+
 import asyncio
-from datetime import datetime, timezone
-import jwt
-from cache import get_cached_data, set_cached_data, redis_client
+import logging
+from typing import Optional, Dict, Any, List
+
+import httpx
 from dotenv import load_dotenv
-from dependencies import _get_service_token, NOTIFICATION_SERVICE_URL, AUTH_SERVICE_URL
+
+from cache import redis_client
+from dependencies import (
+    _get_service_token,
+    NOTIFICATION_SERVICE_URL,
+    AUTH_SERVICE_URL,
+)
 
 # Load environment variables from .env
 load_dotenv()
 
 logger = logging.getLogger("order_service.notification_api")
 
-async def check_notification_settings(user_id: str, event_type: str, payload: dict) -> Dict[str, bool]:
+async def check_notification_settings(
+    user_id: str,
+    event_type: str,
+    payload: dict
+) -> Dict[str, bool]:
     """
     Проверяет настройки уведомлений пользователя для указанного типа события
     
@@ -49,18 +58,22 @@ async def check_notification_settings(user_id: str, event_type: str, payload: di
         # now response contains result
         if response.status_code == 200:
             settings = response.json()
-            logger.info(f"Получены настройки уведомлений для пользователя {user_id}, тип события {event_type}: {settings}")
+            logger.info("Получены настройки уведомлений для пользователя %s, тип события %s: %s", 
+                       user_id, event_type, settings)
             return settings
         elif response.status_code == 404:
             # Настройки не найдены, используем значения по умолчанию
-            logger.info(f"Настройки уведомлений для пользователя {user_id}, тип события {event_type} не найдены")
+            logger.info("Настройки уведомлений для пользователя %s, тип события %s не найдены", 
+                       user_id, event_type)
             return {"email_enabled": True, "push_enabled": True}
         else:
-            logger.warning(f"Ошибка при получении настроек уведомлений: {response.status_code}, {response.text}")
+            logger.warning("Ошибка при получении настроек уведомлений: %s, %s", 
+                         response.status_code, response.text)
             return {"email_enabled": True, "push_enabled": True}  # По умолчанию уведомления включены
                 
-    except Exception as e:
-        logger.error(f"Ошибка при запросе настроек уведомлений: {str(e)}")
+    except (httpx.RequestError, httpx.HTTPStatusError) as e:
+        logger.error("Ошибка при запросе настроек уведомлений: %s", str(e))
+        return {"email_enabled": True, "push_enabled": True}
 
 async def get_admin_users(token: Optional[str] = None) -> List[Dict[str, Any]]:
     """
@@ -84,12 +97,13 @@ async def get_admin_users(token: Optional[str] = None) -> List[Dict[str, Any]]:
             
             if response.status_code == 200:
                 admins = response.json()
-                logger.info(f"Получен список администраторов: {len(admins)} пользователей")
+                logger.info("Получен список администраторов: %d пользователей", len(admins))
                 return admins
             else:
-                logger.warning(f"Ошибка при получении списка администраторов: {response.status_code}, {response.text}")
+                logger.warning("Ошибка при получении списка администраторов: %s, %s", 
+                             response.status_code, response.text)
                 return []
                 
-    except Exception as e:
-        logger.error(f"Ошибка при запросе списка администраторов: {str(e)}")
-        return [] 
+    except (httpx.RequestError, httpx.HTTPStatusError) as e:
+        logger.error("Ошибка при запросе списка администраторов: %s", str(e))
+        return []

@@ -1,15 +1,19 @@
+"""
+Модуль для обработки email-сообщений из RabbitMQ.
+Содержит функции для отправки различных типов email-уведомлений.
+"""
+
 import asyncio
 import json
 import os
 import logging
-import time
-from typing import Dict, Any, Callable, List, Optional
-from datetime import datetime, timedelta
+from typing import Dict, Callable, Optional
+from datetime import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 import aio_pika
 import aiosmtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
 # Настройка логирования
@@ -92,9 +96,9 @@ async def send_email(recipient: str, subject: str, html_content: str) -> None:
             password=SMTP_PASSWORD,
             use_tls=True
         )
-        logger.info(f"Письмо успешно отправлено на {recipient}")
+        logger.info("Письмо успешно отправлено на %s", recipient)
     except Exception as e:
-        logger.error(f"Ошибка при отправке письма: {e}")
+        logger.error("Ошибка при отправке письма: %s", e)
         raise
 
 
@@ -113,7 +117,7 @@ def load_template(template_name: str) -> str:
         with open(template_path, 'r', encoding='utf-8') as file:
             return file.read()
     except Exception as e:
-        logger.error(f"Ошибка при загрузке шаблона {template_name}: {e}")
+        logger.error("Ошибка при загрузке шаблона %s: %s", template_name, e)
         raise
 
 
@@ -160,8 +164,8 @@ def create_order_email_content(order_data):
             dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))           
             # Форматируем дату в виде "день месяц год"
             formatted_date = f"{dt.day}-{dt.month}-{dt.year}"
-        except Exception as e:
-            logger.warning(f"Ошибка при форматировании даты: {e}")
+        except (ValueError, TypeError) as e:
+            logger.warning("Ошибка при форматировании даты: %s", e)
             formatted_date = created_at.split('T')[0] if 'T' in created_at else created_at
     
     # Информация о промокоде и скидке
@@ -318,11 +322,11 @@ def create_status_update_email_content(order_data):
     discount_amount = order_data.get('discount_amount', 0)
     
     if promo_code:
-        logger.info(f"Промокод в create_status_update_email_content: {promo_code}")
+        logger.info("Промокод в create_status_update_email_content: %s", promo_code)
     else:
-        logger.warning(f"Промокод отсутствует в create_status_update_email_content для заказа {order_data.get('order_number')}")
+        logger.warning("Промокод отсутствует в create_status_update_email_content для заказа %s", order_data.get('order_number'))
         
-    logger.info(f"Сумма скидки в create_status_update_email_content: {discount_amount}")
+    logger.info("Сумма скидки в create_status_update_email_content: %s", discount_amount)
 
     # Формируем таблицу с товарами
     items_html = ""
@@ -360,8 +364,8 @@ def create_status_update_email_content(order_data):
             
             # Форматируем дату в виде "день месяц год"
             formatted_date = f"{dt.day} {months[dt.month]} {dt.year}"
-        except Exception as e:
-            logger.warning(f"Ошибка при форматировании даты: {e}")
+        except (ValueError, TypeError) as e:
+            logger.warning("Ошибка при форматировании даты: %s", e)
             formatted_date = created_at.split('T')[0] if 'T' in created_at else created_at
 
     # Информация о промокоде и скидке
@@ -504,9 +508,9 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         if retry_count > 0:
-            logger.info(f"Повторная попытка {retry_count}/{MAX_RETRY_COUNT} для сообщения email_message: {message_body}")
+            logger.info("Повторная попытка %s/%s для сообщения email_message: %s", retry_count, MAX_RETRY_COUNT, message_body)
         else:
-            logger.info(f"Получено сообщение email_message: {message_body}")
+            logger.info("Получено сообщение email_message: %s", message_body)
         
         # Извлекаем необходимые данные
         email = message_body["email"]
@@ -519,13 +523,13 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
         # Отправляем письмо
         await send_email(email, subject, html_content)
         
-        logger.info(f"Сообщение для заказа {order_number} успешно обработано")
+        logger.info("Сообщение для заказа %s успешно обработано", order_number)
         
         # Подтверждаем успешную обработку
         await message.ack()
-    except Exception as e:
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
         error_msg = f"Ошибка при обработке сообщения: {e}"
-        logger.error(error_msg)
+        logger.error("%s", error_msg)
         
         # Проверяем счетчик повторных попыток
         headers = message.headers or {}
@@ -540,7 +544,7 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
             # Публикуем в очередь retry через новое соединение
             retry_connection = await get_connection_with_retry()
             retry_channel = await retry_connection.channel()
-            retry_queue = f"email_message.retry"
+            retry_queue = "email_message.retry"
             await retry_channel.default_exchange.publish(
                 aio_pika.Message(
                     body=message.body,
@@ -550,11 +554,11 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
                 routing_key=retry_queue
             )
             await close_connection(retry_connection)
-            logger.info(f"Сообщение помещено в очередь {retry_queue} для повторной попытки {retry_count}/{MAX_RETRY_COUNT}")
+            logger.info("Сообщение помещено в очередь %s для повторной попытки %s/%s", retry_queue, retry_count, MAX_RETRY_COUNT)
             await message.ack()
         else:
             # Отклоняем сообщение, чтобы оно попало в DLX
-            logger.warning(f"Превышено количество попыток ({MAX_RETRY_COUNT}). Сообщение будет перемещено в DLX.")
+            logger.warning("Превышено количество попыток (%s). Сообщение будет перемещено в DLX.", MAX_RETRY_COUNT)
             await message.reject(requeue=False)
 
 
@@ -573,9 +577,9 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         if retry_count > 0:
-            logger.info(f"Повторная попытка {retry_count}/{MAX_RETRY_COUNT} для сообщения notification_message")
+            logger.info("Повторная попытка %s/%s для сообщения notification_message", retry_count, MAX_RETRY_COUNT)
         else:
-            logger.info(f"Получено уведомление о товарах с низким остатком")
+            logger.info("Получено уведомление о товарах с низким остатком")
         
         # Извлекаем необходимые данные
         if "low_stock_products" in message_body:
@@ -640,7 +644,7 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
             # Отправляем письмо администратору
             await send_email(admin_email, subject, html_content)
             
-            logger.info(f"Уведомление о {len(low_stock_products)} товарах с низким остатком успешно отправлено на {admin_email}")
+            logger.info("Уведомление о %s товарах с низким остатком успешно отправлено на %s", len(low_stock_products), admin_email)
         
         # Обработка устаревшего формата сообщения (для обратной совместимости)
         elif "product_name" in message_body and "stock" in message_body:
@@ -679,16 +683,16 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
             # Отправляем письмо администратору
             await send_email(admin_email, subject, html_content)
             
-            logger.info(f"Уведомление о низком остатке товара '{product_name}' (остаток: {stock}) успешно отправлено на {admin_email}")
+            logger.info("Уведомление о низком остатке товара '%s' (остаток: %s) успешно отправлено на %s", product_name, stock, admin_email)
         
         else:
             logger.error("Некорректный формат сообщения об остатке товаров")
         
         # Подтверждаем успешную обработку
         await message.ack()
-    except Exception as e:
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
         error_msg = f"Ошибка при обработке уведомления: {e}"
-        logger.error(error_msg)
+        logger.error("%s", error_msg)
         
         # Проверяем счетчик повторных попыток
         headers = message.headers or {}
@@ -703,7 +707,7 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
             # Публикуем в очередь retry через новое соединение
             retry_connection = await get_connection_with_retry()
             retry_channel = await retry_connection.channel()
-            retry_queue = f"notification_message.retry"
+            retry_queue = "notification_message.retry"
             await retry_channel.default_exchange.publish(
                 aio_pika.Message(
                     body=message.body,
@@ -713,11 +717,11 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
                 routing_key=retry_queue
             )
             await close_connection(retry_connection)
-            logger.info(f"Сообщение помещено в очередь {retry_queue} для повторной попытки {retry_count}/{MAX_RETRY_COUNT}")
+            logger.info("Сообщение помещено в очередь %s для повторной попытки %s/%s", retry_queue, retry_count, MAX_RETRY_COUNT)
             await message.ack()
         else:
             # Отклоняем сообщение, чтобы оно попало в DLX
-            logger.warning(f"Превышено количество попыток ({MAX_RETRY_COUNT}). Сообщение будет перемещено в DLX.")
+            logger.warning("Превышено количество попыток (%s). Сообщение будет перемещено в DLX.", MAX_RETRY_COUNT)
             await message.reject(requeue=False)
 
 
@@ -736,18 +740,18 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         if retry_count > 0:
-            logger.info(f"Повторная попытка {retry_count}/{MAX_RETRY_COUNT} для сообщения update_message: {message_body}")
+            logger.info("Повторная попытка %s/%s для сообщения update_message: %s", retry_count, MAX_RETRY_COUNT, message_body)
         else:
-            logger.info(f"Получено сообщение update_message: {message_body}")
+            logger.info("Получено сообщение update_message: %s", message_body)
         
         # Добавляем отладочное логирование для промокода
         if 'promo_code' in message_body:
-            logger.info(f"Промокод в update_message: {message_body['promo_code']}")
+            logger.info("Промокод в update_message: %s", message_body['promo_code'])
         else:
-            logger.warning(f"Промокод отсутствует в update_message для заказа {message_body.get('order_number')}")
+            logger.warning("Промокод отсутствует в update_message для заказа %s", message_body.get('order_number'))
             
         if 'discount_amount' in message_body:
-            logger.info(f"Сумма скидки в update_message: {message_body['discount_amount']}")
+            logger.info("Сумма скидки в update_message: %s", message_body['discount_amount'])
             
         # Извлекаем необходимые данные
         email = message_body["email"]
@@ -760,13 +764,13 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
         # Отправляем письмо
         await send_email(email, subject, html_content)
         
-        logger.info(f"Сообщение для заказа {order_number} успешно обработано")
+        logger.info("Сообщение для заказа %s успешно обработано", order_number)
         
         # Подтверждаем успешную обработку
         await message.ack()
-    except Exception as e:
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
         error_msg = f"Ошибка при обработке сообщения: {e}"
-        logger.error(error_msg)
+        logger.error("%s", error_msg)
         
         # Проверяем счетчик повторных попыток
         headers = message.headers or {}
@@ -781,7 +785,7 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
             # Публикуем в очередь retry через новое соединение
             retry_connection = await get_connection_with_retry()
             retry_channel = await retry_connection.channel()
-            retry_queue = f"update_message.retry"
+            retry_queue = "update_message.retry"
             await retry_channel.default_exchange.publish(
                 aio_pika.Message(
                     body=message.body,
@@ -791,11 +795,11 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
                 routing_key=retry_queue
             )
             await close_connection(retry_connection)
-            logger.info(f"Сообщение помещено в очередь {retry_queue} для повторной попытки {retry_count}/{MAX_RETRY_COUNT}")
+            logger.info("Сообщение помещено в очередь %s для повторной попытки %s/%s", retry_queue, retry_count, MAX_RETRY_COUNT)
             await message.ack()
         else:
             # Отклоняем сообщение, чтобы оно попало в DLX
-            logger.warning(f"Превышено количество попыток ({MAX_RETRY_COUNT}). Сообщение будет перемещено в DLX.")
+            logger.warning("Превышено количество попыток (%s). Сообщение будет перемещено в DLX.", MAX_RETRY_COUNT)
             await message.reject(requeue=False)
 
 
@@ -864,9 +868,9 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         if retry_count > 0:
-            logger.info(f"Повторная попытка {retry_count}/{MAX_RETRY_COUNT} для сообщения registration_message")
+            logger.info("Повторная попытка %s/%s для сообщения registration_message", retry_count, MAX_RETRY_COUNT)
         else:
-            logger.info(f"Получено сообщение registration_message: {message_body}")
+            logger.info("Получено сообщение registration_message: %s", message_body)
         
         # Извлекаем необходимые данные
         email = message_body["email"]
@@ -880,13 +884,13 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
         # Отправляем письмо
         await send_email(email, subject, html_content)
         
-        logger.info(f"Сообщение для пользователя {user_id} успешно обработано")
+        logger.info("Сообщение для пользователя %s успешно обработано", user_id)
         
         # Подтверждаем успешную обработку
         await message.ack()
-    except Exception as e:
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
         error_msg = f"Ошибка при обработке сообщения: {e}"
-        logger.error(error_msg)
+        logger.error("%s", error_msg)
         
         # Проверяем счетчик повторных попыток
         headers = message.headers or {}
@@ -901,7 +905,7 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
             # Публикуем в очередь retry через новое соединение
             retry_connection = await get_connection_with_retry()
             retry_channel = await retry_connection.channel()
-            retry_queue = f"registration_message.retry"
+            retry_queue = "registration_message.retry"
             await retry_channel.default_exchange.publish(
                 aio_pika.Message(
                     body=message.body,
@@ -911,15 +915,24 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
                 routing_key=retry_queue
             )
             await close_connection(retry_connection)
-            logger.info(f"Сообщение помещено в очередь {retry_queue} для повторной попытки {retry_count}/{MAX_RETRY_COUNT}")
+            logger.info("Сообщение помещено в очередь %s для повторной попытки %s/%s", retry_queue, retry_count, MAX_RETRY_COUNT)
             await message.ack()
         else:
             # Отклоняем сообщение, чтобы оно попало в DLX
-            logger.warning(f"Превышено количество попыток ({MAX_RETRY_COUNT}). Сообщение будет перемещено в DLX.")
+            logger.warning("Превышено количество попыток (%s). Сообщение будет перемещено в DLX.", MAX_RETRY_COUNT)
             await message.reject(requeue=False)
 
 
 def create_password_reset_email_content(reset_data):
+    """
+    Создает HTML-содержимое для письма со ссылкой для сброса пароля
+    
+    Args:
+        reset_data (dict): Данные для сброса пароля, включая ссылку
+        
+    Returns:
+        str: HTML-содержимое письма
+    """
     reset_link = reset_data.get('reset_link', '#')
     html = f"""
     <!DOCTYPE html>
@@ -954,6 +967,12 @@ def create_password_reset_email_content(reset_data):
 
 
 async def password_reset_message(message: aio_pika.IncomingMessage) -> None:
+    """
+    Обрабатывает входящее сообщение из очереди password_reset_message
+    
+    Args:
+        message: Сообщение из очереди
+    """
     try:
         message_body = json.loads(message.body.decode())
         email = message_body["email"]
@@ -962,10 +981,10 @@ async def password_reset_message(message: aio_pika.IncomingMessage) -> None:
         subject = "Сброс пароля на сайте Kosmetik-Store"
         html_content = create_password_reset_email_content(message_body)
         await send_email(email, subject, html_content)
-        logger.info(f"Сообщение для сброса пароля пользователя {user_id} успешно обработано")
+        logger.info("Сообщение для сброса пароля пользователя %s успешно обработано", user_id)
         await message.ack()
-    except Exception as e:
-        logger.error(f"Ошибка при обработке сообщения сброса пароля: {e}")
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        logger.error("Ошибка при обработке сообщения сброса пароля: %s", e)
         await message.reject(requeue=False)
 
 
@@ -1000,15 +1019,16 @@ async def get_connection_with_retry() -> aio_pika.Connection:
             )
             logger.info("Соединение с RabbitMQ установлено успешно")
             return connection
-        except Exception as e:
+        except (aio_pika.exceptions.AMQPConnectionError, aio_pika.exceptions.AMQPChannelError, 
+                aio_pika.exceptions.AMQPError, ConnectionError, TimeoutError) as e:
             attempts += 1
-            logger.error(f"Ошибка подключения к RabbitMQ ({attempts}/{MAX_RECONNECT_ATTEMPTS}): {e}")
+            logger.error("Ошибка подключения к RabbitMQ (%s/%s): %s", attempts, MAX_RECONNECT_ATTEMPTS, e)
             
             if attempts >= MAX_RECONNECT_ATTEMPTS:
                 logger.critical("Превышено максимальное количество попыток подключения")
                 raise
             
-            logger.info(f"Повторная попытка через {reconnect_delay} сек...")
+            logger.info("Повторная попытка через %s сек...", reconnect_delay)
             await asyncio.sleep(reconnect_delay)
             
             # Экспоненциальное увеличение задержки с ограничением
@@ -1051,8 +1071,9 @@ class RabbitMQConsumer:
                 await asyncio.sleep(CONNECTION_CHECK_INTERVAL)
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error(f"Ошибка при проверке соединения: {e}")
+            except (aio_pika.exceptions.AMQPConnectionError, aio_pika.exceptions.AMQPChannelError, 
+                    aio_pika.exceptions.AMQPError, ConnectionError, TimeoutError) as e:
+                logger.error("Ошибка при проверке соединения: %s", e)
                 await asyncio.sleep(INITIAL_RECONNECT_DELAY)
     
     async def _reconnect(self) -> None:
@@ -1066,8 +1087,9 @@ class RabbitMQConsumer:
             await self.setup()
             await self._setup_consumers()
             logger.info("Переподключение выполнено успешно")
-        except Exception as e:
-            logger.error(f"Ошибка при переподключении: {e}")
+        except (aio_pika.exceptions.AMQPConnectionError, aio_pika.exceptions.AMQPChannelError, 
+                aio_pika.exceptions.AMQPError, ConnectionError, TimeoutError) as e:
+            logger.error("Ошибка при переподключении: %s", e)
     
     async def _setup_consumers(self) -> None:
         """Настраивает потребителей сообщений для всех очередей"""
@@ -1087,7 +1109,7 @@ class RabbitMQConsumer:
             
             # Привязываем очередь к DLX для всех маршрутов
             await failed_queue.bind(dlx, routing_key="#")
-            logger.info(f"Настроен Dead Letter Exchange {DLX_NAME} и очередь {DLX_QUEUE}")
+            logger.info("Настроен Dead Letter Exchange %s и очередь %s", DLX_NAME, DLX_QUEUE)
             
             # Настраиваем обработчики для основных очередей
             for queue_name, handler in self.queue_handlers.items():
@@ -1114,9 +1136,10 @@ class RabbitMQConsumer:
                 )
                 
                 await queue.consume(handler)
-                logger.info(f"Настроен обработчик для очереди {queue_name} с поддержкой DLX")
-        except Exception as e:
-            logger.error(f"Ошибка при настройке очередей: {e}")
+                logger.info("Настроен обработчик для очереди %s с поддержкой DLX", queue_name)
+        except (aio_pika.exceptions.AMQPConnectionError, aio_pika.exceptions.AMQPChannelError, 
+                aio_pika.exceptions.AMQPError, ConnectionError, TimeoutError) as e:
+            logger.error("Ошибка при настройке очередей: %s", e)
             raise
     
     async def start(self) -> None:
@@ -1128,7 +1151,7 @@ class RabbitMQConsumer:
         # Запускаем задачу проверки соединения
         self.connection_check_task = asyncio.create_task(self.check_connection())
         
-        logger.info(f"Consumer запущен. Ожидание сообщений из {len(self.queue_handlers)} очередей")
+        logger.info("Consumer запущен. Ожидание сообщений из %s очередей", len(self.queue_handlers))
         
         # Создаем Future, который никогда не завершится, чтобы процесс не завершался
         self._running_future = asyncio.Future()
@@ -1171,8 +1194,9 @@ async def main() -> None:
         await consumer.start()
     except KeyboardInterrupt:
         logger.info("Получен сигнал остановки")
-    except Exception as e:
-        logger.error(f"Критическая ошибка: {e}")
+    except (aio_pika.exceptions.AMQPConnectionError, aio_pika.exceptions.AMQPChannelError, 
+            aio_pika.exceptions.AMQPError, ConnectionError, TimeoutError) as e:
+        logger.error("Критическая ошибка: %s", e)
     finally:
         await consumer.stop()
 

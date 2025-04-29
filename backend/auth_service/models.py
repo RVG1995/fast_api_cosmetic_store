@@ -1,15 +1,19 @@
+"""Модели для аутентификации и управления пользователями."""
+
+from datetime import datetime, timezone
+from typing import Optional, List
+
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import text, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import String, Boolean, DateTime, ForeignKey
 
 class Base(DeclarativeBase):
+    """Базовый класс для всех моделей SQLAlchemy."""
     pass
 
 class UserModel(Base):
+    """Модель пользователя системы."""
     __tablename__ = "users"
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -66,7 +70,7 @@ class UserModel(Base):
     async def get_all_admins(cls, session: AsyncSession) -> List["UserModel"]:
         """Получить всех пользователей с правами администратора или суперадминистратора"""
         stmt = select(cls).filter(
-            (cls.is_admin == True) | (cls.is_super_admin == True)
+            (cls.is_admin is True) | (cls.is_super_admin is True)
         )
         result = await session.execute(stmt)
         return result.scalars().all()
@@ -138,7 +142,7 @@ class UserSessionModel(Base):
         """
         query = select(cls).filter(
             cls.user_id == user_id,
-            cls.is_active == True
+            cls.is_active is True
         )
         
         if exclude_jti:

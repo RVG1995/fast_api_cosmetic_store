@@ -1,13 +1,20 @@
+"""Модуль для работы с кэшированием данных в Redis.
+
+Этот модуль предоставляет функции для кэширования и получения данных из Redis,
+включая специализированные функции для работы с заказами, промокодами и статистикой.
+"""
+
 import os
 import logging
 import pickle
+from typing import Any, Optional, Dict
+
 import redis.asyncio as redis
-from typing import Any, Optional, List, Dict
 
 logger = logging.getLogger("order_cache")
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-CACHE_TTL = int(os.getenv("ORDER_CACHE_TTL", 300))  # 5 минут по умолчанию
+CACHE_TTL = int(os.getenv("ORDER_CACHE_TTL", "300"))  # 5 минут по умолчанию
 
 redis_client = redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=False)
 
@@ -22,24 +29,57 @@ class CacheKeys:
     PRODUCTS_INFO_PREFIX = "products_info:"  # Префикс для ключей информации о продуктах
     PROMO_CODES = "promo_codes"  # Ключ для списка промокодов
     PROMO_CODE_PREFIX = "promo_code:"  # Префикс для ключей промокодов
+    
+    @classmethod
+    def get_order_key(cls, order_id: int) -> str:
+        """Возвращает ключ для кэша заказа."""
+        return f"{cls.ORDER_PREFIX}{order_id}"
+    
+    @classmethod
+    def get_user_orders_key(cls, user_id: int, filter_params: str) -> str:
+        """Возвращает ключ для кэша списка заказов пользователя."""
+        return f"{cls.USER_ORDERS_PREFIX}{user_id}:{filter_params}"
 
 async def get_cached_data(key: str) -> Optional[Any]:
+    """Получает данные из кэша по ключу.
+
+    Args:
+        key: Ключ для получения данных из кэша
+
+    Returns:
+        Данные из кэша или None, если данные не найдены
+    """
     try:
         data = await redis_client.get(key)
         return pickle.loads(data) if data else None
-    except Exception as e:
-        logger.error(f"Cache get error: {str(e)}")
+    except (redis.RedisError, pickle.PickleError) as e:
+        logger.error("Cache get error: %s", str(e))
         return None
 
 async def set_cached_data(key: str, data: Any, ttl: int = CACHE_TTL) -> bool:
+    """Сохраняет данные в кэш.
+
+    Args:
+        key: Ключ для сохранения данных
+        data: Данные для сохранения
+        ttl: Время жизни кэша в секундах
+
+    Returns:
+        True если данные успешно сохранены, иначе False
+    """
     try:
         await redis_client.set(key, pickle.dumps(data), ex=ttl)
         return True
-    except Exception as e:
-        logger.error(f"Cache set error: {str(e)}")
+    except (redis.RedisError, pickle.PickleError) as e:
+        logger.error("Cache set error: %s", str(e))
         return False
 
 async def invalidate_cache(*patterns: str) -> None:
+    """Инвалидирует кэш по указанным шаблонам ключей.
+
+    Args:
+        *patterns: Шаблоны ключей для инвалидации
+    """
     try:
         deleted_keys = []
         for pattern in patterns:
@@ -50,20 +90,21 @@ async def invalidate_cache(*patterns: str) -> None:
             
             if keys_to_delete:
                 await redis_client.delete(*keys_to_delete)
-                logger.info(f"Удалены ключи по шаблону {pattern}: {keys_to_delete}")
+                logger.info("Удалены ключи по шаблону %s: %s", pattern, keys_to_delete)
         
         if deleted_keys:
-            logger.info(f"Всего удалено ключей: {len(deleted_keys)}")
+            logger.info("Всего удалено ключей: %d", len(deleted_keys))
         else:
-            logger.info(f"Не найдено ключей для удаления по шаблонам: {patterns}")
-    except Exception as e:
-        logger.error(f"Cache invalidation error: {str(e)}")
+            logger.info("Не найдено ключей для удаления по шаблонам: %s", patterns)
+    except (redis.RedisError, ValueError) as e:
+        logger.error("Cache invalidation error: %s", str(e))
 
 async def close_redis() -> None:
+    """Закрывает соединение с Redis."""
     try:
         await redis_client.close()
-    except Exception as e:
-        logger.error(f"Redis close error: {str(e)}")
+    except redis.RedisError as e:
+        logger.error("Redis close error: %s", str(e))
 
 # Специализированные функции для кэширования заказов
 
@@ -79,9 +120,9 @@ async def cache_order(order_id: int, order_data: Dict[str, Any], admin: bool = F
     try:
         key = f"order:{order_id}"
         await redis_client.set(key, pickle.dumps(order_data), ex=CACHE_TTL)
-        logger.info(f"Заказ {order_id} успешно кэширован{' (админ)' if admin else ''}")
-    except Exception as e:
-        logger.error(f"Ошибка при кэшировании заказа {order_id}: {str(e)}")
+        logger.info("Заказ %d успешно кэширован%s", order_id, " (админ)" if admin else "")
+    except (redis.RedisError, pickle.PickleError) as e:
+        logger.error("Ошибка при кэшировании заказа %d: %s", order_id, str(e))
 
 async def get_cached_order(order_id: int, admin: bool = False) -> Optional[Dict[str, Any]]:
     """
@@ -98,12 +139,12 @@ async def get_cached_order(order_id: int, admin: bool = False) -> Optional[Dict[
         key = f"order:{order_id}"
         data = await redis_client.get(key)
         if data:
-            logger.info(f"Найден кэш для заказа {order_id}{' (админ)' if admin else ''}")
+            logger.info("Найден кэш для заказа %d%s", order_id, " (админ)" if admin else "")
             return pickle.loads(data)
-        logger.info(f"Кэш для заказа {order_id} не найден{' (админ)' if admin else ''}")
+        logger.info("Кэш для заказа %d не найден%s", order_id, " (админ)" if admin else "")
         return None
-    except Exception as e:
-        logger.error(f"Ошибка при получении заказа {order_id} из кэша: {str(e)}")
+    except (redis.RedisError, pickle.PickleError) as e:
+        logger.error("Ошибка при получении заказа %d из кэша: %s", order_id, str(e))
         return None
 
 async def invalidate_order_cache(order_id: int) -> None:
@@ -113,7 +154,7 @@ async def invalidate_order_cache(order_id: int) -> None:
     await invalidate_cache(f"{CacheKeys.USER_ORDERS_PREFIX}*")
     await invalidate_cache(f"{CacheKeys.ADMIN_ORDERS_PREFIX}*")
     await invalidate_cache(f"{CacheKeys.ORDER_STATISTICS}*")
-    logger.info(f"Инвалидирован кэш заказа {order_id} и связанных списков")
+    logger.info("Инвалидирован кэш заказа %d и связанных списков", order_id)
 
 async def cache_orders_list(filter_params: str, orders_data: Any) -> bool:
     """Кэширование списка заказов"""
@@ -166,72 +207,48 @@ async def invalidate_order_statuses_cache() -> None:
 async def invalidate_user_orders_cache(user_id: int) -> None:
     """Инвалидация кэша заказов пользователя"""
     await invalidate_cache(f"{CacheKeys.USER_ORDERS_PREFIX}{user_id}:*")
-    logger.info(f"Инвалидирован кэш заказов пользователя {user_id}")
+    logger.info("Инвалидирован кэш заказов пользователя %d", user_id)
 
 async def invalidate_promo_code_cache(promo_code_id: int) -> None:
-    """
-    Инвалидация кэша промокода по ID
+    """Инвалидирует кэш промокода.
     
     Args:
         promo_code_id: ID промокода
     """
-    # Получаем соединение с Redis
-    redis = await get_redis()
-    
     # Формируем ключ для кэша промокода
     cache_key = f"{CacheKeys.PROMO_CODE_PREFIX}{promo_code_id}"
     
     # Удаляем кэш
-    await redis.delete(cache_key)
-    
-    # Дополнительно инвалидируем общий кэш промокодов
-    await redis.delete(CacheKeys.PROMO_CODES)
-    
-    logger.info(f"Кэш промокода с ID {promo_code_id} инвалидирован")
+    await invalidate_cache(cache_key)
 
 async def cache_promo_code_check(email: str, phone: str, promo_code_id: int, result: bool) -> None:
-    """
-    Кеширование результата проверки промокода
+    """Кэширует результат проверки промокода.
     
     Args:
         email: Email пользователя
         phone: Телефон пользователя
         promo_code_id: ID промокода
-        result: Результат проверки (True/False)
+        result: Результат проверки
     """
-    # Получаем соединение с Redis
-    redis = await get_redis()
-    
     # Формируем ключ для кэша
     cache_key = f"promo_check:{email}:{phone}:{promo_code_id}"
     
-    # Кешируем результат на 1 час
-    await redis.set(cache_key, str(result), ex=3600)
-    
-    logger.info(f"Результат проверки промокода {promo_code_id} для {email}/{phone} закеширован")
+    # Кэшируем результат
+    await set_cached_data(cache_key, result, ttl=60)  # TTL 1 минута
 
 async def get_cached_promo_code_check(email: str, phone: str, promo_code_id: int) -> Optional[bool]:
-    """
-    Получение кешированного результата проверки промокода
+    """Получает кэшированный результат проверки промокода.
     
     Args:
         email: Email пользователя
         phone: Телефон пользователя
         promo_code_id: ID промокода
-    
+        
     Returns:
-        Optional[bool]: Кешированный результат или None, если кеша нет
+        Optional[bool]: Результат проверки или None, если кэш отсутствует
     """
-    # Получаем соединение с Redis
-    redis = await get_redis()
-    
     # Формируем ключ для кэша
     cache_key = f"promo_check:{email}:{phone}:{promo_code_id}"
     
     # Получаем результат из кэша
-    result = await redis.get(cache_key)
-    
-    if result is not None:
-        return result.decode() == "True"
-    
-    return None 
+    return await get_cached_data(cache_key)

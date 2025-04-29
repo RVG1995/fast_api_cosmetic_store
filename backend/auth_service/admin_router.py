@@ -1,12 +1,14 @@
+"""Модуль для управления административными функциями и правами пользователей."""
+
 import os
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import UserModel
 from schema import AdminUserReadShema
-from auth_utils import get_current_user, get_admin_user, get_super_admin_user
+from auth_utils import get_admin_user, get_super_admin_user
 from database import get_session
 from utils import verify_service_jwt
 # Получаем сервисный ключ из переменных окружения
@@ -107,6 +109,8 @@ async def check_admin_access(
     admin_user: UserModel = Depends(get_admin_user)
 ):
     """Эндпоинт для проверки прав администратора"""
+    if not admin_user.is_admin:
+        raise HTTPException(status_code=403, detail="Нет прав администратора")
     return {"status": "success", "message": "У вас есть права администратора"}
 
 @router.get("/check-super-access")
@@ -114,17 +118,18 @@ async def check_super_admin_access(
     super_admin_user: UserModel = Depends(get_super_admin_user)
 ):
     """Эндпоинт для проверки прав суперадминистратора"""
+    if not super_admin_user.is_super_admin:
+        raise HTTPException(status_code=403, detail="Нет прав суперадминистратора")
     return {"status": "success", "message": "У вас есть права суперадминистратора"}
 
 @router.get("/users/{user_id}", response_model=AdminUserReadShema)
 async def get_user_by_id(
     user_id: int,
     session: AsyncSession = Depends(get_session),
-    dependencies: bool = Depends(verify_service_jwt)
+    _: bool = Depends(verify_service_jwt)
 ):
     """Получить информацию о конкретном пользователе по ID (для межсервисных запросов)"""
     user = await UserModel.get_by_id(session, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    
+        raise HTTPException(status_code=404, detail="Пользователь не найден")   
     return user

@@ -1,11 +1,20 @@
-from fastapi import FastAPI
-from database import setup_database, engine, create_superadmin, create_default_user
-from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
+"""Основной модуль аутентификационного сервиса.
+
+Этот модуль инициализирует FastAPI приложение, настраивает middleware,
+подключает роутеры и управляет жизненным циклом приложения.
+"""
+
+import logging
 import os
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from database import setup_database, engine, create_superadmin, create_default_user
 from router import router as auth_router
 from admin_router import router as admin_router
-import logging
 from app.services import (
     cache_service,
     bruteforce_protection
@@ -15,11 +24,8 @@ from app.services import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from fastapi.staticfiles import StaticFiles
-
-
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(fastapi_app: FastAPI):
     """Инициализация Redis-клиентов при старте приложения"""
     logger.info("Инициализация Redis-клиентов...")
     # Инициализируем кэш-сервис

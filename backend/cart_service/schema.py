@@ -1,6 +1,9 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+"""Схемы для сервиса корзины, определяющие структуру данных для работы с корзиной покупок."""
+
 from datetime import datetime
+from typing import Optional, List
+
+from pydantic import BaseModel, ConfigDict
 
 class CartItemAddSchema(BaseModel):
     """Схема для добавления товара в корзину"""
@@ -129,8 +132,10 @@ class PaginatedUserCartsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class CartMergeItemSchema(BaseModel):
+    """Схема для элемента корзины при слиянии корзин"""
     product_id: int
     quantity: int
 
 class CartMergeSchema(BaseModel):
+    """Схема для слияния корзин"""
     items: list[CartMergeItemSchema] 

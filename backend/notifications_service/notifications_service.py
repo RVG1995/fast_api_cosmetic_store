@@ -1,11 +1,14 @@
+"""Модуль уведомлений: отправка email и оповещений о низком остатке через RabbitMQ."""
+
 import logging
-from .rabbit_utils import get_connection, close_connection, declare_queue
 import json
-import aio_pika
-# Импортируем функцию проверки настроек уведомлений
-import sys
 import os
+import sys
 from typing import Optional
+
+import aio_pika
+
+from .rabbit_utils import get_connection, close_connection, declare_queue
 
 # Путь до директории backend/order_service
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_order_email_content(order_data, new_status_name=None, stock=None):
+    """Формирует словарь для email-сообщения по данным заказа."""
     if new_status_name:
         # Создаем словарь для сообщения, используя только данные, которые точно не требуют lazy loading
         message_body = {
@@ -152,7 +156,7 @@ async def send_email_message(
             ),
             routing_key=queue.name
         )
-        logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+        logger.info("RabbitMQ: %s", json.dumps(message_body, ensure_ascii=False))
         return "message_sent"
     finally:
         # Закрываем соединение в любом случае
@@ -188,9 +192,9 @@ async def update_order_status(
             order_id = getattr(order_data, 'id', None)
             promo_code = getattr(order_data, 'promo_code_dict', None)
         if promo_code:
-            logger.info(f"Для заказа {order_id} найден promo_code: {promo_code}")
+            logger.info("Для заказа %s найден promo_code: %s", order_id, promo_code)
         else:
-            logger.warning(f"Для заказа {order_id} перед отправкой update_message отсутствует promo_code")
+            logger.warning("Для заказа %s перед отправкой update_message отсутствует promo_code", order_id)
 
         # Формируем тело сообщения для RabbitMQ
         if isinstance(order_data, dict):
@@ -208,7 +212,7 @@ async def update_order_status(
             ),
             routing_key=queue.name
         )
-        logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+        logger.info("RabbitMQ: %s", json.dumps(message_body, ensure_ascii=False))
         return "message_sent"
     finally:
         # Закрываем соединение в любом случае
@@ -238,7 +242,7 @@ async def notification_message_about_low_stock(
             if settings["email_enabled"]:
                 await _send_low_stock_notification(low_stock_products)
             else:
-                logger.info(f"Email уведомления о низком остатке товаров отключены для пользователя {user_id}, email не будет отправлен")
+                logger.info("Email уведомления о низком остатке товаров отключены для пользователя %s, email не будет отправлен", user_id)
         else:
             # Если не указан ID пользователя и нет администраторов, отправляем уведомление по умолчанию
             await _send_low_stock_notification(low_stock_products)
@@ -257,9 +261,9 @@ async def notification_message_about_low_stock(
             if not notification_sent:
                 await _send_low_stock_notification(low_stock_products)
                 notification_sent = True
-            logger.info(f"Отправлено уведомление о низком остатке товаров администратору {admin_id}")
+            logger.info("Отправлено уведомление о низком остатке товаров администратору %s", admin_id)
         else:
-            logger.info(f"Email уведомления о низком остатке товаров отключены для администратора {admin_id}")
+            logger.info("Email уведомления о низком остатке товаров отключены для администратора %s", admin_id)
             
     if not notification_sent:
         logger.warning("Ни один администратор не имеет включенных уведомлений о низком остатке товаров")
@@ -292,7 +296,7 @@ async def _send_low_stock_notification(low_stock_products):
             ),
             routing_key=queue.name
         )
-        logger.info(f"Отправлено уведомление о {len(low_stock_products)} товарах с низким остатком")
+        logger.info("Отправлено уведомление о %d товарах с низким остатком", len(low_stock_products))
     finally:
         # Закрываем соединение в любом случае
         await close_connection(connection)

@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Header
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List, Dict, Any, Optional, Annotated
-import os
+"""Модуль для пакетных операций с продуктами."""
+
 import logging
-import fastapi
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import os
+from typing import List, Annotated
 import jwt
 
+from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from models import ProductModel
 from database import get_session
@@ -38,8 +39,8 @@ async def verify_service_jwt(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
         payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
     return True
@@ -58,7 +59,7 @@ async def get_products_batch(
     Возвращает список объектов продуктов для всех найденных ID.
     Требуются права администратора или валидный ключ сервиса.
     """
-    logger.info(f"Пакетный запрос информации о продуктах: {product_ids}")
+    logger.info("Пакетный запрос информации о продуктах: %s", product_ids)
     
     authorized = False
     
@@ -69,10 +70,10 @@ async def get_products_batch(
     # Проверка через пользователя
     elif current_user:
         if getattr(current_user, 'is_admin', False) or getattr(current_user, 'is_super_admin', False):
-            logger.info(f"Авторизация через пользователя {current_user.id} успешна")
+            logger.info("Авторизация через пользователя %s успешна", current_user.id)
             authorized = True
         else:
-            logger.warning(f"Пользователь {current_user.id} пытался получить пакетный доступ к продуктам без прав администратора")
+            logger.warning("Пользователь %s пытался получить пакетный доступ к продуктам без прав администратора", current_user.id)
     
     if not authorized:
         logger.error("Не авторизован: ни через ключ сервиса, ни через пользователя")
@@ -84,7 +85,7 @@ async def get_products_batch(
     # Убираем дубликаты и ограничиваем размер запроса
     unique_ids = list(set(product_ids))
     if len(unique_ids) > 100:  # Ограничиваем количество запрашиваемых продуктов
-        logger.warning(f"Слишком много ID продуктов в запросе ({len(unique_ids)}), ограничиваем до 100")
+        logger.warning("Слишком много ID продуктов в запросе (%s), ограничиваем до 100", len(unique_ids))
         unique_ids = unique_ids[:100]
     
     try:
@@ -93,13 +94,13 @@ async def get_products_batch(
         result = await session.execute(query)
         products = result.scalars().all()
         
-        logger.info(f"Найдено {len(products)} продуктов из {len(unique_ids)} запрошенных")
+        logger.info("Найдено %s продуктов из %s запрошенных", len(products), len(unique_ids))
         
         # Преобразуем продукты в JSON-совместимый формат
         return products
     except Exception as e:
-        logger.error(f"Ошибка при выполнении пакетного запроса продуктов: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+        logger.error("Ошибка при выполнении пакетного запроса продуктов: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}") from e
 
 @router.post('/public-batch', tags=["Products"])
 async def get_products_public_batch(
@@ -112,15 +113,18 @@ async def get_products_public_batch(
     
     - **product_ids**: Список ID продуктов
     """    
-    logger.info(f"Публичный пакетный запрос информации о продуктах: {product_ids}")
+    logger.info("Публичный пакетный запрос информации о продуктах: %s", product_ids)
     
     if not product_ids:
         return []
     
+    if dependencies:
+        logger.info("Авторизация через ключ сервиса (dependencies) успешна")
+    
     # Убираем дубликаты и ограничиваем размер запроса
     unique_ids = list(set(product_ids))
     if len(unique_ids) > 100:  # Ограничиваем количество запрашиваемых продуктов
-        logger.warning(f"Слишком много ID продуктов в запросе ({len(unique_ids)}), ограничиваем до 100")
+        logger.warning("Слишком много ID продуктов в запросе (%s), ограничиваем до 100", len(unique_ids))
         unique_ids = unique_ids[:100]
     
     try:
@@ -129,13 +133,13 @@ async def get_products_public_batch(
         result = await session.execute(query)
         products = result.scalars().all()
         
-        logger.info(f"Найдено {len(products)} продуктов из {len(unique_ids)} запрошенных (публичный API)")
+        logger.info("Найдено %s продуктов из %s запрошенных (публичный API)", len(products), len(unique_ids))
         
         # Преобразуем продукты в JSON-совместимый формат
         return products
     except Exception as e:
-        logger.error(f"Ошибка при выполнении публичного пакетного запроса продуктов: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+        logger.error("Ошибка при выполнении публичного пакетного запроса продуктов: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}") from e
 
 @router.post('/open-batch', tags=["Products"])
 async def get_products_open_batch(
@@ -146,12 +150,12 @@ async def get_products_open_batch(
     Новый публичный batch-эндпоинт: получить список продуктов по id без авторизации и service-key.
     Ограничение: не более 100 id за раз.
     """
-    logger.info(f"Открытый batch-запрос продуктов: {product_ids}")
+    logger.info("Открытый batch-запрос продуктов: %s", product_ids)
     if not product_ids:
         return []
     unique_ids = list(set(product_ids))
     if len(unique_ids) > 100:
-        logger.warning(f"Слишком много ID продуктов в запросе ({len(unique_ids)}), ограничиваем до 100")
+        logger.warning("Слишком много ID продуктов в запросе (%s), ограничиваем до 100", len(unique_ids))
         unique_ids = unique_ids[:100]
     query = select(ProductModel).where(ProductModel.id.in_(unique_ids))
     result = await session.execute(query)
@@ -200,20 +204,21 @@ async def update_product_stock(
         await cache_delete_pattern(f"{CACHE_KEYS['products']}detail:{product_id}")
         # Инвалидация всего кэша продуктов для обновления списков
         await invalidate_cache("products")
-        logger.info(f"Обновлено количество товара ID={product_id}: {old_stock} -> {new_stock} администратором {admin.get('user_id')}")
+        logger.info("Обновлено количество товара ID=%s: %s -> %s администратором %s", 
+                   product_id, old_stock, new_stock, admin.get('user_id'))
         
         return {"id": product.id, "stock": product.stock}
     except Exception as e:
         await session.rollback()
-        logger.error(f"Ошибка при обновлении количества товара: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении количества товара: {str(e)}")
+        logger.error("Ошибка при обновлении количества товара: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении количества товара: {str(e)}") from e
 
 @router.put("/{product_id}/public-stock", status_code=200)
 async def update_product_public_stock(
     product_id: int,
     session: SessionDep,
     data: dict = Body(..., description="Данные для обновления остатка"),
-    dependencies=[Depends(verify_service_jwt)]
+    _dependencies=[Depends(verify_service_jwt)]
 ):
     """
     Публичный API для обновления количества товара на складе.
@@ -257,20 +262,21 @@ async def update_product_public_stock(
         await cache_delete_pattern(f"{CACHE_KEYS['products']}detail:{product_id}")
         # Инвалидация всего кэша продуктов для обновления списков
         await invalidate_cache("products")
-        logger.info(f"Публичное обновление количества товара ID={product_id}: {old_stock} -> {new_stock} через сервисный ключ")
+        logger.info("Публичное обновление количества товара ID=%s: %s -> %s через сервисный ключ", 
+                   product_id, old_stock, new_stock)
         
         return {"id": product.id, "stock": product.stock}
     except Exception as e:
         await session.rollback()
-        logger.error(f"Ошибка при публичном обновлении количества товара: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении количества товара: {str(e)}")
+        logger.error("Ошибка при публичном обновлении количества товара: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении количества товара: {str(e)}") from e
 
 @router.put("/{product_id}/admin-stock", status_code=200)
 async def update_product_admin_stock(
     product_id: int,
     session: SessionDep,
     data: dict = Body(..., description="Данные для обновления остатка"),
-    dependencies=[Depends(verify_service_jwt)]):
+    _dependencies=[Depends(verify_service_jwt)]):
     """
     Админский API для обновления количества товара на складе без ограничений.
     Доступен только для внутренних сервисов с правильным ключом.
@@ -307,10 +313,11 @@ async def update_product_admin_stock(
         await cache_delete_pattern(f"{CACHE_KEYS['products']}detail:{product_id}")
         # Инвалидация всего кэша продуктов для обновления списков
         await invalidate_cache("products")
-        logger.info(f"Админское обновление количества товара ID={product_id}: {old_stock} -> {new_stock} через сервисный ключ")
+        logger.info("Админское обновление количества товара ID=%s: %s -> %s через сервисный ключ", 
+                   product_id, old_stock, new_stock)
         
         return {"id": product.id, "stock": product.stock}
     except Exception as e:
         await session.rollback()
-        logger.error(f"Ошибка при админском обновлении количества товара: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении количества товара: {str(e)}")
+        logger.error("Ошибка при админском обновлении количества товара: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении количества товара: {str(e)}") from e

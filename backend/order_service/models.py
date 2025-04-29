@@ -1,16 +1,26 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, Boolean, Text, func, select, Enum
-from sqlalchemy.ext.asyncio import AsyncSession
+"""Модели для order_service: SQLAlchemy ORM."""
+
 from datetime import datetime
 from typing import Optional, List, Tuple
-from sqlalchemy.orm import selectinload
 import enum
 import logging
 
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, selectinload
+from sqlalchemy import (
+    Integer, String,
+    ForeignKey, CheckConstraint, DateTime,
+    Boolean, Text, func, select,
+    text
+)
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+
 class Base(DeclarativeBase):
+    """Базовый класс для ORM-моделей."""
     pass
 
 class OrderStatusEnum(enum.Enum):
+    """Перечисление статусов заказа."""
     PENDING = "pending"
     PROCESSING = "processing"
     SHIPPED = "shipped"
@@ -26,10 +36,23 @@ class OrderStatusModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    color: Mapped[str] = mapped_column(String(20), nullable=False, default="#808080")  # Цвет для отображения статуса
-    allow_cancel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # Разрешение на отмену заказа
-    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # Является ли статус финальным
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # Порядок сортировки
+    color: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="#808080")  # Цвет для отображения статуса
+    allow_cancel: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )  # Разрешение на отмену заказа
+    is_final: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False)  # Является ли статус финальным
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0)  # Порядок сортировки
     
     # Связь с заказами
     orders = relationship("OrderModel", back_populates="status")
@@ -41,8 +64,8 @@ class OrderStatusModel(Base):
             query = select(cls).order_by(cls.sort_order.asc())
             result = await session.execute(query)
             return result.scalars().all()
-        except Exception as e:
-            print(f"Ошибка при получении статусов заказов: {str(e)}")
+        except SQLAlchemyError as e:
+            print("Ошибка при получении статусов заказов: %s", str(e))
             return []
     
     @classmethod
@@ -51,8 +74,8 @@ class OrderStatusModel(Base):
         try:
             result = await session.get(cls, status_id)
             return result
-        except Exception as e:
-            print(f"Ошибка при получении статуса заказа: {str(e)}")
+        except SQLAlchemyError as e:
+            print("Ошибка при получении статуса заказа: %s", str(e))
             return None
     
     @classmethod
@@ -62,24 +85,49 @@ class OrderStatusModel(Base):
             query = select(cls).order_by(cls.sort_order.asc()).limit(1)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            print(f"Ошибка при получении статуса заказа по умолчанию: {str(e)}")
+        except SQLAlchemyError as e:
+            print("Ошибка при получении статуса заказа по умолчанию: %s", str(e))
             return None
 
 class OrderModel(Base):
     """Модель заказа"""
     __tablename__ = 'orders'
     
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)  # Может быть null для анонимных пользователей
-    status_id: Mapped[int] = mapped_column(ForeignKey("order_statuses.id", ondelete="RESTRICT"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
-    total_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True)  # Может быть null для анонимных пользователей
+    status_id: Mapped[int] = mapped_column(
+        ForeignKey("order_statuses.id",
+        ondelete="RESTRICT"),
+        nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        server_onupdate=text("CURRENT_TIMESTAMP")
+    )
+    total_price: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False)
     
     # Новое поле для связи с промокодом
-    promo_code_id: Mapped[Optional[int]] = mapped_column(ForeignKey("promo_codes.id", ondelete="SET NULL"), nullable=True)
-    discount_amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)  # Сумма скидки
+    promo_code_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("promo_codes.id",
+        ondelete="SET NULL"),
+        nullable=True)
+    discount_amount: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        default=0)  # Сумма скидки
     
     # Данные о клиенте и доставке
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -99,7 +147,10 @@ class OrderModel(Base):
     status = relationship("OrderStatusModel", back_populates="orders")
     
     # История изменений статуса
-    status_history = relationship("OrderStatusHistoryModel", back_populates="order", cascade="all, delete-orphan")
+    status_history = relationship(
+        "OrderStatusHistoryModel",
+        back_populates="order",
+        cascade="all, delete-orphan")
     
     # Связь с промокодом
     promo_code = relationship("PromoCodeModel", back_populates="orders")
@@ -123,29 +174,29 @@ class OrderModel(Base):
             ).filter(cls.id == order_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            print(f"Ошибка при получении заказа: {str(e)}")
+        except SQLAlchemyError as e:
+            print("Ошибка при получении заказа: %s", str(e))
             return None
     
     @classmethod
     async def get_by_user(
         cls, 
-        session: AsyncSession, 
+        session: AsyncSession,
         user_id: int,
-        page: int = 1, 
+        page: int = 1,
         limit: int = 10,
         status_id: Optional[int] = None
     ) -> Tuple[List["OrderModel"], int]:
-        """Получить заказы пользователя с пагинацией"""
+        """Получить заказы пользователя с пагинацией и фильтрацией по статусу."""
         try:
             # Формируем базовый запрос
             query = select(cls).filter(cls.user_id == user_id)
-            count_query = select(func.count()).select_from(select(cls).filter(cls.user_id == user_id).subquery())
+            count_query = select(func.count).select_from(select(cls).filter(cls.user_id == user_id).subquery())
             
             # Фильтрация по статусу, если указан
             if status_id is not None:
                 query = query.filter(cls.status_id == status_id)
-                count_query = select(func.count()).select_from(
+                count_query = select(func.count).select_from(
                     select(cls).filter(cls.user_id == user_id, cls.status_id == status_id).subquery()
                 )
             
@@ -168,8 +219,8 @@ class OrderModel(Base):
             items = result.scalars().all()
             
             return items, total
-        except Exception as e:
-            print(f"Ошибка при получении заказов пользователя: {str(e)}")
+        except SQLAlchemyError as e:
+            print("Ошибка при получении заказов пользователя: %s", str(e))
             return [], 0
     
     @classmethod
@@ -180,23 +231,28 @@ class OrderModel(Base):
         limit: int = 10,
         status_id: Optional[int] = None,
         user_id: Optional[int] = None,
-        id: Optional[int] = None,
+        order_id: Optional[int] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         order_by: str = "created_at",
         order_dir: str = "desc",
         username: Optional[str] = None
     ) -> Tuple[List["OrderModel"], int]:
-        """Получить все заказы с пагинацией и фильтрацией"""
+        """Получить все заказы с пагинацией и фильтрацией."""
         try:
             # Логируем входящие параметры фильтрации
             logger = logging.getLogger("order_model")
-            logger.info(f"Запрос всех заказов с параметрами: page={page}, limit={limit}, status_id={status_id}, "
-                       f"user_id={user_id}, id={id}, date_from={date_from}, date_to={date_to}, username={username}")
+            logger.info(
+                "Запрос всех заказов с параметрами: "
+                "page=%s, limit=%s, status_id=%s, "
+                "user_id=%s, order_id=%s, date_from=%s, "
+                "date_to=%s, username=%s",
+                page, limit, status_id, user_id, order_id, date_from, date_to, username
+            )
             
             # Формируем базовый запрос
             query = select(cls)
-            count_query = select(func.count()).select_from(cls)
+            count_query = select(func.count).select_from(cls)
             
             # Применяем фильтры
             filters = []
@@ -204,17 +260,17 @@ class OrderModel(Base):
                 filters.append(cls.status_id == status_id)
             if user_id is not None:
                 filters.append(cls.user_id == user_id)
-            if id is not None:
-                filters.append(cls.id == id)
+            if order_id is not None:
+                filters.append(cls.id == order_id)
             
             # Добавляем фильтрацию по имени пользователя
             if username is not None and username.strip():
                 # Используем оператор ILIKE для регистронезависимого поиска по части имени
                 # Обратите внимание, что % нужно добавить и в начало, и в конец для поиска по подстроке
                 filters.append(cls.full_name.ilike(f'%{username}%'))
-                logger.info(f"Применяется фильтр по имени пользователя: full_name ILIKE %{username}%")
+                logger.info("Применяется фильтр по имени пользователя: full_name ILIKE %%%s%%", username)
                 # Добавляем отладочную информацию
-                logger.debug(f"Текущие фильтры: {filters}")
+                logger.debug("Текущие фильтры: %s", filters)
             
             # Добавляем фильтрацию по датам
             if date_from is not None:
@@ -222,22 +278,22 @@ class OrderModel(Base):
                     # Создаем объект datetime для начала дня
                     date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
                     filters.append(cls.created_at >= date_from_obj)
-                    logger.info(f"Применяется фильтр по начальной дате: created_at >= {date_from_obj}")
-                except Exception as e:
-                    logger.error(f"Ошибка при обработке date_from={date_from}: {str(e)}")
+                    logger.info("Применяется фильтр по начальной дате: created_at >= %s", date_from_obj)
+                except SQLAlchemyError as e:
+                    logger.error("Ошибка при обработке date_from=%s: %s", date_from, str(e))
             
             if date_to is not None:
                 try:
                     # Создаем объект datetime для конца дня
                     date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
                     filters.append(cls.created_at <= date_to_obj)
-                    logger.info(f"Применяется фильтр по конечной дате: created_at <= {date_to_obj}")
-                except Exception as e:
-                    logger.error(f"Ошибка при обработке date_to={date_to}: {str(e)}")
+                    logger.info("Применяется фильтр по конечной дате: created_at <= %s", date_to_obj)
+                except SQLAlchemyError as e:
+                    logger.error("Ошибка при обработке date_to=%s: %s", date_to, str(e))
             
             if filters:
                 query = query.filter(*filters)
-                count_query = select(func.count()).select_from(select(cls).filter(*filters).subquery())
+                count_query = select(func.count).select_from(select(cls).filter(*filters).subquery())
             
             # Добавляем сортировку
             if order_by == "id":
@@ -267,9 +323,9 @@ class OrderModel(Base):
             items = result.scalars().all()
             
             return items, total
-        except Exception as e:
+        except SQLAlchemyError as e:
             logger = logging.getLogger("order_model")
-            logger.error(f"Ошибка при получении всех заказов: {str(e)}")
+            logger.error("Ошибка при получении всех заказов: %s", str(e))
             return [], 0
 
 class OrderItemModel(Base):
@@ -298,9 +354,18 @@ class OrderStatusHistoryModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
     status_id: Mapped[int] = mapped_column(ForeignKey("order_statuses.id", ondelete="RESTRICT"), nullable=False)
-    changed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
-    changed_by_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # ID пользователя, изменившего статус
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Примечания к изменению статуса
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"))
+    changed_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, 
+        nullable=True
+    )  # ID пользователя, изменившего статус
+    notes: Mapped[Optional[str]] = mapped_column(
+        Text, 
+        nullable=True
+    )  # Примечания к изменению статуса
     
     # Связи
     order = relationship("OrderModel", back_populates="status_history")
@@ -308,11 +373,11 @@ class OrderStatusHistoryModel(Base):
     
     @classmethod
     async def add_status_change(
-        cls, 
-        session: AsyncSession, 
-        order_id: int, 
-        status_id: int, 
-        changed_by_user_id: Optional[int] = None, 
+        cls,
+        session: AsyncSession,
+        order_id: int,
+        status_id: int,
+        changed_by_user_id: Optional[int] = None,
         notes: Optional[str] = None
     ) -> "OrderStatusHistoryModel":
         """Добавить запись об изменении статуса заказа"""
@@ -341,8 +406,15 @@ class ShippingAddressModel(Base):
     country: Mapped[str] = mapped_column(String(100), nullable=False)
     phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        server_onupdate=text("CURRENT_TIMESTAMP"))
 
 class BillingAddressModel(Base):
     """Модель адреса для выставления счета"""
@@ -359,8 +431,15 @@ class BillingAddressModel(Base):
     country: Mapped[str] = mapped_column(String(100), nullable=False)
     phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        server_onupdate=text("CURRENT_TIMESTAMP"))
 
 class PaymentStatusModel(Base):
     """
@@ -374,8 +453,14 @@ class PaymentStatusModel(Base):
     color: Mapped[str] = mapped_column(String(20), nullable=False, default="#3498db")
     is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
-    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        server_default=text("CURRENT_TIMESTAMP"))
     
     # Обратные отношения (если будут связи)
     # orders = relationship("OrderModel", back_populates="payment_status")
@@ -452,15 +537,26 @@ class PromoCodeModel(Base):
     discount_percent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     discount_amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     valid_until: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        server_onupdate=text("CURRENT_TIMESTAMP"))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     
     # Связь с заказами
     orders = relationship("OrderModel", back_populates="promo_code")
     
     # Связь с использованными промокодами
-    usages = relationship("PromoCodeUsageModel", back_populates="promo_code", cascade="all, delete-orphan")
+    usages = relationship(
+        "PromoCodeUsageModel", 
+        back_populates="promo_code", 
+        cascade="all, delete-orphan"
+    )
     
     @property
     def is_valid(self) -> bool:
@@ -469,35 +565,38 @@ class PromoCodeModel(Base):
     
     @classmethod
     async def get_by_code(cls, session: AsyncSession, code: str) -> Optional["PromoCodeModel"]:
+        """Получить промокод по коду."""
         try:
             query = select(cls).filter(cls.code == code)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            logging.error(f"Ошибка при получении промокода: {str(e)}")
+        except SQLAlchemyError as e:
+            logging.error("Ошибка при получении промокода: %s", str(e))
             return None
     
     @classmethod
     async def get_all(cls, session: AsyncSession, skip: int = 0, limit: int = 100) -> List["PromoCodeModel"]:
+        """Получить все промокоды с пагинацией."""
         try:
             query = select(cls).order_by(cls.created_at.desc()).offset(skip).limit(limit)
             result = await session.execute(query)
             return result.scalars().all()
-        except Exception as e:
-            logging.error(f"Ошибка при получении промокодов: {str(e)}")
+        except SQLAlchemyError as e:
+            logging.error("Ошибка при получении промокодов: %s", str(e))
             return []
     
     @classmethod
     async def get_active(cls, session: AsyncSession) -> List["PromoCodeModel"]:
+        """Получить все активные промокоды."""
         try:
             query = select(cls).filter(
-                cls.is_active == True,
+                cls.is_active,
                 cls.valid_until >= datetime.now()
             ).order_by(cls.created_at.desc())
             result = await session.execute(query)
             return result.scalars().all()
-        except Exception as e:
-            logging.error(f"Ошибка при получении активных промокодов: {str(e)}")
+        except SQLAlchemyError as e:
+            logging.error("Ошибка при получении активных промокодов: %s", str(e))
             return []
 
 class PromoCodeUsageModel(Base):
@@ -509,14 +608,17 @@ class PromoCodeUsageModel(Base):
     email: Mapped[str] = mapped_column(String(100), nullable=False)
     phone: Mapped[str] = mapped_column(String(50), nullable=False)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    used_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
+    used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"))
     
     # Связь с промокодом
     promo_code = relationship("PromoCodeModel", back_populates="usages")
     
     @classmethod
     async def check_usage(cls, session: AsyncSession, promo_code_id: int, email: str, phone: str) -> bool:
-        """Проверить, использовал ли пользователь промокод ранее (по email и телефону)"""
+        """Проверить использование промокода по email и телефону."""
         try:
             query = select(cls).filter(
                 cls.promo_code_id == promo_code_id,
@@ -524,6 +626,6 @@ class PromoCodeUsageModel(Base):
             )
             result = await session.execute(query)
             return result.scalars().first() is not None
-        except Exception as e:
-            logging.error(f"Ошибка при проверке использования промокода: {str(e)}")
+        except SQLAlchemyError as e:
+            logging.error("Ошибка при проверке использования промокода: %s", str(e))
             return False 

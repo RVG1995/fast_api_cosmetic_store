@@ -1,11 +1,13 @@
-import os
+"""Модуль для работы с кэшированием корзин в Redis."""
+
 import json
 import logging
-from redis import asyncio as aioredis
-from typing import Optional, Dict, Any, List, Callable, TypeVar, Union
-from datetime import datetime, timedelta
-from dotenv import load_dotenv
+import os
 import pathlib
+from datetime import datetime
+from typing import Optional, Any, Callable, TypeVar
+from dotenv import load_dotenv
+from redis import asyncio as aioredis
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
@@ -19,10 +21,10 @@ parent_env_file = current_dir.parent / ".env"
 # Загружаем переменные окружения
 if env_file.exists():
     load_dotenv(dotenv_path=env_file)
-    logger.info(f"Переменные окружения загружены из {env_file}")
+    logger.info("Переменные окружения загружены из %s", env_file)
 elif parent_env_file.exists():
     load_dotenv(dotenv_path=parent_env_file)
-    logger.info(f"Переменные окружения загружены из {parent_env_file}")
+    logger.info("Переменные окружения загружены из %s", parent_env_file)
 
 # URL соединения с Redis
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -43,16 +45,42 @@ CACHE_KEYS = {
     "admin_carts": "admin:carts:"  # Список корзин для администраторов с параметрами
 }
 
-# Одиночное подключение к Redis
-_redis_client = None
-
 # Собственный JSONEncoder для обработки даты и времени
 class DateTimeEncoder(json.JSONEncoder):
     """Класс для сериализации объектов datetime в JSON"""
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        return super().default(obj)
+    def default(self, o):
+        if isinstance(o, datetime):
+            return o.isoformat()
+        return super().default(o)
+
+# Одиночное подключение к Redis
+class RedisConnection:
+    """Класс для управления единым подключением к Redis."""
+    _client = None
+    
+    @classmethod
+    async def get_client(cls):
+        """Возвращает существующее или создает новое подключение к Redis."""
+        if cls._client is None:
+            try:
+                cls._client = await aioredis.from_url(
+                    REDIS_URL, 
+                    encoding="utf-8", 
+                    decode_responses=True
+                )
+                logger.info("Установлено подключение к Redis: %s", REDIS_URL)
+            except (aioredis.ConnectionError, aioredis.ResponseError) as e:
+                logger.error("Ошибка подключения к Redis: %s", str(e))
+                cls._client = None
+        return cls._client
+    
+    @classmethod
+    async def close(cls):
+        """Закрывает соединение с Redis."""
+        if cls._client:
+            await cls._client.close()
+            cls._client = None
+            logger.info("Соединение с Redis закрыто")
 
 async def get_redis():
     """
@@ -61,30 +89,11 @@ async def get_redis():
     Returns:
         Redis: Клиент Redis или None в случае ошибки
     """
-    global _redis_client
-    
-    if _redis_client is None:
-        try:
-            _redis_client = await aioredis.from_url(
-                REDIS_URL, 
-                encoding="utf-8", 
-                decode_responses=True
-            )
-            logger.info(f"Установлено подключение к Redis: {REDIS_URL}")
-        except Exception as e:
-            logger.error(f"Ошибка подключения к Redis: {str(e)}")
-            _redis_client = None
-    
-    return _redis_client
+    return await RedisConnection.get_client()
 
 async def close_redis():
     """Закрывает соединение с Redis"""
-    global _redis_client
-    
-    if _redis_client:
-        await _redis_client.close()
-        _redis_client = None
-        logger.info("Соединение с Redis закрыто")
+    await RedisConnection.close()
 
 async def cache_get(key: str) -> Optional[Any]:
     """
@@ -103,7 +112,7 @@ async def cache_get(key: str) -> Optional[Any]:
     try:
         data = await redis.get(key)
         if data:
-            logger.debug(f"Данные получены из кэша: {key}")
+            logger.debug("Данные получены из кэша: %s", key)
             parsed = json.loads(data)
             # Если в кэше не словарь, возвращаем как есть (например, строку-токен)
             if not isinstance(parsed, dict):
@@ -123,8 +132,8 @@ async def cache_get(key: str) -> Optional[Any]:
             return datetime_parser(parsed)
             
         return None
-    except Exception as e:
-        logger.warning(f"Ошибка при получении данных из кэша ({key}): {str(e)}")
+    except (aioredis.ConnectionError, aioredis.ResponseError, json.JSONDecodeError) as e:
+        logger.warning("Ошибка при получении данных из кэша (%s): %s", key, str(e))
         return None
 
 async def cache_set(key: str, data: Any, ttl: int) -> bool:
@@ -145,10 +154,10 @@ async def cache_set(key: str, data: Any, ttl: int) -> bool:
     
     try:
         await redis.setex(key, ttl, json.dumps(data, cls=DateTimeEncoder))
-        logger.debug(f"Данные сохранены в кэш: {key} (TTL: {ttl}с)")
+        logger.debug("Данные сохранены в кэш: %s (TTL: %dс)", key, ttl)
         return True
-    except Exception as e:
-        logger.warning(f"Ошибка при сохранении данных в кэш ({key}): {str(e)}")
+    except (aioredis.ConnectionError, aioredis.ResponseError, TypeError) as e:
+        logger.warning("Ошибка при сохранении данных в кэш (%s): %s", key, str(e))
         return False
 
 async def cache_delete(key: str) -> bool:
@@ -167,10 +176,10 @@ async def cache_delete(key: str) -> bool:
     
     try:
         await redis.delete(key)
-        logger.debug(f"Данные удалены из кэша: {key}")
+        logger.debug("Данные удалены из кэша: %s", key)
         return True
-    except Exception as e:
-        logger.warning(f"Ошибка при удалении данных из кэша ({key}): {str(e)}")
+    except (aioredis.ConnectionError, aioredis.ResponseError) as e:
+        logger.warning("Ошибка при удалении данных из кэша (%s): %s", key, str(e))
         return False
 
 async def cache_delete_pattern(pattern: str) -> bool:
@@ -191,10 +200,10 @@ async def cache_delete_pattern(pattern: str) -> bool:
         keys = await redis.keys(pattern)
         if keys:
             await redis.delete(*keys)
-            logger.debug(f"Удалено {len(keys)} ключей по шаблону: {pattern}")
+            logger.debug("Удалено %d ключей по шаблону: %s", len(keys), pattern)
         return True
-    except Exception as e:
-        logger.warning(f"Ошибка при удалении данных из кэша по шаблону ({pattern}): {str(e)}")
+    except (aioredis.ConnectionError, aioredis.ResponseError) as e:
+        logger.warning("Ошибка при удалении данных из кэша по шаблону (%s): %s", pattern, str(e))
         return False
 
 # Функции инвалидации кэша
@@ -206,7 +215,7 @@ async def invalidate_user_cart_cache(user_id: int) -> None:
     Args:
         user_id (int): ID пользователя
     """
-    logger.info(f"Инвалидация кэша корзины пользователя: {user_id}")
+    logger.info("Инвалидация кэша корзины пользователя: %d", user_id)
     # Удаляем кэш корзины
     await cache_delete(f"{CACHE_KEYS['cart_user']}{user_id}")
     # Удаляем кэш сводки корзины
@@ -221,7 +230,7 @@ async def invalidate_session_cart_cache(session_id: str) -> None:
     Args:
         session_id (str): ID сессии
     """
-    logger.info(f"Инвалидация кэша корзины сессии: {session_id}")
+    logger.info("Инвалидация кэша корзины сессии: %s", session_id)
     # Удаляем кэш корзины
     await cache_delete(f"{CACHE_KEYS['cart_session']}{session_id}")
     # Удаляем кэш сводки корзины
@@ -296,7 +305,7 @@ def cached(
             # Проверяем кэш
             cached_data = await cache_get(cache_key)
             if cached_data is not None:
-                logger.debug(f"Возвращены кэшированные данные для {func.__name__}: {cache_key}")
+                logger.debug("Возвращены кэшированные данные для %s: %s", func.__name__, cache_key)
                 return cached_data
             
             # Выполняем функцию
@@ -307,10 +316,10 @@ def cached(
                 try:
                     # Пытаемся сериализовать и сохранить в кэш
                     await cache_set(cache_key, result, ttl)
-                    logger.debug(f"Результат функции {func.__name__} сохранен в кэш: {cache_key}")
-                except Exception as e:
+                    logger.debug("Результат функции %s сохранен в кэш: %s", func.__name__, cache_key)
+                except (aioredis.ConnectionError, aioredis.ResponseError, TypeError) as e:
                     # В случае ошибки сериализации логируем и продолжаем без кеширования
-                    logger.warning(f"Ошибка при кешировании результата {func.__name__}: {str(e)}")
+                    logger.warning("Ошибка при кешировании результата %s: %s", func.__name__, str(e))
             
             return result
         return wrapper

@@ -1,16 +1,25 @@
-import httpx
-import os
+"""Модуль для взаимодействия с API сервиса корзины.
+
+Этот модуль предоставляет класс CartAPI для работы с корзиной пользователя,
+включая получение информации о корзине и её очистку после создания заказа.
+"""
+
 import logging
-from typing import Dict, List, Optional, Tuple, Any
-from fastapi import Depends, HTTPException, status
+import os
+from typing import Dict, Optional, Any
+
+import httpx
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("order_cart_api")
 
 # URL сервиса корзины
-CART_SERVICE_URL = os.getenv("CART_SERVICE_URL", "http://localhost:8002")
-logger.info(f"URL сервиса корзины: {CART_SERVICE_URL}")
+CART_SERVICE_URL = os.getenv(
+    "CART_SERVICE_URL", 
+    "http://localhost:8002"
+)
+logger.info("URL сервиса корзины: %s", CART_SERVICE_URL)
 
 class CartAPI:
     """Класс для взаимодействия с API сервиса корзины"""
@@ -28,22 +37,26 @@ class CartAPI:
         """
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(f"{CART_SERVICE_URL}/cart", params={"id": cart_id})
+                response = await client.get(
+                    f"{CART_SERVICE_URL}/cart",
+                    params={"id": cart_id}
+                )
                 
                 if response.status_code == 200:
                     cart_data = response.json()
                     
                     # Если указан user_id, проверяем, что корзина принадлежит этому пользователю
                     if user_id is not None and cart_data.get("user_id") != user_id:
-                        logger.warning(f"Корзина {cart_id} не принадлежит пользователю {user_id}")
+                        logger.warning("Корзина %d не принадлежит пользователю %d",
+                        cart_id, user_id)
                         return None
                     
                     return cart_data
                 else:
-                    logger.warning(f"Корзина с ID {cart_id} не найдена, статус: {response.status_code}")
+                    logger.warning("Корзина с ID %d не найдена, статус: %d", cart_id, response.status_code)
                     return None
-        except Exception as e:
-            logger.error(f"Ошибка при получении корзины {cart_id}: {str(e)}")
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as e:
+            logger.error("Ошибка при получении корзины %d: %s", cart_id, str(e))
             return None
     
     async def clear_cart(self, cart_id: int) -> bool:
@@ -58,18 +71,29 @@ class CartAPI:
         """
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.delete(f"{CART_SERVICE_URL}/cart", params={"id": cart_id})
+                response = await client.delete(
+                    f"{CART_SERVICE_URL}/cart",
+                    params={"id": cart_id}
+                )
                 
                 if response.status_code in (200, 204):
-                    logger.info(f"Корзина {cart_id} успешно очищена")
+                    logger.info("Корзина %d успешно очищена", cart_id)
                     return True
                 else:
-                    logger.error(f"Ошибка при очистке корзины {cart_id}, статус: {response.status_code}")
+                    logger.error(
+                        "Ошибка при очистке корзины %d, статус: %d", 
+                        cart_id,
+                        response.status_code
+                    )
                     return False
-        except Exception as e:
-            logger.error(f"Ошибка при очистке корзины {cart_id}: {str(e)}")
+        except (httpx.RequestError, httpx.HTTPStatusError) as e:
+            logger.error(
+                "Ошибка при очистке корзины %d: %s", 
+                cart_id,
+                str(e)
+            )
             return False
 
 async def get_cart_api() -> CartAPI:
     """Dependency для получения экземпляра CartAPI"""
-    return CartAPI() 
+    return CartAPI()

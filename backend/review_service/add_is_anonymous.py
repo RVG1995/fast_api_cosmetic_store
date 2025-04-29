@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
+"""Миграция: добавляет колонку is_anonymous в таблице reviews"""
+
 import asyncio
+import logging
 import os
+from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
-import logging
+from sqlalchemy.exc import SQLAlchemyError
+import asyncpg
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -39,25 +43,25 @@ async def add_is_anonymous_column():
         exists = result.scalar_one_or_none()
         
         if exists:
-            print("Колонка is_anonymous уже существует в таблице reviews")
+            logger.info("Колонка is_anonymous уже существует в таблице reviews")
             return
         
         # Добавляем колонку с значением по умолчанию false
-        print("Добавляем колонку is_anonymous в таблицу reviews...")
+        logger.info("Добавляем колонку is_anonymous в таблицу reviews...")
         alter_query = text("ALTER TABLE reviews ADD COLUMN is_anonymous BOOLEAN NOT NULL DEFAULT false")
         await session.execute(alter_query)
         await session.commit()
-        print("Колонка успешно добавлена")
+        logger.info("Колонка успешно добавлена")
 
 async def main():
     """Основная функция миграции"""
-    print(f"Подключаемся к БД: {DATABASE_URL}")
+    logger.info("Подключаемся к БД: %s", DATABASE_URL)
     
     try:
         await add_is_anonymous_column()
-        print("Миграция успешно выполнена")
-    except Exception as e:
-        print(f"Ошибка при выполнении миграции: {str(e)}")
+        logger.info("Миграция успешно выполнена")
+    except (SQLAlchemyError, asyncpg.PostgresError):
+        logger.exception("Ошибка при выполнении миграции")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

@@ -1,13 +1,15 @@
-import os
-from redis import asyncio as aioredis
+"""Сервис кэширования для аутентификации с использованием Redis."""
+
+import hashlib
 import json
 import logging
-import hashlib
+import os
 import pickle
-from typing import Dict, Any, Optional, Union, List, Callable
-import time
-import asyncio
 from functools import wraps
+from typing import Any, Optional, Union, Callable
+
+from redis import asyncio as aioredis
+from redis.exceptions import RedisError, ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ class CacheService:
             logger.info("Кэширование отключено в настройках")
             return
             
-        logger.info(f"Кэширование включено, инициализация соединения с Redis")
+        logger.info("Кэширование включено, инициализация соединения с Redis")
     
     async def initialize(self):
         """Асинхронная инициализация соединения с Redis"""
@@ -43,7 +45,7 @@ class CacheService:
             
         try:
             # Создаем строку подключения Redis
-            redis_url = f"redis://"
+            redis_url = "redis://"
             if REDIS_PASSWORD:
                 redis_url += f":{REDIS_PASSWORD}@"
             redis_url += f"{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
@@ -55,9 +57,9 @@ class CacheService:
                 decode_responses=True  # Автоматически декодируем ответы из байтов в строки
             )
             
-            logger.info(f"Подключение к Redis для кэширования успешно: {REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
-        except Exception as e:
-            logger.error(f"Ошибка подключения к Redis для кэширования: {str(e)}")
+            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", REDIS_HOST, REDIS_PORT, REDIS_DB)
+        except (RedisConnectionError, RedisTimeoutError) as e:
+            logger.error("Ошибка подключения к Redis для кэширования: %s", str(e))
             self.redis = None
             self.enabled = False
     
@@ -88,15 +90,15 @@ class CacheService:
                     # Если это JSON строка
                     try:
                         return json.loads(data)
-                    except:
+                    except (json.JSONDecodeError, TypeError):
                         # Если не JSON и не pickle, возвращаем как есть
                         return data
-                except Exception:
+                except (pickle.UnpicklingError, TypeError):
                     # Если не удалось десериализовать, возвращаем как есть
                     return data
             return None
-        except Exception as e:
-            logger.error(f"Ошибка при получении данных из кэша: {str(e)}")
+        except RedisError as e:
+            logger.error("Ошибка при получении данных из кэша: %s", str(e))
             return None
     
     async def set(self, key: str, value: Any, ttl: int = DEFAULT_CACHE_TTL) -> bool:
@@ -119,8 +121,8 @@ class CacheService:
             data = pickle.dumps(value)
             await self.redis.setex(key, ttl, data)
             return True
-        except Exception as e:
-            logger.error(f"Ошибка при сохранении данных в кэш: {str(e)}")
+        except RedisError as e:
+            logger.error("Ошибка при сохранении данных в кэш: %s", str(e))
             return False
     
     async def delete(self, key: str) -> bool:
@@ -139,8 +141,8 @@ class CacheService:
         try:
             await self.redis.delete(key)
             return True
-        except Exception as e:
-            logger.error(f"Ошибка при удалении ключа из кэша: {str(e)}")
+        except RedisError as e:
+            logger.error("Ошибка при удалении ключа из кэша: %s", str(e))
             return False
     
     async def delete_pattern(self, pattern: str) -> int:
@@ -170,8 +172,8 @@ class CacheService:
             if keys_to_delete:
                 return await self.redis.delete(*keys_to_delete)
             return 0
-        except Exception as e:
-            logger.error(f"Ошибка при удалении ключей по шаблону {pattern}: {str(e)}")
+        except RedisError as e:
+            logger.error("Ошибка при удалении ключей по шаблону %s: %s", pattern, str(e))
             return 0
     
     def get_key_for_user(self, user_id: Union[int, str], action: str) -> str:
@@ -264,7 +266,7 @@ def cached(ttl: int = DEFAULT_CACHE_TTL, prefix: str = None, key_builder: Callab
             cached_result = await cache_service.get(cache_key)
             
             if cached_result is not None:
-                logger.debug(f"Получены данные из кэша для ключа: {cache_key}")
+                logger.debug("Получены данные из кэша для ключа: %s", cache_key)
                 return cached_result
                 
             # Если в кэше нет, выполняем функцию
@@ -273,7 +275,7 @@ def cached(ttl: int = DEFAULT_CACHE_TTL, prefix: str = None, key_builder: Callab
             # Сохраняем результат в кэш
             if result is not None:
                 await cache_service.set(cache_key, result, ttl)
-                logger.debug(f"Сохранены данные в кэш для ключа: {cache_key}")
+                logger.debug("Сохранены данные в кэш для ключа: %s", cache_key)
                 
             return result
             

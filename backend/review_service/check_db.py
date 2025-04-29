@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
+"""Модуль для проверки состояния базы данных отзывов."""
+
 import asyncio
+import logging
 import os
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
-import logging
+import sqlalchemy.exc
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -36,7 +39,7 @@ async def check_reviews():
         # Подсчитываем общее количество отзывов
         count_result = await session.execute(text("SELECT COUNT(*) FROM reviews"))
         count = count_result.scalar_one()
-        print(f"Всего отзывов в БД: {count}")
+        logger.info("Всего отзывов в БД: %d", count)
         
         if count > 0:
             # Получаем информацию об отзывах
@@ -44,11 +47,11 @@ async def check_reviews():
                 text("SELECT id, review_type, product_id, is_hidden FROM reviews")
             )
             
-            print("\nСписок отзывов:")
-            print("=" * 50)
+            logger.info("Список отзывов:")
+            logger.info("=" * 50)
             for row in reviews_result:
-                print(f"ID: {row[0]}, Тип: {row[1]}, Товар ID: {row[2]}, Скрыт: {row[3]}")
-            print("=" * 50)
+                logger.info("ID: %d, Тип: %s, Товар ID: %d, Скрыт: %s", row[0], row[1], row[2], row[3])
+            logger.info("=" * 50)
             
             # Проверяем отзывы для товара с ID = 19
             product_reviews = await session.execute(
@@ -56,9 +59,9 @@ async def check_reviews():
             )
             
             rows = list(product_reviews)
-            print(f"\nОтзывы для товара ID=19: {len(rows)}")
+            logger.info("Отзывы для товара ID=19: %d", len(rows))
             for row in rows:
-                print(f"ID: {row[0]}, Тип: {row[1]}, Скрыт: {row[2]}")
+                logger.info("ID: %d, Тип: %s, Скрыт: %s", row[0], row[1], row[2])
             
             # Проверяем отзывы для магазина
             store_reviews = await session.execute(
@@ -66,19 +69,19 @@ async def check_reviews():
             )
             
             rows = list(store_reviews)
-            print(f"\nОтзывы для магазина: {len(rows)}")
+            logger.info("Отзывы для магазина: %d", len(rows))
             for row in rows:
-                print(f"ID: {row[0]}, Тип: {row[1]}, Скрыт: {row[2]}")
+                logger.info("ID: %d, Тип: %s, Скрыт: %s", row[0], row[1], row[2])
 
 async def main():
     """Основная функция для проверки БД"""
-    print("Проверка базы данных отзывов...")
-    print(f"Подключаемся к: {DATABASE_URL}")
+    logger.info("Проверка базы данных отзывов...")
+    logger.info("Подключаемся к: %s", DATABASE_URL)
     
     try:
         await check_reviews()
-    except Exception as e:
-        print(f"Ошибка при проверке БД: {str(e)}")
+    except sqlalchemy.exc.SQLAlchemyError as e:
+        logger.error("Ошибка при проверке БД: %s", str(e))
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

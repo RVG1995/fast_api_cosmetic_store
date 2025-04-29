@@ -1,9 +1,12 @@
+"""Модуль защиты от брутфорс-атак с использованием Redis для хранения состояния."""
+
 import os
-from redis import asyncio as aioredis
 import time
 import logging
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any
+from redis import asyncio as aioredis
+from redis.exceptions import RedisError, ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,7 @@ class BruteforceProtection:
         """Асинхронная инициализация соединения с Redis"""
         try:
             # Создаем строку подключения Redis
-            redis_url = f"redis://"
+            redis_url = "redis://"
             if REDIS_PASSWORD:
                 redis_url += f":{REDIS_PASSWORD}@"
             redis_url += f"{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
@@ -42,9 +45,9 @@ class BruteforceProtection:
                 decode_responses=True  # Автоматически декодируем ответы из байтов в строки
             )
             
-            logger.info(f"Подключение к Redis успешно: {REDIS_HOST}:{REDIS_PORT}")
-        except Exception as e:
-            logger.error(f"Ошибка подключения к Redis: {str(e)}")
+            logger.info("Подключение к Redis успешно: %s:%s", REDIS_HOST, REDIS_PORT)
+        except (RedisConnectionError, RedisTimeoutError) as e:
+            logger.error("Ошибка подключения к Redis: %s", str(e))
             self.redis = None
     
     async def check_ip_blocked(self, ip_address: str) -> bool:
@@ -70,15 +73,15 @@ class BruteforceProtection:
                 blocked_until_int = int(blocked_until)
                 if blocked_until_int > int(time.time()):
                     remaining = blocked_until_int - int(time.time())
-                    logger.warning(f"IP {ip_address} заблокирован на {remaining} секунд")
+                    logger.warning("IP %s заблокирован на %s секунд", ip_address, remaining)
                     return True
                 
                 # Если время блокировки истекло, удаляем ключ
                 await self.redis.delete(block_key)
                 
             return False
-        except Exception as e:
-            logger.error(f"Ошибка при проверке блокировки IP {ip_address}: {str(e)}")
+        except RedisError as e:
+            logger.error("Ошибка при проверке блокировки IP %s: %s", ip_address, str(e))
             return False
     
     async def record_failed_attempt(self, ip_address: str, username: str = None) -> Dict[str, Any]:
@@ -113,7 +116,7 @@ class BruteforceProtection:
                 try:
                     data = json.loads(attempts_data)
                     attempts = data.get("count", 0) + 1
-                except:
+                except json.JSONDecodeError:
                     attempts = 1
             
             # Обновляем данные о попытках
@@ -130,7 +133,8 @@ class BruteforceProtection:
                 block_until = current_time + BLOCK_TIME
                 await self.redis.setex(block_key, BLOCK_TIME, str(block_until))
                 
-                logger.warning(f"IP {ip_address} заблокирован на {BLOCK_TIME} секунд после {attempts} неудачных попыток")
+                logger.warning("IP %s заблокирован на %s секунд после %s неудачных попыток", 
+                             ip_address, BLOCK_TIME, attempts)
                 
                 # Сбрасываем счетчик попыток
                 await self.redis.delete(attempt_key)
@@ -143,9 +147,10 @@ class BruteforceProtection:
                     "blocked_for": BLOCK_TIME
                 }
             
-            logger.info(f"Неудачная попытка входа с IP {ip_address}" + 
-                      (f" для пользователя {username}" if username else "") + 
-                      f". Попытка {attempts} из {MAX_FAILED_ATTEMPTS}")
+            logger.info("Неудачная попытка входа с IP %s%s. Попытка %s из %s", 
+                       ip_address,
+                       f" для пользователя {username}" if username else "",
+                       attempts, MAX_FAILED_ATTEMPTS)
             
             return {
                 "blocked": False,
@@ -153,8 +158,8 @@ class BruteforceProtection:
                 "remaining_attempts": MAX_FAILED_ATTEMPTS - attempts
             }
             
-        except Exception as e:
-            logger.error(f"Ошибка при записи неудачной попытки входа: {str(e)}")
+        except RedisError as e:
+            logger.error("Ошибка при записи неудачной попытки входа: %s", str(e))
             return {"blocked": False, "attempts": 0, "remaining_attempts": MAX_FAILED_ATTEMPTS}
     
     async def reset_attempts(self, ip_address: str, username: str = None) -> bool:
@@ -182,12 +187,13 @@ class BruteforceProtection:
             ip_attempt_key = f"login_attempts:{ip_address}"
             await self.redis.delete(ip_attempt_key)
             
-            logger.info(f"Сброшен счетчик неудачных попыток для IP {ip_address}" + 
-                      (f" и пользователя {username}" if username else ""))
+            logger.info("Сброшен счетчик неудачных попыток для IP %s%s", 
+                       ip_address,
+                       f" и пользователя {username}" if username else "")
             
             return True
-        except Exception as e:
-            logger.error(f"Ошибка при сбросе счетчика попыток: {str(e)}")
+        except RedisError as e:
+            logger.error("Ошибка при сбросе счетчика попыток: %s", str(e))
             return False
 
     async def close(self):
@@ -197,4 +203,4 @@ class BruteforceProtection:
             logger.info("Соединение с Redis для защиты от брутфорса закрыто")
 
 # Глобальный экземпляр для использования в приложении
-bruteforce_protection = BruteforceProtection() 
+bruteforce_protection = BruteforceProtection()

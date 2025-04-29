@@ -1,18 +1,21 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+"""Модуль Notifications Service."""
+
+import os
 import logging
 from contextlib import asynccontextmanager
-import os
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .settings_router import router as settings_router
-from .cache import get_redis, close_redis, invalidate_settings_cache, cache_set_settings
+from .cache import get_redis, close_redis
 
 logger = logging.getLogger(__name__)
 
 # Используем lifespan вместо on_event (FastAPI v2)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Управляет жизненным циклом приложения: инициализация БД и Redis, и очистка ресурсов."""
     logging.basicConfig(level=logging.INFO)
     # Настройка логгера для модуля auth
     auth_logger = logging.getLogger("notifications_service.auth")
@@ -59,4 +62,4 @@ if __name__ == "__main__":
         port=port,
         reload=True,
         reload_dirs=[service_dir]
-    ) 
+    )

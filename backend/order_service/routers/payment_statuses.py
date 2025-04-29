@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 import logging
+from database import get_db
 
 from schemas import (
     PaymentStatusCreate,
@@ -10,7 +11,7 @@ from schemas import (
     PaymentStatusResponse
 )
 from models import PaymentStatusModel
-from dependencies import get_db, get_current_user, get_admin_user
+from dependencies import get_current_user, get_admin_user
 
 # Настройка логирования
 logger = logging.getLogger("payment_statuses")

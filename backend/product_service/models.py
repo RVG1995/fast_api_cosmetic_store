@@ -1,15 +1,20 @@
+"""Модели данных для сервиса продуктов, включая категории, страны, бренды и товары."""
+
+from typing import Optional, List, Dict, Tuple, Any
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, Computed, Boolean, Text, ForeignKey, CheckConstraint, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from typing import  Optional, List, Dict, Tuple, Any
+import sqlalchemy.exc
 
 
 class Base(DeclarativeBase):
+    """Базовый класс для всех моделей SQLAlchemy."""
     pass
 
 
 class CategoryModel(Base):
+    """Модель категории товаров."""
     __tablename__ = 'categories' 
 
     id: Mapped[int] = mapped_column(primary_key = True,index = True)
@@ -20,6 +25,7 @@ class CategoryModel(Base):
 
 
 class CountryModel(Base):
+    """Модель страны."""
     __tablename__ = 'countries' 
 
     id: Mapped[int] = mapped_column(primary_key = True,index = True)
@@ -28,6 +34,7 @@ class CountryModel(Base):
     products = relationship("ProductModel", back_populates="country", cascade="save-update")
 
 class BrandModel(Base):
+    """Модель бренда."""
     __tablename__ = 'brands' 
 
     id: Mapped[int] = mapped_column(primary_key = True,index = True)
@@ -36,6 +43,7 @@ class BrandModel(Base):
     products = relationship("ProductModel", back_populates="brand", cascade="save-update")
 
 class SubCategoryModel(Base):
+    """Модель подкатегории."""
     __tablename__ = 'subcategories'
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -51,6 +59,7 @@ class SubCategoryModel(Base):
 
 
 class ProductModel(Base):
+    """Модель товара."""
     __tablename__ = 'products'
     __table_args__ = (
         CheckConstraint('price > 0', name='products_price_positive_check'),
@@ -226,8 +235,8 @@ class ProductModel(Base):
             # В тестах, если session.execute - это корутина без .scalars().all()
             # Просто вернем пустой список для безопасности
             return []
-        except Exception as e:
-            # Для других ошибок также возвращаем пустой список
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            # Для ошибок базы данных возвращаем пустой список
             print(f"Ошибка при получении продуктов: {str(e)}")
             return []
 
@@ -254,7 +263,7 @@ class ProductModel(Base):
             # В тестах, если session.execute - это корутина без .scalars().all()
             # Просто вернем пустой список для безопасности
             return []
-        except Exception as e:
-            # Для других ошибок также возвращаем пустой список
+        except (sqlalchemy.exc.SQLAlchemyError, sqlalchemy.exc.OperationalError) as e:
+            # Для ошибок базы данных возвращаем пустой список
             print(f"Ошибка при получении продуктов для админки: {str(e)}")
             return []

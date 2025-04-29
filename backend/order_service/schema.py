@@ -1,6 +1,9 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from typing import Optional, List, Dict, Any
+"""Схемы для работы с заказами и их статусами."""
+
 from datetime import datetime
+from typing import Optional, List, Dict, Any
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class ProductInfoSchema(BaseModel):

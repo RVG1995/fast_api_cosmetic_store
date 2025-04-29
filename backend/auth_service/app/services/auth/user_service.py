@@ -1,8 +1,10 @@
+"""Сервис для работы с пользователями, включая создание, активацию, проверку учетных данных и обновление пароля."""
+
 import logging
 import secrets
-from typing import Optional, Dict, Any, Tuple
+from datetime import datetime
+from typing import Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from models import UserModel
 from utils import get_password_hash, verify_password
@@ -27,7 +29,7 @@ class UserService:
         Returns:
             Optional[UserModel]: Объект пользователя или None
         """
-        logger.debug(f"Запрос пользователя с ID: {user_id}")
+        logger.debug("Запрос пользователя с ID: %s", user_id)
         user = await UserModel.get_by_id(session, user_id)
         return user
     
@@ -44,7 +46,7 @@ class UserService:
         Returns:
             Optional[UserModel]: Объект пользователя или None
         """
-        logger.debug(f"Запрос пользователя с email: {email}")
+        logger.debug("Запрос пользователя с email: %s", email)
         user = await UserModel.get_by_email(session, email)
         return user
     
@@ -112,7 +114,7 @@ class UserService:
         user = await UserModel.get_by_activation_token(session, token)
         
         if not user:
-            logger.warning(f"Попытка активации с недействительным токеном: {token}")
+            logger.warning("Попытка активации с недействительным токеном: %s", token)
             return None
         
         # Активируем пользователя
@@ -142,17 +144,17 @@ class UserService:
         user = await UserService.get_user_by_email(session, email)
         
         if not user:
-            logger.warning(f"Попытка входа с несуществующим email: {email}")
+            logger.warning("Попытка входа с несуществующим email: %s", email)
             return None
         
         # Проверяем пароль
         if not await verify_password(password, user.hashed_password):
-            logger.warning(f"Неверный пароль для пользователя: {email}")
+            logger.warning("Неверный пароль для пользователя: %s", email)
             return None
         
         # Проверяем статус активации
         if not user.is_active:
-            logger.warning(f"Попытка входа в неактивный аккаунт: {email}")
+            logger.warning("Попытка входа в неактивный аккаунт: %s", email)
             return None
         
         return user
@@ -169,8 +171,6 @@ class UserService:
         Returns:
             bool: True при успешном обновлении, иначе False
         """
-        from datetime import datetime
-        
         try:
             user = await UserService.get_user_by_id(session, user_id)
             if user:
@@ -185,8 +185,8 @@ class UserService:
                 
                 return True
             return False
-        except Exception as e:
-            logger.error(f"Ошибка при обновлении времени последнего входа: {str(e)}")
+        except (ValueError, AttributeError) as e:
+            logger.error("Ошибка при обновлении времени последнего входа: %s", str(e))
             return False
     
     @staticmethod
@@ -220,8 +220,8 @@ class UserService:
             await cache_service.delete(email_cache_key)
             
             return True
-        except Exception as e:
-            logger.error(f"Ошибка при изменении пароля: {str(e)}")
+        except (ValueError, AttributeError) as e:
+            logger.error("Ошибка при изменении пароля: %s", str(e))
             return False
     
     @staticmethod
@@ -245,9 +245,9 @@ class UserService:
             await send_email_activation_message(user_id, email, activation_link)
             
             return True
-        except Exception as e:
-            logger.error(f"Ошибка при отправке письма активации: {str(e)}")
+        except (ValueError, ConnectionError) as e:
+            logger.error("Ошибка при отправке письма активации: %s", str(e))
             return False
             
 # Создаем глобальный экземпляр сервиса для использования в приложении
-user_service = UserService() 
+user_service = UserService()

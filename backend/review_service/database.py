@@ -1,9 +1,15 @@
+"""Модуль для работы с базой данных отзывов.
+
+Предоставляет асинхронное подключение к PostgreSQL и управление сессиями.
+"""
+
+import logging
 import os
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
-import logging
 from models import Base
+from typing import AsyncGenerator
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -38,7 +44,7 @@ SessionLocal = async_sessionmaker(
     expire_on_commit=False
 )
 
-async def get_session() -> AsyncSession:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """
     Получение сессии базы данных
     
@@ -50,7 +56,7 @@ async def get_session() -> AsyncSession:
             yield session
         except Exception as e:
             await session.rollback()
-            logger.error(f"Ошибка сессии БД: {str(e)}")
+            logger.error("Ошибка сессии БД: %s", str(e))
             raise
         finally:
             await session.close()
@@ -67,5 +73,5 @@ async def setup_database():
             await conn.run_sync(Base.metadata.create_all)
         logger.info("База данных успешно инициализирована")
     except Exception as e:
-        logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
-        raise 
+        logger.error("Ошибка при инициализации базы данных: %s", str(e))
+        raise

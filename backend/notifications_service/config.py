@@ -1,3 +1,5 @@
+"""Конфигурация сервиса уведомлений."""
+
 import os
 from dotenv import load_dotenv
 
@@ -55,4 +57,4 @@ EVENT_TYPE_ORDER_STATUS_CHANGED = "order.status_changed"
 # Redis settings for notifications cache
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 # TTL for notification settings cache in seconds
-SETTINGS_CACHE_TTL = int(os.getenv("NOTIFICATIONS_SETTINGS_CACHE_TTL", "60")) 
+SETTINGS_CACHE_TTL = int(os.getenv("NOTIFICATIONS_SETTINGS_CACHE_TTL", "60"))

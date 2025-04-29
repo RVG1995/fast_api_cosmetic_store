@@ -1,3 +1,5 @@
+"""Модуль настройки асинхронного подключения к БД и генерации сессий."""
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from .config import DATABASE_URL
@@ -14,4 +16,4 @@ Base = declarative_base()
 async def get_db():
     """Генератор для получения сессии БД"""
     async with AsyncSessionLocal() as session:
-        yield session 
+        yield session

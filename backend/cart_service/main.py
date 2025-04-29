@@ -1,36 +1,39 @@
-from fastapi import FastAPI, Depends, HTTPException, Response, Request, Query
+"""Сервис корзины для управления товарами пользователей."""
+
+import logging
+import os
+import asyncio
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, Annotated
+
+import json
+import httpx
+import sqlalchemy.exc
+
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
-from contextlib import asynccontextmanager
+from sqlalchemy.dialects.postgresql import insert
+
 from models import CartModel, CartItemModel
 from database import setup_database, get_session, engine
-from auth import get_current_user, get_session_id, User, get_current_admin_user
+from auth import get_current_user, User, get_current_admin_user
 from schema import (
-    CartItemAddSchema, CartItemUpdateSchema, CartSchema, CartItemSchema,  
-    CartResponseSchema, ProductInfoSchema, CartSummarySchema,
-    CleanupResponseSchema, ShareCartRequestSchema, ShareCartResponseSchema,
-    LoadSharedCartSchema, UserCartSchema, PaginatedUserCartsResponse, UserCartItemSchema,
-    CartMergeSchema, CartMergeItemSchema
+    CartItemAddSchema, CartItemUpdateSchema, CartSchema,  
+    CartResponseSchema, CartSummarySchema,
+    CleanupResponseSchema, UserCartSchema, PaginatedUserCartsResponse, UserCartItemSchema,
+    CartMergeSchema
 )
 from product_api import ProductAPI
-from typing import Optional, List, Dict, Any, Annotated, Union
-import logging
-import uuid
-import os
-from datetime import datetime, timedelta
-import asyncio
-import httpx
 from cache import (
-    get_redis, close_redis, cached, cache_get, cache_set, cache_delete, 
-    invalidate_user_cart_cache, invalidate_session_cart_cache, invalidate_admin_carts_cache,
+    get_redis, close_redis, cache_get, cache_set, cache_delete, 
+    invalidate_user_cart_cache, invalidate_admin_carts_cache,
     CACHE_KEYS, CACHE_TTL
 )
-import json
-from pydantic import BaseModel
-from sqlalchemy.dialects.postgresql import insert
-from dependencies import  _get_service_token
+from dependencies import _get_service_token
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +47,12 @@ MAX_COOKIE_SIZE = 4000  # ~4KB - безопасный размер для бол
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    Контекстный менеджер для жизненного цикла приложения FastAPI.
+    
+    Инициализирует базу данных и Redis при запуске,
+    закрывает соединения при завершении работы.
+    """
     # Код, который должен выполниться при запуске приложения
     await setup_database()  # создание таблиц в базе данных
     
@@ -132,35 +141,35 @@ async def enrich_cart_with_product_data(cart: CartModel) -> CartSchema:
                 total_price=0
             )
     
-        logger.info(f"Обогащение данными корзины ID={cart.id}")
+        logger.info("Обогащение данными корзины ID=%s", cart.id)
         
         # Проверяем, что cart.items не None
         items = getattr(cart, 'items', None) or []
         
         if not items:
-            logger.info(f"Корзина ID={cart.id} не содержит элементов")
+            logger.info("Корзина ID=%s не содержит элементов", cart.id)
         
         # Собираем ID всех продуктов в корзине
         product_ids = [item.product_id for item in items]
         
         if product_ids:
-            logger.info(f"Собрано {len(product_ids)} ID продуктов: {product_ids}")
+            logger.info("Собрано %d ID продуктов: %s", len(product_ids), product_ids)
         
         # Получаем информацию о продуктах, только если есть элементы в корзине
         products_info = await product_api.get_products_info(product_ids) if product_ids else {}
         
         if products_info:
-            logger.info(f"Получена информация о {len(products_info)} продуктах")
+            logger.info("Получена информация о %d продуктах", len(products_info))
         
         # Используем только безопасные атрибуты без повторного обращения к БД
         try:
             cart_created_at = cart.created_at
-        except Exception:
+        except (AttributeError, KeyError):
             cart_created_at = datetime.now()
             
         try:
             cart_updated_at = cart.updated_at
-        except Exception:
+        except (AttributeError, KeyError):
             cart_updated_at = datetime.now()
         
         # Преобразуем корзину в схему
@@ -203,19 +212,20 @@ async def enrich_cart_with_product_data(cart: CartModel) -> CartSchema:
                     cart_dict["total_items"] += item.quantity
                     cart_dict["total_price"] += product_info["price"] * item.quantity
                 else:
-                    logger.warning(f"Не удалось получить информацию о продукте ID={item.product_id}")
+                    logger.warning("Не удалось получить информацию о продукте ID=%s", item.product_id)
                 
                 cart_dict["items"].append(item_dict)
-            except Exception as e:
+            except (KeyError, AttributeError, TypeError) as e:
                 # Если произошла ошибка при обработке одного товара, пропускаем его
-                logger.error(f"Ошибка при обработке товара ID={item.product_id}: {str(e)}")
+                logger.error("Ошибка при обработке товара ID=%s: %s", item.product_id, str(e))
                 continue
         
-        logger.info(f"Корзина ID={cart.id} успешно обогащена данными: {len(cart_dict['items'])} товаров, всего {cart_dict['total_items']} шт., на сумму {cart_dict['total_price']} ₽")
+        logger.info("Корзина ID=%s успешно обогащена данными: %d товаров, всего %d шт., на сумму %s ₽", 
+                   cart.id, len(cart_dict['items']), cart_dict['total_items'], cart_dict['total_price'])
         
         return CartSchema(**cart_dict)
-    except Exception as e:
-        logger.error(f"Критическая ошибка при обогащении данными корзины: {str(e)}")
+    except (KeyError, AttributeError, TypeError, ValueError) as e:
+        logger.error("Критическая ошибка при обогащении данными корзины: %s", str(e))
         # В случае критической ошибки возвращаем пустую корзину вместо None
         return CartSchema(
             id=cart.id if cart else 0,
@@ -237,7 +247,6 @@ async def root():
 
 @app.get("/cart", response_model=CartSchema, tags=["Корзина"])
 async def get_cart(
-    response: Response,
     user: Optional[User] = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
@@ -246,7 +255,7 @@ async def get_cart(
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится только в куках.
     """
-    logger.info(f"Запрос корзины: user={user.id if user else 'Anonymous'}")
+    logger.info("Запрос корзины: user=%s", user.id if user else 'Anonymous')
     
     try:
         # Для авторизованных пользователей используем БД и кэш
@@ -255,7 +264,7 @@ async def get_cart(
             cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
             cached_cart = await cache_get(cache_key)
             if cached_cart:
-                logger.info(f"Корзина получена из кэша: {cache_key}")
+                logger.info("Корзина получена из кэша: %s", cache_key)
                 return CartSchema(**cached_cart)
 
             # Если данных в кэше нет, пытаемся найти существующую корзину
@@ -263,7 +272,7 @@ async def get_cart(
             
             if not cart:
                 # Создаем новую корзину для авторизованного пользователя
-                logger.info(f"Создание новой корзины для пользователя: user_id={user.id}")
+                logger.info("Создание новой корзины для пользователя: user_id=%s", user.id)
                 new_cart = CartModel(user_id=user.id)
                 db.add(new_cart)
                 await db.commit()
@@ -276,7 +285,7 @@ async def get_cart(
                 result = await db.execute(query)
                 cart = result.scalars().first()
                 
-                logger.info(f"Новая корзина создана: id={cart.id if cart else 'unknown'}")
+                logger.info("Новая корзина создана: id=%s", cart.id if cart else 'unknown')
             
             # Обогащаем корзину данными о продуктах
             enriched_cart = await enrich_cart_with_product_data(cart)
@@ -285,7 +294,8 @@ async def get_cart(
             if enriched_cart:
                 await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
 
-            logger.info(f"Корзина пользователя успешно получена: id={cart.id}, items={len(cart.items) if hasattr(cart, 'items') and cart.items else 0}")
+            logger.info("Корзина пользователя успешно получена: id=%s, items=%d", 
+                       cart.id, len(cart.items) if hasattr(cart, 'items') and cart.items else 0)
             
             return enriched_cart
             
@@ -306,8 +316,8 @@ async def get_cart(
             
             return empty_cart
             
-    except Exception as e:
-        logger.error(f"Ошибка при получении корзины: {str(e)}")
+    except (ValueError, AttributeError, KeyError) as e:
+        logger.error("Ошибка при получении корзины: %s", str(e))
         # В случае ошибки возвращаем пустую корзину
         return CartSchema(
             id=0,
@@ -323,7 +333,6 @@ async def get_cart(
 @app.post("/cart/items", response_model=CartResponseSchema, tags=["Корзина"])
 async def add_item_to_cart(
     item: CartItemAddSchema,
-    response: Response,
     user: Optional[User] = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
@@ -332,18 +341,21 @@ async def add_item_to_cart(
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info(f"Запрос добавления товара в корзину: product_id={item.product_id}, quantity={item.quantity}, user={user.id if user else 'Anonymous'}")
+    logger.info("Запрос добавления товара в корзину: product_id=%s, quantity=%d, user=%s", 
+               item.product_id, item.quantity, user.id if user else 'Anonymous')
     
     # Проверяем наличие товара на складе
     stock_check = await product_api.check_product_stock(item.product_id, item.quantity)
     
     if not stock_check["success"]:
-        logger.warning(f"Ошибка проверки наличия товара: product_id={item.product_id}, quantity={item.quantity}, error={stock_check.get('error')}")
+        logger.warning("Ошибка проверки наличия товара: product_id=%s, quantity=%d, error=%s", 
+                      item.product_id, item.quantity, stock_check.get('error'))
         
         # Если товара на складе недостаточно, но он есть в наличии, добавляем максимально возможное количество
         available_stock = stock_check.get("available_stock", 0)
         if available_stock > 0:
-            logger.info(f"Недостаточно товара, добавляем доступное количество: product_id={item.product_id}, requested={item.quantity}, available={available_stock}")
+            logger.info("Недостаточно товара, добавляем доступное количество: product_id=%s, requested=%d, available=%d", 
+                       item.product_id, item.quantity, available_stock)
             # Изменяем количество на максимально доступное
             item.quantity = available_stock
         else:
@@ -365,7 +377,7 @@ async def add_item_to_cart(
             
             if not cart:
                 # Создаем новую корзину
-                logger.info(f"Создание новой корзины: user_id={user.id}")
+                logger.info("Создание новой корзины: user_id=%s", user.id)
                 new_cart = CartModel(user_id=user.id)
                 db.add(new_cart)
                 await db.commit()
@@ -378,7 +390,7 @@ async def add_item_to_cart(
                 result = await db.execute(query)
                 cart = result.scalars().first()
                 
-                logger.info(f"Новая корзина создана: id={cart.id if cart else 'unknown'}")
+                logger.info("Новая корзина создана: id=%s", cart.id if cart else 'unknown')
             
             # Проверяем, есть ли уже такой товар в корзине
             existing_item = await CartItemModel.get_item_by_product(db, cart.id, item.product_id)
@@ -401,7 +413,8 @@ async def add_item_to_cart(
                     
                     # Если можно добавить хотя бы часть, добавляем сколько можно
                     new_quantity = available_stock
-                    logger.info(f"Недостаточно товара для добавления всего количества: current={existing_item.quantity}, requested={item.quantity}, new_total={new_quantity}")
+                    logger.info("Недостаточно товара для добавления всего количества: current=%d, requested=%d, new_total=%d", 
+                               existing_item.quantity, item.quantity, new_quantity)
                     
                     # Обновляем количество до максимально возможного
                     existing_item.quantity = new_quantity
@@ -411,13 +424,15 @@ async def add_item_to_cart(
                     partial_add = True
                 else:
                     # Увеличиваем количество
-                    logger.info(f"Обновление существующего товара в корзине: id={existing_item.id}, новое количество={existing_item.quantity + item.quantity}")
+                    logger.info("Обновление существующего товара в корзине: id=%d, новое количество=%d", 
+                               existing_item.id, existing_item.quantity + item.quantity)
                     existing_item.quantity += item.quantity
                     existing_item.updated_at = datetime.now()
                     partial_add = False
             else:
                 # Добавляем новый товар
-                logger.info(f"Добавление нового товара в корзину: product_id={item.product_id}, quantity={item.quantity}")
+                logger.info("Добавление нового товара в корзину: product_id=%s, quantity=%d", 
+                           item.product_id, item.quantity)
                 new_item = CartItemModel(
                     cart_id=cart.id,
                     product_id=item.product_id,
@@ -439,7 +454,7 @@ async def add_item_to_cart(
             updated_cart = result.scalars().first()
             await db.refresh(updated_cart, attribute_names=["items"])
             if not updated_cart:
-                logger.error(f"Не удалось получить обновленную корзину после добавления товара")
+                logger.error("Не удалось получить обновленную корзину после добавления товара")
                 return {
                     "success": False,
                     "message": "Ошибка при добавлении товара в корзину",
@@ -473,8 +488,8 @@ async def add_item_to_cart(
             
             return empty_cart
             
-    except Exception as e:
-        logger.error(f"Ошибка при добавлении товара в корзину: {str(e)}")
+    except (ValueError, AttributeError, KeyError, sqlalchemy.exc.SQLAlchemyError) as e:
+        logger.error("Ошибка при добавлении товара в корзину: %s", str(e))
         return {
             "success": False,
             "message": "Ошибка при добавлении товара в корзину",
@@ -485,7 +500,6 @@ async def add_item_to_cart(
 async def update_cart_item(
     item_id: int,
     item_data: CartItemUpdateSchema,
-    response: Response,
     user: Optional[User] = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
@@ -494,7 +508,8 @@ async def update_cart_item(
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info(f"Запрос обновления количества товара: item_id={item_id}, quantity={item_data.quantity}, user={user.id if user else 'Anonymous'}")
+    logger.info("Запрос обновления количества товара: item_id=%d, quantity=%d, user=%s", 
+               item_id, item_data.quantity, user.id if user else 'Anonymous')
     
     # Проверяем допустимость количества
     if item_data.quantity <= 0:
@@ -517,7 +532,7 @@ async def update_cart_item(
             cart_item = result.scalars().first()
             
             if not cart_item:
-                logger.warning(f"Элемент корзины не найден: item_id={item_id}, user_id={user.id}")
+                logger.warning("Элемент корзины не найден: item_id=%d, user_id=%s", item_id, user.id)
                 return {
                     "success": False,
                     "message": "Товар не найден в корзине",
@@ -528,7 +543,8 @@ async def update_cart_item(
             stock_check = await product_api.check_product_stock(cart_item.product_id, item_data.quantity)
             
             if not stock_check["success"]:
-                logger.warning(f"Недостаточно товара на складе: product_id={cart_item.product_id}, requested={item_data.quantity}, available={stock_check.get('available_stock')}")
+                logger.warning("Недостаточно товара на складе: product_id=%s, requested=%d, available=%s", 
+                              cart_item.product_id, item_data.quantity, stock_check.get('available_stock'))
                 return {
                     "success": False,
                     "message": "Ошибка при обновлении количества товара",
@@ -588,8 +604,8 @@ async def update_cart_item(
             
             return empty_cart
             
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении количества товара: {str(e)}")
+    except (ValueError, AttributeError, KeyError, sqlalchemy.exc.SQLAlchemyError) as e:
+        logger.error("Ошибка при обновлении количества товара: %s", str(e))
         return {
             "success": False,
             "message": "Ошибка при обновлении количества товара",
@@ -599,7 +615,6 @@ async def update_cart_item(
 @app.delete("/cart/items/{item_id}", response_model=CartResponseSchema, tags=["Корзина"])
 async def remove_cart_item(
     item_id: int,
-    response: Response,
     user: Optional[User] = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
@@ -608,7 +623,8 @@ async def remove_cart_item(
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info(f"Запрос удаления товара из корзины: item_id={item_id}, user={user.id if user else 'Anonymous'}")
+    logger.info("Запрос удаления товара из корзины: item_id=%d, user=%s", 
+               item_id, user.id if user else 'Anonymous')
     
     try:
         # Для авторизованных пользователей используем БД
@@ -623,7 +639,7 @@ async def remove_cart_item(
             cart_item = result.scalars().first()
             
             if not cart_item:
-                logger.warning(f"Элемент корзины не найден: item_id={item_id}, user_id={user.id}")
+                logger.warning("Элемент корзины не найден: item_id=%d, user_id=%s", item_id, user.id)
                 return {
                     "success": False,
                     "message": "Товар не найден в корзине",
@@ -678,8 +694,8 @@ async def remove_cart_item(
             
             return empty_cart
             
-    except Exception as e:
-        logger.error(f"Ошибка при удалении товара из корзины: {str(e)}")
+    except (ValueError, AttributeError, KeyError, sqlalchemy.exc.SQLAlchemyError) as e:
+        logger.error("Ошибка при удалении товара из корзины: %s", str(e))
         return {
             "success": False,
             "message": "Ошибка при удалении товара из корзины",
@@ -688,7 +704,6 @@ async def remove_cart_item(
 
 @app.get("/cart/summary", response_model=CartSummarySchema, tags=["Корзина"])
 async def get_cart_summary(
-    response: Response,
     user: Optional[User] = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
@@ -697,7 +712,7 @@ async def get_cart_summary(
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info(f"Запрос сводной информации о корзине: user={user.id if user else 'Anonymous'}")
+    logger.info("Запрос сводной информации о корзине: user=%s", user.id if user else 'Anonymous')
     
     try:
         # Для авторизованных пользователей используем БД и кэш
@@ -706,7 +721,7 @@ async def get_cart_summary(
             cache_key = f"{CACHE_KEYS['cart_summary_user']}{user.id}"
             cached_summary = await cache_get(cache_key)
             if cached_summary:
-                logger.info(f"Сводка корзины получена из кэша: {cache_key}")
+                logger.info("Сводка корзины получена из кэша: %s", cache_key)
                 return CartSummarySchema(**cached_summary)
             
             # Если данных в кэше нет, получаем корзину из БД
@@ -749,7 +764,7 @@ async def get_cart_summary(
             
             # Кэшируем результат
             await cache_set(cache_key, summary.model_dump(), CACHE_TTL["cart_summary"])
-            logger.info(f"Сводка корзины пользователя сохранена в кэш: {cache_key}")
+            logger.info("Сводка корзины пользователя сохранена в кэш: %s", cache_key)
             
             return summary
         
@@ -769,8 +784,8 @@ async def get_cart_summary(
             )
             
             return empty_cart
-    except Exception as e:
-        logger.error(f"Ошибка при получении сводной информации о корзине: {str(e)}")
+    except (ValueError, AttributeError, KeyError, sqlalchemy.exc.SQLAlchemyError) as e:
+        logger.error("Ошибка при получении сводной информации о корзине: %s", str(e))
         # В случае ошибки возвращаем пустые данные
         return CartSummarySchema(
             total_items=0,
@@ -779,7 +794,6 @@ async def get_cart_summary(
 
 @app.delete("/cart", response_model=CartResponseSchema, tags=["Корзина"])
 async def clear_cart(
-    response: Response,
     user: Optional[User] = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
@@ -788,7 +802,7 @@ async def clear_cart(
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info(f"Запрос очистки корзины: user={user.id if user else 'Anonymous'}")
+    logger.info("Запрос очистки корзины: user=%s", user.id if user else 'Anonymous')
     
     try:
         # Для авторизованных пользователей используем БД
@@ -797,7 +811,7 @@ async def clear_cart(
             cart = await get_cart_with_items(db, user)
             
             if not cart:
-                logger.warning(f"Корзина не найдена для пользователя: user_id={user.id}")
+                logger.warning("Корзина не найдена для пользователя: user_id=%s", user.id)
                 return {
                     "success": False,
                     "message": "Корзина не найдена",
@@ -858,8 +872,8 @@ async def clear_cart(
                 "cart": empty_cart
             }
             
-    except Exception as e:
-        logger.error(f"Ошибка при очистке корзины: {str(e)}")
+    except (ValueError, AttributeError, KeyError, sqlalchemy.exc.SQLAlchemyError) as e:
+        logger.error("Ошибка при очистке корзины: %s", str(e))
         return {
             "success": False,
             "message": "Ошибка при очистке корзины",
@@ -869,11 +883,16 @@ async def clear_cart(
 @app.post("/cart/merge", response_model=CartResponseSchema, tags=["Корзина"])
 async def merge_carts(
     merge_data: CartMergeSchema,
-    response: Response,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    logger.info(f"/cart/merge RAW BODY: {merge_data}")
+    """
+    Объединяет корзину из localStorage с корзиной пользователя в базе данных.
+    
+    Применяется при авторизации пользователя, чтобы сохранить товары,
+    добавленные в корзину до входа в систему.
+    """
+    logger.info("/cart/merge RAW BODY: %s", merge_data)
     # Удалена проверка дублирования merge-запросов — всегда выполняем объединение
 
     items = merge_data.items or []
@@ -904,7 +923,7 @@ async def merge_carts(
         query = select(CartModel).options(selectinload(CartModel.items)).filter(CartModel.user_id == user.id)
         result = await db.execute(query)
         user_cart = result.scalars().first()
-        logger.info(f"Новая корзина создана для пользователя: id={user_cart.id}")
+        logger.info("Новая корзина создана для пользователя: id=%s", user_cart.id)
         for item in items:
             new_item = CartItemModel(
                 cart_id=user_cart.id,
@@ -912,12 +931,13 @@ async def merge_carts(
                 quantity=item.quantity
             )
             db.add(new_item)
-            logger.info(f"Добавлен товар из localStorage в новую корзину: product_id={item.product_id}, quantity={item.quantity}")
+            logger.info("Добавлен товар из localStorage в новую корзину: product_id=%s, quantity=%d", 
+                       item.product_id, item.quantity)
         await db.commit()
         # Закрываем старую сессию и создаём новую через async_sessionmaker
         await db.close()
-        SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-        db = SessionLocal()
+        session_local = async_sessionmaker(engine, expire_on_commit=False)
+        db = session_local()
         query = select(CartModel).options(selectinload(CartModel.items)).filter(CartModel.id == user_cart.id)
         result = await db.execute(query)
         user_cart = result.scalars().first()
@@ -926,14 +946,16 @@ async def merge_carts(
         cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
         await invalidate_user_cart_cache(user.id)
         await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
-        logger.info(f"Корзины успешно объединены: обновлено товаров - {updated_count}, добавлено новых - {new_count}")
+        logger.info("Корзины успешно объединены: обновлено товаров - %d, добавлено новых - %d", 
+                   updated_count, new_count)
         return {
             "success": True,
             "message": f"Корзины успешно объединены: обновлено товаров - {updated_count}, добавлено новых - {new_count}",
             "cart": enriched_cart
         }
 
-    logger.info(f"Объединение корзины из localStorage с корзиной пользователя: user_cart_id={user_cart.id}, товаров: {len(items)}")
+    logger.info("Объединение корзины из localStorage с корзиной пользователя: user_cart_id=%s, товаров: %d", 
+               user_cart.id, len(items))
     updated_count = 0
     new_count = 0
     # --- bulk: собираем все product_id из items и строим мапу существующих CartItem ---
@@ -954,7 +976,8 @@ async def merge_carts(
                     .values(quantity=total_quantity, updated_at=datetime.now())
                 )
                 updated_count += 1
-                logger.info(f"Обновлено количество товара: product_id={product_id}, новое количество={total_quantity}")
+                logger.info("Обновлено количество товара: product_id=%s, новое количество=%d", 
+                           product_id, total_quantity)
             else:
                 available_stock = stock_check.get("available_stock", existing_item.quantity)
                 await db.execute(
@@ -963,7 +986,8 @@ async def merge_carts(
                     .values(quantity=available_stock, updated_at=datetime.now())
                 )
                 updated_count += 1
-                logger.info(f"Обновлено количество товара (ограничено наличием): product_id={product_id}, новое количество={available_stock}")
+                logger.info("Обновлено количество товара (ограничено наличием): product_id=%s, новое количество=%d",
+                           product_id, available_stock)
         else:
             # --- Защита от дублей: reload user_cart.items из БД и повторно проверить ---
             await db.refresh(user_cart)
@@ -977,13 +1001,15 @@ async def merge_carts(
                     fresh_existing.quantity = total_quantity
                     fresh_existing.updated_at = datetime.now()
                     updated_count += 1
-                    logger.info(f"(fresh) Обновлено количество товара: product_id={product_id}, новое количество={total_quantity}")
+                    logger.info("(fresh) Обновлено количество товара: product_id=%s, новое количество=%d",
+                               product_id, total_quantity)
                 else:
                     available_stock = stock_check.get("available_stock", fresh_existing.quantity)
                     fresh_existing.quantity = available_stock
                     fresh_existing.updated_at = datetime.now()
                     updated_count += 1
-                    logger.info(f"(fresh) Обновлено количество товара (ограничено наличием): product_id={product_id}, новое количество={available_stock}")
+                    logger.info("(fresh) Обновлено количество товара (ограничено наличием): product_id=%s, новое количество=%d",
+                               product_id, available_stock)
                 continue
             # --- UPSERT: если всё же возник конфликт, qty увеличится ---
             stmt = insert(CartItemModel).values(
@@ -999,14 +1025,15 @@ async def merge_carts(
             )
             await db.execute(stmt)
             new_count += 1
-            logger.info(f"UPSERT: Добавлен/обновлён товар: product_id={product_id}, количество={quantity}")
+            logger.info("UPSERT: Добавлен/обновлён товар: product_id=%s, количество=%d",
+                       product_id, quantity)
     # Сохраняем обновления
     user_cart.updated_at = datetime.now()
     await db.commit()
     # Закрываем старую сессию и создаём новую через async_sessionmaker
     await db.close()
-    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-    db = SessionLocal()
+    session_local = async_sessionmaker(engine, expire_on_commit=False)
+    db = session_local()
     query = select(CartModel).options(selectinload(CartModel.items)).filter(CartModel.id == user_cart.id)
     result = await db.execute(query)
     user_cart = result.scalars().first()
@@ -1015,7 +1042,8 @@ async def merge_carts(
     cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
     await invalidate_user_cart_cache(user.id)
     await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
-    logger.info(f"Корзины успешно объединены: обновлено товаров - {updated_count}, добавлено новых - {new_count}")
+    logger.info("Корзины успешно объединены: обновлено товаров - %d, добавлено новых - %d",
+               updated_count, new_count)
     return {
         "success": True,
         "message": f"Корзины успешно объединены: обновлено товаров - {updated_count}, добавлено новых - {new_count}",
@@ -1024,7 +1052,6 @@ async def merge_carts(
 
 @app.post("/cart/cleanup", response_model=CleanupResponseSchema, tags=["Администрирование"])
 async def cleanup_anonymous_carts(
-    request: Request,
     days: int = 1, 
     current_user: Optional[User] = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_session)
@@ -1034,24 +1061,24 @@ async def cleanup_anonymous_carts(
     """
     # Проверка, что пользователь авторизован и имеет права администратора
     if current_user and not getattr(current_user, 'is_admin', False) and not getattr(current_user, 'is_super_admin', False):
-        logger.warning(f"Пользователь {current_user.id} не имеет прав администратора")
+        logger.warning("Пользователь %d не имеет прав администратора", current_user.id)
         raise HTTPException(
             status_code=403,
             detail="Для выполнения этой операции требуются права администратора",
         )
     
     user_info = f"пользователем {current_user.id}" if current_user else "через сервисный ключ"
-    logger.info(f"Запуск очистки анонимных корзин старше {days} дней {user_info}")
+    logger.info("Запуск очистки анонимных корзин старше %d дней %s", days, user_info)
     
     try:
         # Определяем дату, после которой корзины считаются устаревшими
         cutoff_date = datetime.now() - timedelta(days=days)
         
-        # Выбираем анонимные корзины (с session_id, но без user_id), 
+        # Выбираем анонимные корзины (с session_id, но без user_id),
         # которые не обновлялись более указанного времени
         query = select(CartModel).filter(
-            CartModel.user_id == None,  # Только анонимные корзины
-            CartModel.session_id != None,  # С указанным session_id
+            CartModel.user_id is None,  # Только анонимные корзины
+            CartModel.session_id is not None,  # С указанным session_id
             CartModel.updated_at < cutoff_date  # Не обновлялись в указанный период
         )
         
@@ -1068,12 +1095,13 @@ async def cleanup_anonymous_carts(
         
         deleted_count = 0
         for cart in carts_to_delete:
-            logger.info(f"Удаление корзины ID {cart.id}, session_id: {cart.session_id}, последнее обновление: {cart.updated_at}")
+            logger.info("Удаление корзины ID %d, session_id: %s, последнее обновление: %s",
+                       cart.id, cart.session_id, cart.updated_at)
             await db.delete(cart)
             deleted_count += 1
         
         await db.commit()
-        logger.info(f"Удалено устаревших анонимных корзин: {deleted_count}")
+        logger.info("Удалено устаревших анонимных корзин: %d", deleted_count)
         
         # Инвалидируем кэш админки
         await invalidate_admin_carts_cache()
@@ -1083,8 +1111,8 @@ async def cleanup_anonymous_carts(
             "deleted_count": deleted_count,
             "message": f"Успешно удалено {deleted_count} устаревших анонимных корзин"
         }
-    except Exception as e:
-        logger.error(f"Ошибка при очистке анонимных корзин: {str(e)}")
+    except (ValueError, AttributeError, KeyError, sqlalchemy.exc.SQLAlchemyError) as e:
+        logger.error("Ошибка при очистке анонимных корзин: %s", str(e))
         return {
             "success": False,
             "deleted_count": 0,
@@ -1097,12 +1125,13 @@ async def get_user_info(user_id: int) -> Dict[str, Any]:
     """
     try:
         auth_service_url = os.environ.get("AUTH_SERVICE_URL", "http://localhost:8000")        
-        logger.info(f"Запрос информации о пользователе {user_id} по URL: {auth_service_url}/admin/users/{user_id}")
+        logger.info("Запрос информации о пользователе %d по URL: %s/admin/users/%d",
+                   user_id, auth_service_url, user_id)
         backoffs = [0.5, 1, 2]        
         async with httpx.AsyncClient() as client:
             total = len(backoffs)
             for attempt, delay in enumerate(backoffs, start=1):
-                logger.info(f"get_user_info: attempt {attempt}/{total} for user {user_id}")
+                logger.info("get_user_info: attempt %d/%d for user %d", attempt, total, user_id)
                 token = await _get_service_token()
                 headers = {"Authorization": f"Bearer {token}"}
                 try:
@@ -1111,65 +1140,64 @@ async def get_user_info(user_id: int) -> Dict[str, Any]:
                         headers=headers,
                         timeout=5.0
                     )
-                except Exception as exc:
-                    logger.error(f"get_user_info: network error on attempt {attempt}: {exc}")
+                except (httpx.RequestError, httpx.TimeoutException, httpx.ConnectError) as exc:
+                    logger.error("get_user_info: network error on attempt %d: %s", attempt, exc)
                     if attempt < total:
                         await asyncio.sleep(delay)
                         continue
                     break
-                logger.info(f"get_user_info: status={response.status_code}")
+                logger.info("get_user_info: status=%d", response.status_code)
                 if response.status_code == 200:
                     try:
                         user_data = response.json()
-                    except Exception as parse_exc:
-                        logger.error(f"get_user_info: JSON parse error: {parse_exc}")
+                    except json.JSONDecodeError as parse_exc:
+                        logger.error("get_user_info: JSON parse error: %s", parse_exc)
                         return {}
                     if "first_name" not in user_data or "last_name" not in user_data:
-                        logger.warning(f"get_user_info: missing name fields in response: {user_data}")
+                        logger.warning("get_user_info: missing name fields in response: %s", user_data)
                     return user_data
                 if response.status_code == 404:
-                    logger.warning(f"get_user_info: 404 Not Found on attempt {attempt}, returning empty response")
+                    logger.warning("get_user_info: 404 Not Found on attempt %d, returning empty response", attempt)
                     return {}
                 if response.status_code == 401:
-                    logger.warning(f"get_user_info: 401 Unauthorized on attempt {attempt}, clearing cache and retry")
+                    logger.warning("get_user_info: 401 Unauthorized on attempt %d, clearing cache and retry", attempt)
                     await cache_delete("service_token")
                     if attempt < total:
                         await asyncio.sleep(delay)
                         continue
                     break
-                logger.error(f"get_user_info: unexpected status {response.status_code}, body={response.text}")
+                logger.error("get_user_info: unexpected status %d, body=%s", response.status_code, response.text)
                 return {}
             logger.error("get_user_info: completing all attempts, returning empty response")
             return {}
-    except Exception as e:
-        logger.error(f"Ошибка при запросе информации о пользователе {user_id}: {str(e)}")
+    except (ValueError, AttributeError, KeyError, httpx.RequestError) as e:
+        logger.error("Ошибка при запросе информации о пользователе %d: %s", user_id, str(e))
         return {}
 
-@app.get("/admin/carts", response_model=PaginatedUserCartsResponse, tags=["Администрирование"])
+@app.get("/admin/carts", response_model=PaginatedUserCartsResponse, tags=["Администрирование"], dependencies=[Depends(get_current_admin_user)])
 async def get_user_carts(
-    request: Request,
     page: int = Query(1, description="Номер страницы", ge=1),
     limit: int = Query(10, description="Количество записей на странице", ge=1, le=100),
     sort_by: str = Query("updated_at", description="Поле для сортировки", regex="^(id|user_id|created_at|updated_at|items_count|total_price)$"),
     sort_order: str = Query("desc", description="Порядок сортировки", regex="^(asc|desc)$"),
     user_id: Optional[int] = Query(None, description="Фильтр по ID пользователя"),
-    filter: Optional[str] = Query(None, description="Фильтр (with_items/empty)"),
+    filter_option: Optional[str] = Query(None, description="Фильтр (with_items/empty)"),
     search: Optional[str] = Query(None, description="Поисковый запрос по ID корзины"),
-    current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_session)
 ):
     """
     Получает список всех корзин пользователей (для администраторов)
     """
-    logger.info(f"Запрос списка корзин пользователей: page={page}, limit={limit}, sort_by={sort_by}, sort_order={sort_order}, user_id={user_id}, filter={filter}")
+    logger.info("Запрос списка корзин пользователей: page=%d, limit=%d, sort_by=%s, sort_order=%s, user_id=%s, filter=%s", 
+               page, limit, sort_by, sort_order, user_id, filter_option)
     
     try:
         # Проверяем кэш
-        cache_key = f"{CACHE_KEYS['admin_carts']}page:{page}:limit:{limit}:sort:{sort_by}:{sort_order}:user:{user_id}:filter:{filter}:search:{search}"
+        cache_key = f"{CACHE_KEYS['admin_carts']}page:{page}:limit:{limit}:sort:{sort_by}:{sort_order}:user:{user_id}:filter:{filter_option}:search:{search}"
         cached_data = await cache_get(cache_key)
         
         if cached_data:
-            logger.info(f"Список корзин получен из кэша: {cache_key}")
+            logger.info("Список корзин получен из кэша: %s", cache_key)
             return PaginatedUserCartsResponse(**cached_data)
         
         # Получаем корзины пользователей с пагинацией
@@ -1180,7 +1208,7 @@ async def get_user_carts(
             sort_by=sort_by,
             sort_order=sort_order,
             user_id=user_id,
-            filter=filter,
+            filter=filter_option,
             search=search
         )
         
@@ -1262,11 +1290,11 @@ async def get_user_carts(
         
         # Кэшируем результат
         await cache_set(cache_key, result.model_dump(), CACHE_TTL["admin_carts"])
-        logger.info(f"Список корзин сохранен в кэш: {cache_key}")
+        logger.info("Список корзин сохранен в кэш: %s", cache_key)
         
         return result
-    except Exception as e:
-        logger.error(f"Ошибка при получении списка корзин: {str(e)}")
+    except (ValueError, AttributeError, KeyError, sqlalchemy.exc.SQLAlchemyError) as e:
+        logger.error("Ошибка при получении списка корзин: %s", str(e))
         return PaginatedUserCartsResponse(
             items=[],
             total=0,
@@ -1275,17 +1303,15 @@ async def get_user_carts(
             pages=1
         )
 
-@app.get("/admin/carts/{cart_id}", response_model=UserCartSchema, tags=["Администрирование"])
+@app.get("/admin/carts/{cart_id}", response_model=UserCartSchema, tags=["Администрирование"], dependencies=[Depends(get_current_admin_user)])
 async def get_user_cart_by_id(
-    request: Request,
     cart_id: int,
-    current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_session)
 ):
     """
     Получает информацию о конкретной корзине пользователя (для администратора)
     """
-    logger.info(f"Запрос информации о корзине ID={cart_id} администратором {current_user.id}")
+    logger.info("Запрос информации о корзине ID=%d администратором", cart_id)
     
     try:
         # Проверяем кэш
@@ -1293,14 +1319,14 @@ async def get_user_cart_by_id(
         cached_data = await cache_get(cache_key)
         
         if cached_data:
-            logger.info(f"Информация о корзине ID={cart_id} получена из кэша")
+            logger.info("Информация о корзине ID=%d получена из кэша", cart_id)
             return UserCartSchema(**cached_data)
         
         # Получаем корзину по ID с загрузкой элементов
         cart = await CartModel.get_by_id(db, cart_id)
         
         if not cart:
-            logger.warning(f"Корзина с ID={cart_id} не найдена")
+            logger.warning("Корзина с ID=%d не найдена", cart_id)
             raise HTTPException(status_code=404, detail="Корзина не найдена")
         
         # Получаем дополнительную информацию о пользователе
@@ -1357,17 +1383,14 @@ async def get_user_cart_by_id(
         
         # Кэшируем результат
         await cache_set(cache_key, result.model_dump(), CACHE_TTL["admin_carts"])
-        logger.info(f"Информация о корзине ID={cart_id} сохранена в кэш")
+        logger.info("Информация о корзине ID=%d сохранена в кэш", cart_id)
         
         return result
         
-    except HTTPException:
-        # Пробрасываем HTTPException дальше
-        raise
-    except Exception as e:
-        logger.error(f"Ошибка при получении информации о корзине ID={cart_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}")
+    except (ValueError, AttributeError, KeyError, sqlalchemy.exc.SQLAlchemyError) as e:
+        logger.error("Ошибка при получении информации о корзине ID=%d: %s", cart_id, str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}") from e
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8002, reload=True) 
+    uvicorn.run("main:app", host="0.0.0.0", port=8002, reload=True)

@@ -1,11 +1,15 @@
+"""Схемы для работы с заказами, включая валидацию и сериализацию данных."""
+
 from datetime import datetime
-from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 from enum import Enum
+from typing import List, Optional, Dict, Any
 import logging
+
+from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
 
 # Перечисления
 class OrderStatusEnum(str, Enum):
+    """Перечисление возможных статусов заказа."""
     PENDING = "pending"
     PROCESSING = "processing"
     SHIPPED = "shipped"
@@ -16,6 +20,7 @@ class OrderStatusEnum(str, Enum):
 
 # Базовые модели
 class AddressBase(BaseModel):
+    """Базовая модель для адресов доставки и оплаты."""
     full_name: str = Field(..., min_length=2, max_length=255)
     address_line1: str = Field(..., min_length=5, max_length=255)
     address_line2: Optional[str] = Field(None, max_length=255)
@@ -27,15 +32,22 @@ class AddressBase(BaseModel):
     is_default: bool = False
 
 class OrderItemBase(BaseModel):
+    """Базовая модель для элементов заказа."""
     product_id: int
     quantity: int = Field(..., gt=0)
 
 # Схемы для промокодов
 class PromoCodeBase(BaseModel):
-    """Базовая схема для промокода"""
+    """Базовая схема для промокода."""
     code: str = Field(..., min_length=3, max_length=50)
-    discount_percent: Optional[int] = Field(None, ge=1, le=100, description="Скидка в процентах (от 1 до 100)")
-    discount_amount: Optional[int] = Field(None, ge=1, description="Фиксированная скидка в рублях")
+    discount_percent: Optional[int] = Field(
+        None, ge=1,
+        le=100,
+        description="Скидка в процентах (от 1 до 100)")
+    discount_amount: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Фиксированная скидка в рублях")
     valid_until: datetime = Field(..., description="Срок действия промокода")
     is_active: bool = True
     
@@ -49,18 +61,23 @@ class PromoCodeBase(BaseModel):
 
 # Модели для создания
 class AddressCreate(AddressBase):
+    """Схема для создания адреса."""
     pass
 
 class ShippingAddressCreate(AddressBase):
+    """Схема для создания адреса доставки."""
     pass
 
 class BillingAddressCreate(AddressBase):
+    """Схема для создания адреса для выставления счета."""
     pass
 
 class OrderItemCreate(OrderItemBase):
+    """Схема для создания элемента заказа."""
     pass
 
 class OrderCreate(BaseModel):
+    """Схема для создания заказа."""
     items: List[OrderItemCreate] = Field(..., min_items=1)
     
     # Данные о клиенте и доставке
@@ -76,10 +93,13 @@ class OrderCreate(BaseModel):
     promo_code: Optional[str] = Field(None, min_length=3, max_length=50)
     
     # Согласие на обработку персональных данных
-    personal_data_agreement: bool = Field(..., description="Согласие на обработку персональных данных")
+    personal_data_agreement: bool = Field(
+        ...,
+        description="Согласие на обработку персональных данных")
     
     @field_validator('phone')
     def validate_phone_format(cls, v):
+        """Валидация формата номера телефона."""
         if not (v.startswith('+7') or v.startswith('8')):
             raise ValueError('Телефон должен начинаться с "+7" или "8"')
         if not (v.startswith('+7') and len(v) == 12) and not (v.startswith('8') and len(v) == 11):
@@ -90,6 +110,7 @@ class OrderCreate(BaseModel):
         return v
 
 class OrderStatusCreate(BaseModel):
+    """Схема для создания статуса заказа."""
     name: str = Field(..., min_length=2, max_length=50)
     description: Optional[str] = None
     color: str = Field('#808080', pattern=r'^#[0-9A-Fa-f]{6}$')
@@ -98,15 +119,17 @@ class OrderStatusCreate(BaseModel):
     sort_order: int = 0
 
 class OrderStatusHistoryCreate(BaseModel):
+    """Схема для создания записи в истории статусов заказа."""
     status_id: int
     notes: Optional[str] = None
 
 class PromoCodeCreate(PromoCodeBase):
-    """Схема для создания промокода"""
+    """Схема для создания промокода."""
     pass
 
 # Модели для обновления
 class AddressUpdate(BaseModel):
+    """Схема для обновления адреса."""
     full_name: Optional[str] = Field(None, min_length=2, max_length=255)
     address_line1: Optional[str] = Field(None, min_length=5, max_length=255)
     address_line2: Optional[str] = None
@@ -118,6 +141,7 @@ class AddressUpdate(BaseModel):
     is_default: Optional[bool] = None
 
 class OrderUpdate(BaseModel):
+    """Схема для обновления заказа."""
     status_id: Optional[int] = None
     
     # Данные о клиенте и доставке
@@ -133,6 +157,7 @@ class OrderUpdate(BaseModel):
     
     @field_validator('phone')
     def validate_phone(cls, v):
+        """Валидация формата номера телефона."""
         if v is None:
             return v
         if not (v.startswith('+7') or v.startswith('8')):
@@ -145,6 +170,7 @@ class OrderUpdate(BaseModel):
         return v
 
 class OrderStatusUpdate(BaseModel):
+    """Схема для обновления статуса заказа."""
     name: Optional[str] = Field(None, min_length=2, max_length=50)
     description: Optional[str] = None
     color: Optional[str] = Field(None, pattern=r'^#[0-9A-Fa-f]{6}$')
@@ -465,6 +491,7 @@ class AdminOrderCreate(BaseModel):
     
     @field_validator('phone')
     def validate_phone_format(cls, v):
+        """Валидация формата номера телефона."""
         if not (v.startswith('+7') or v.startswith('8')):
             raise ValueError('Телефон должен начинаться с "+7" или "8"')
         if not (v.startswith('+7') and len(v) == 12) and not (v.startswith('8') and len(v) == 11):

@@ -1,9 +1,14 @@
+"""
+Модуль кэша для review_service: функции взаимодействия с Redis.
+"""
+
 import os
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 from redis.asyncio import Redis
 from dotenv import load_dotenv
+import redis
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -19,7 +24,14 @@ REDIS_DB = int(os.getenv("REVIEW_REDIS_DB", "3"))  # Используем баз
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
 
 # Создаем клиент Redis
-redis_client: Optional[Redis] = None
+redis_client = Redis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=REDIS_DB,
+    password=REDIS_PASSWORD,
+    decode_responses=True,  # Декодируем ответы в строки
+    socket_timeout=5,
+)
 
 # Время жизни кэша в секундах
 CACHE_TTL = {
@@ -46,25 +58,15 @@ CACHE_KEYS = {
 }
 
 async def initialize_redis() -> None:
-    """Инициализация соединения с Redis"""
-    global redis_client
+    """Проверяем текущее соединение без reassignment."""
     try:
-        redis_client = Redis(
-            host=REDIS_HOST,
-            port=REDIS_PORT,
-            db=REDIS_DB,
-            password=REDIS_PASSWORD,
-            decode_responses=True,  # Декодируем ответы в строки
-            socket_timeout=5,
-        )
-        logger.info(f"Инициализировано подключение к Redis: {REDIS_HOST}:{REDIS_PORT}, DB={REDIS_DB}")
+        await redis_client.ping()
+        logger.info("Подключение к Redis OK")
     except Exception as e:
-        logger.error(f"Ошибка при подключении к Redis: {str(e)}")
-        redis_client = None
+        logger.error("Ошибка при подключении к Redis: %s", e)
 
 async def close_redis_connection() -> None:
     """Закрытие соединения с Redis"""
-    global redis_client
     if redis_client:
         await redis_client.close()
         logger.info("Соединение с Redis закрыто")
@@ -79,13 +81,10 @@ async def cache_get(key: str) -> Optional[Any]:
     Returns:
         Данные из кэша или None, если кэш не найден
     """
-    if not redis_client:
-        return None
-        
     try:
         data = await redis_client.get(key)
         if data:
-            logger.debug(f"Получены данные из кэша: {key}")
+            logger.debug("Получены данные из кэша: %s", key)
             result = json.loads(data)
             # Исправляем устаревшие ключи в данных из кэша
             if isinstance(result, dict):
@@ -96,10 +95,10 @@ async def cache_get(key: str) -> Optional[Any]:
                     if any(isinstance(k, str) for k in result["rating_counts"].keys()):
                         result["rating_counts"] = {int(k): v for k, v in result["rating_counts"].items()}
             return result
-        logger.debug(f"Кэш не найден: {key}")
+        logger.debug("Кэш не найден: %s", key)
         return None
-    except Exception as e:
-        logger.error(f"Ошибка при получении данных из кэша: {str(e)}")
+    except (redis.RedisError, json.JSONDecodeError) as e:
+        logger.error("Ошибка при получении данных из кэша: %s", e)
         return None
 
 async def cache_set(key: str, data: Any, ttl: Optional[int] = None) -> bool:
@@ -114,9 +113,6 @@ async def cache_set(key: str, data: Any, ttl: Optional[int] = None) -> bool:
     Returns:
         bool: True если данные успешно сохранены, иначе False
     """
-    if not redis_client:
-        return False
-        
     try:
         # Преобразуем данные в JSON-строку
         json_data = json.dumps(data)
@@ -125,10 +121,10 @@ async def cache_set(key: str, data: Any, ttl: Optional[int] = None) -> bool:
             await redis_client.setex(key, ttl, json_data)
         else:
             await redis_client.set(key, json_data)
-        logger.debug(f"Данные сохранены в кэш: {key}")
+        logger.debug("Данные сохранены в кэш: %s", key)
         return True
-    except Exception as e:
-        logger.error(f"Ошибка при сохранении данных в кэш: {str(e)}")
+    except (redis.RedisError, TypeError) as e:
+        logger.error("Ошибка при сохранении данных в кэш: %s", e)
         return False
 
 async def cache_delete(key: str) -> bool:
@@ -141,15 +137,12 @@ async def cache_delete(key: str) -> bool:
     Returns:
         bool: True если данные успешно удалены, иначе False
     """
-    if not redis_client:
-        return False
-        
     try:
         await redis_client.delete(key)
-        logger.debug(f"Данные удалены из кэша: {key}")
+        logger.debug("Данные удалены из кэша: %s", key)
         return True
-    except Exception as e:
-        logger.error(f"Ошибка при удалении данных из кэша: {str(e)}")
+    except redis.RedisError as e:
+        logger.error("Ошибка при удалении данных из кэша: %s", e)
         return False
 
 async def cache_delete_pattern(pattern: str) -> bool:
@@ -162,9 +155,6 @@ async def cache_delete_pattern(pattern: str) -> bool:
     Returns:
         bool: True если данные успешно удалены, иначе False
     """
-    if not redis_client:
-        return False
-        
     try:
         # Получаем все ключи, соответствующие шаблону
         cursor = 0
@@ -177,10 +167,10 @@ async def cache_delete_pattern(pattern: str) -> bool:
             if cursor == 0:
                 break
                 
-        logger.debug(f"Удалено {deleted_count} ключей по шаблону: {pattern}")
+        logger.debug("Удалено %d ключей по шаблону: %s", deleted_count, pattern)
         return True
-    except Exception as e:
-        logger.error(f"Ошибка при удалении данных из кэша по шаблону: {str(e)}")
+    except redis.RedisError as e:
+        logger.error("Ошибка при удалении данных из кэша по шаблону: %s", e)
         return False
 
 async def invalidate_review_cache(review_id: int) -> bool:
@@ -196,7 +186,6 @@ async def invalidate_review_cache(review_id: int) -> bool:
     try:
         # Получаем данные отзыва, чтобы узнать product_id
         from models import ReviewModel
-        from sqlalchemy.ext.asyncio import AsyncSession
         from database import get_session
         
         # Используем новую сессию для получения данных отзыва
@@ -232,10 +221,10 @@ async def invalidate_review_cache(review_id: int) -> bool:
                 if product_id_str in key:
                     await cache_delete(key)
                     
-        logger.info(f"Кэш отзыва {review_id} и связанных списков инвалидирован")
+        logger.info("Кэш отзыва %d и связанных списков инвалидирован", review_id)
         return True
-    except Exception as e:
-        logger.error(f"Ошибка при инвалидации кэша отзыва: {str(e)}")
+    except (redis.RedisError, ImportError, AttributeError) as e:
+        logger.error("Ошибка при инвалидации кэша отзыва: %s", e)
         return False
 
 async def invalidate_product_reviews_cache(product_id: int) -> bool:
@@ -265,10 +254,10 @@ async def invalidate_product_reviews_cache(product_id: int) -> bool:
             if product_id_str in key:
                 await cache_delete(key)
         
-        logger.info(f"Кэш отзывов для товара {product_id} и связанных пакетных запросов инвалидирован")
+        logger.info("Кэш отзывов для товара %d и связанных пакетных запросов инвалидирован", product_id)
         return True
-    except Exception as e:
-        logger.error(f"Ошибка при инвалидации кэша отзывов для товара: {str(e)}")
+    except redis.RedisError as e:
+        logger.error("Ошибка при инвалидации кэша отзывов для товара: %s", e)
         return False
 
 async def invalidate_store_reviews_cache() -> bool:
@@ -303,5 +292,5 @@ async def invalidate_user_reviews_cache(user_id: int) -> bool:
     # Инвалидируем разрешения пользователя
     await cache_delete_pattern(f"{CACHE_KEYS['permissions']}{user_id}:*")
     
-    logger.info(f"Кэш отзывов для пользователя {user_id} инвалидирован")
-    return True 
+    logger.info("Кэш отзывов для пользователя %d инвалидирован", user_id)
+    return True

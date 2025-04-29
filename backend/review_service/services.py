@@ -1,23 +1,24 @@
+"""Сервис для работы с отзывами на товары и магазин."""
+
 import os
-import httpx
 import logging
-import json
-from typing import Dict, List, Optional, Any, Tuple
+from math import ceil
+from typing import Dict, List, Optional, Any
+
+import httpx
 from dotenv import load_dotenv
-from models import ReviewModel, AdminCommentModel, ReviewReactionModel, ReviewTypeEnum, ReactionTypeEnum
-from schema import ProductReviewCreate, StoreReviewCreate, AdminCommentCreate, ReactionCreate, ReviewRead, ReviewStats, PaginatedResponse
+from models import ReviewModel, AdminCommentModel, ReviewReactionModel, ReviewTypeEnum
+from schema import ProductReviewCreate, StoreReviewCreate, AdminCommentCreate, ReactionCreate, ReviewRead, ReviewStats
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, bindparam
+from sqlalchemy.sql import select, func
+from sqlalchemy.exc import SQLAlchemyError
 from auth import User
-from math import ceil
-import asyncio
 from cache import (
-    cache_get, cache_set, cache_delete, invalidate_review_cache,
+    cache_get, cache_set, invalidate_review_cache,
     invalidate_product_reviews_cache, invalidate_store_reviews_cache,
     invalidate_user_reviews_cache, CACHE_KEYS, CACHE_TTL
 )
-from sqlalchemy.sql import select, func
-from fastapi import HTTPException, status
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -49,13 +50,13 @@ class ProductApi:
                 
                 if response.status_code == 200:
                     data = response.json()
-                    logger.info(f"Успешно получена информация о товаре: {product_id}")
+                    logger.info("Успешно получена информация о товаре: %s", product_id)
                     return data
                 else:
-                    logger.warning(f"Ошибка при получении информации о товаре {product_id}. Код: {response.status_code}")
+                    logger.warning("Ошибка при получении информации о товаре %s. Код: %s", product_id, response.status_code)
                     return None
-        except Exception as e:
-            logger.error(f"Ошибка при обращении к сервису продуктов: {str(e)}")
+        except (httpx.RequestError, httpx.HTTPStatusError, httpx.TimeoutException) as e:
+            logger.error("Ошибка при обращении к сервису продуктов: %s", str(e))
             return None
 
 
@@ -85,13 +86,13 @@ class OrderApi:
                 if response.status_code == 200:
                     result = response.json()
                     can_review = result.get("can_review", False)
-                    logger.info(f"Проверка возможности оставить отзыв: user_id={user_id}, product_id={product_id}, result={can_review}")
+                    logger.info("Проверка возможности оставить отзыв: user_id=%s, product_id=%s, result=%s", user_id, product_id, can_review)
                     return can_review
                 else:
-                    logger.warning(f"Ошибка при проверке возможности оставить отзыв. Код: {response.status_code}")
+                    logger.warning("Ошибка при проверке возможности оставить отзыв. Код: %s", response.status_code)
                     return False
-        except Exception as e:
-            logger.error(f"Ошибка при обращении к сервису заказов: {str(e)}")
+        except (httpx.RequestError, httpx.HTTPStatusError, httpx.TimeoutException) as e:
+            logger.error("Ошибка при обращении к сервису заказов: %s", str(e))
             return False
     
     @staticmethod
@@ -116,13 +117,13 @@ class OrderApi:
                 if response.status_code == 200:
                     result = response.json()
                     can_review = result.get("can_review", False)
-                    logger.info(f"Проверка возможности оставить отзыв на магазин: user_id={user_id}, result={can_review}")
+                    logger.info("Проверка возможности оставить отзыв на магазин: user_id=%s, result=%s", user_id, can_review)
                     return can_review
                 else:
-                    logger.warning(f"Ошибка при проверке возможности оставить отзыв на магазин. Код: {response.status_code}")
+                    logger.warning("Ошибка при проверке возможности оставить отзыв на магазин. Код: %s", response.status_code)
                     return False
-        except Exception as e:
-            logger.error(f"Ошибка при обращении к сервису заказов: {str(e)}")
+        except (httpx.RequestError, httpx.HTTPStatusError, httpx.TimeoutException) as e:
+            logger.error("Ошибка при обращении к сервису заказов: %s", str(e))
             return False
 
 
@@ -149,12 +150,13 @@ async def create_product_review(
     """
     try:
         # Логируем данные пользователя для отладки
-        logger.info(f"Данные пользователя для отзыва: id={user.id}, email={user.email}, имя={user.first_name}, фамилия={user.last_name}")
+        logger.info("Данные пользователя для отзыва: id=%s, email=%s, имя=%s, фамилия=%s", 
+                   user.id, user.email, user.first_name, user.last_name)
         
         # Проверяем, что пользователь может оставить отзыв на этот товар
         can_review = await ReviewModel.check_user_can_review_product(session, user.id, review_data.product_id)
         if not can_review:
-            logger.warning(f"Пользователь {user.id} не может оставить отзыв на товар {review_data.product_id}")
+            logger.warning("Пользователь %s не может оставить отзыв на товар %s", user.id, review_data.product_id)
             return None
         
         # Проверяем, не оставил ли пользователь уже отзыв на этот товар
@@ -163,13 +165,13 @@ async def create_product_review(
         )
         existing_review = existing_review_query.scalar_one_or_none()
         if existing_review:
-            logger.warning(f"Пользователь {user.id} уже оставил отзыв на товар {review_data.product_id}")
+            logger.warning("Пользователь %s уже оставил отзыв на товар %s", user.id, review_data.product_id)
             return None
         
         # Получаем информацию о товаре
         product_info = await product_api.get_product_details(review_data.product_id)
         if not product_info:
-            logger.error(f"Не удалось получить информацию о товаре {review_data.product_id}")
+            logger.error("Не удалось получить информацию о товаре %s", review_data.product_id)
             return None
         
         # Обеспечиваем значения по умолчанию для данных пользователя 
@@ -203,11 +205,12 @@ async def create_product_review(
         await invalidate_product_reviews_cache(review_data.product_id)
         await invalidate_user_reviews_cache(user.id)
         
-        logger.info(f"Создан отзыв на товар: user_id={user.id}, product_id={review_data.product_id}, rating={review_data.rating}")
+        logger.info("Создан отзыв на товар: user_id=%s, product_id=%s, rating=%s", 
+                   user.id, review_data.product_id, review_data.rating)
         return review
-    except Exception as e:
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
         await session.rollback()
-        logger.error(f"Ошибка при создании отзыва на товар: {str(e)}")
+        logger.error("Ошибка при создании отзыва на товар: %s", str(e))
         return None
 
 async def create_store_review(
@@ -228,12 +231,13 @@ async def create_store_review(
     """
     try:
         # Логируем данные пользователя для отладки
-        logger.info(f"Данные пользователя для отзыва на магазин: id={user.id}, email={user.email}, имя={user.first_name}, фамилия={user.last_name}")
+        logger.info("Данные пользователя для отзыва на магазин: id=%s, email=%s, имя=%s, фамилия=%s", 
+                   user.id, user.email, user.first_name, user.last_name)
         
         # Проверяем, что пользователь может оставить отзыв на магазин
         can_review = await ReviewModel.check_user_can_review_store(session, user.id)
         if not can_review:
-            logger.warning(f"Пользователь {user.id} не может оставить отзыв на магазин")
+            logger.warning("Пользователь %s не может оставить отзыв на магазин", user.id)
             return None
         
         # Проверяем, не оставил ли пользователь уже отзыв на магазин
@@ -242,7 +246,7 @@ async def create_store_review(
         )
         existing_review = existing_review_query.scalar_one_or_none()
         if existing_review:
-            logger.warning(f"Пользователь {user.id} уже оставил отзыв на магазин")
+            logger.warning("Пользователь %s уже оставил отзыв на магазин", user.id)
             return None
         
         # Обеспечиваем значения по умолчанию для данных пользователя
@@ -274,11 +278,11 @@ async def create_store_review(
         await invalidate_store_reviews_cache()
         await invalidate_user_reviews_cache(user.id)
         
-        logger.info(f"Создан отзыв на магазин: user_id={user.id}, rating={review_data.rating}")
+        logger.info("Создан отзыв на магазин: user_id=%s, rating=%s", user.id, review_data.rating)
         return review
-    except Exception as e:
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
         await session.rollback()
-        logger.error(f"Ошибка при создании отзыва на магазин: {str(e)}")
+        logger.error("Ошибка при создании отзыва на магазин: %s", str(e))
         return None
 
 async def get_review_by_id(
@@ -302,7 +306,7 @@ async def get_review_by_id(
         cache_key = f"{CACHE_KEYS['review']}{review_id}"
         cached_data = await cache_get(cache_key)
         if cached_data:
-            logger.debug(f"Отзыв {review_id} получен из кэша")
+            logger.debug("Отзыв %s получен из кэша", review_id)
             # Десериализуем данные
             return ReviewRead.model_validate(cached_data).model_dump()
         
@@ -316,8 +320,8 @@ async def get_review_by_id(
             await cache_set(cache_key, review_data, CACHE_TTL["review"])
             return review
         return None
-    except Exception as e:
-        logger.error(f"Ошибка при получении отзыва по ID {review_id}: {str(e)}")
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
+        logger.error("Ошибка при получении отзыва по ID %s: %s", review_id, str(e))
         return None
 
 async def get_product_reviews(
@@ -346,11 +350,12 @@ async def get_product_reviews(
             cache_key = f"{CACHE_KEYS['product_reviews']}{product_id}:{page}:{limit}"
             cached_data = await cache_get(cache_key)
             if cached_data:
-                logger.info(f"Отзывы для товара {product_id} получены из кэша")
+                logger.info("Отзывы для товара %s получены из кэша", product_id)
                 return cached_data
         
         # Логируем процесс получения отзывов из БД
-        logger.info(f"Получаем отзывы для товара {product_id} из БД, страница {page}, лимит {limit}, include_hidden={include_hidden}")
+        logger.info("Получаем отзывы для товара %s из БД, страница %s, лимит %s, include_hidden=%s", 
+                   product_id, page, limit, include_hidden)
         
         # Получаем отзывы из БД
         reviews, total = await ReviewModel.get_by_product_id(
@@ -358,7 +363,7 @@ async def get_product_reviews(
         )
         
         # Логируем результат
-        logger.info(f"Получено {len(reviews)} отзывов из {total} для товара {product_id}")
+        logger.info("Получено %s отзывов из %s для товара %s", len(reviews), total, product_id)
         
         # Преобразуем в модель ответа
         result = {
@@ -374,8 +379,8 @@ async def get_product_reviews(
             await cache_set(cache_key, result, CACHE_TTL["reviews"])
         
         return result
-    except Exception as e:
-        logger.error(f"Ошибка при получении отзывов для товара {product_id}: {str(e)}")
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
+        logger.error("Ошибка при получении отзывов для товара %s: %s", product_id, str(e))
         return {
             "items": [],
             "total": 0,
@@ -412,7 +417,8 @@ async def get_store_reviews(
                 return cached_data
                 
         # Логируем процесс получения отзывов из БД
-        logger.info(f"Получаем отзывы для магазина из БД, страница {page}, лимит {limit}, include_hidden={include_hidden}")
+        logger.info("Получаем отзывы для магазина из БД, страница %s, лимит %s, include_hidden=%s", 
+                   page, limit, include_hidden)
         
         # Получаем отзывы из БД
         reviews, total = await ReviewModel.get_store_reviews(
@@ -420,7 +426,7 @@ async def get_store_reviews(
         )
         
         # Логируем результат
-        logger.info(f"Получено {len(reviews)} отзывов из {total} для магазина")
+        logger.info("Получено %s отзывов из %s для магазина", len(reviews), total)
         
         # Преобразуем в модель ответа
         result = {
@@ -436,8 +442,8 @@ async def get_store_reviews(
             await cache_set(cache_key, result, CACHE_TTL["reviews"])
         
         return result
-    except Exception as e:
-        logger.error(f"Ошибка при получении отзывов для магазина: {str(e)}")
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
+        logger.error("Ошибка при получении отзывов для магазина: %s", str(e))
         return {
             "items": [],
             "total": 0,
@@ -466,7 +472,7 @@ async def create_admin_comment(
         # Проверяем существование отзыва
         review = await ReviewModel.get_by_id(session, comment_data.review_id)
         if not review:
-            logger.warning(f"Отзыв с ID {comment_data.review_id} не найден")
+            logger.warning("Отзыв с ID %s не найден", comment_data.review_id)
             return None
         
         # Создаем имя администратора из first_name и last_name
@@ -492,15 +498,16 @@ async def create_admin_comment(
                 await invalidate_product_reviews_cache(review.product_id)
             elif review.review_type == ReviewTypeEnum.STORE.value:
                 await invalidate_store_reviews_cache()
-        except Exception as cache_error:
+        except (ValueError, AttributeError, KeyError, TypeError) as cache_error:
             # Логируем ошибку кэша, но не откатываем транзакцию БД
-            logger.error(f"Ошибка при инвалидации кэша после добавления комментария к отзыву {comment_data.review_id}: {str(cache_error)}")
+            logger.error("Ошибка при инвалидации кэша после добавления комментария к отзыву %s: %s", 
+                        comment_data.review_id, str(cache_error))
         
-        logger.info(f"Создан комментарий администратора к отзыву {comment_data.review_id}")
+        logger.info("Создан комментарий администратора к отзыву %s", comment_data.review_id)
         return comment
-    except Exception as e:
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
         await session.rollback()
-        logger.error(f"Ошибка при создании комментария администратора: {str(e)}")
+        logger.error("Ошибка при создании комментария администратора: %s", str(e))
         return None
 
 async def toggle_review_visibility(
@@ -523,7 +530,7 @@ async def toggle_review_visibility(
         # Получаем отзыв
         review = await ReviewModel.get_by_id(session, review_id)
         if not review:
-            logger.warning(f"Отзыв с ID {review_id} не найден")
+            logger.warning("Отзыв с ID %s не найден", review_id)
             return None
         
         # Сохраняем все необходимые данные до обновления
@@ -568,15 +575,15 @@ async def toggle_review_visibility(
                 await invalidate_product_reviews_cache(review.product_id)
             elif review.review_type == ReviewTypeEnum.STORE.value:
                 await invalidate_store_reviews_cache()
-        except Exception as cache_error:
+        except (ValueError, AttributeError, KeyError, TypeError) as cache_error:
             # Логируем ошибку кэша, но не откатываем транзакцию БД
-            logger.error(f"Ошибка при инвалидации кэша для отзыва {review_id}: {str(cache_error)}")
+            logger.error("Ошибка при инвалидации кэша для отзыва %s: %s", review_id, str(cache_error))
         
-        logger.info(f"Изменена видимость отзыва {review_id}: is_hidden={is_hidden}")
+        logger.info("Изменена видимость отзыва %s: is_hidden=%s", review_id, is_hidden)
         return review_data  # Возвращаем словарь вместо объекта ORM
-    except Exception as e:
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
         await session.rollback()
-        logger.error(f"Ошибка при изменении видимости отзыва {review_id}: {str(e)}")
+        logger.error("Ошибка при изменении видимости отзыва %s: %s", review_id, str(e))
         return None
 
 async def add_review_reaction(
@@ -599,7 +606,7 @@ async def add_review_reaction(
         # Проверяем существование отзыва
         review = await ReviewModel.get_by_id(session, reaction_data.review_id)
         if not review:
-            logger.warning(f"Отзыв с ID {reaction_data.review_id} не найден")
+            logger.warning("Отзыв с ID %s не найден", reaction_data.review_id)
             return None
         
         # Проверяем, не оставил ли пользователь уже реакцию на этот отзыв
@@ -616,10 +623,11 @@ async def add_review_reaction(
                 # Инвалидируем кэш в отдельном блоке
                 try:
                     await invalidate_review_cache(reaction_data.review_id)
-                except Exception as cache_error:
-                    logger.error(f"Ошибка при инвалидации кэша для отзыва {reaction_data.review_id}: {str(cache_error)}")
+                except (ValueError, AttributeError, KeyError, TypeError) as cache_error:
+                    logger.error("Ошибка при инвалидации кэша для отзыва %s: %s", 
+                                reaction_data.review_id, str(cache_error))
                 
-                logger.info(f"Удалена реакция пользователя {user.id} на отзыв {reaction_data.review_id}")
+                logger.info("Удалена реакция пользователя %s на отзыв %s", user.id, reaction_data.review_id)
                 return None
             
             # Если реакция существует, но отличается от новой, обновляем её
@@ -629,10 +637,12 @@ async def add_review_reaction(
             # Инвалидируем кэш в отдельном блоке
             try:
                 await invalidate_review_cache(reaction_data.review_id)
-            except Exception as cache_error:
-                logger.error(f"Ошибка при инвалидации кэша для отзыва {reaction_data.review_id}: {str(cache_error)}")
+            except (ValueError, AttributeError, KeyError, TypeError) as cache_error:
+                logger.error("Ошибка при инвалидации кэша для отзыва %s: %s", 
+                            reaction_data.review_id, str(cache_error))
             
-            logger.info(f"Обновлена реакция пользователя {user.id} на отзыв {reaction_data.review_id}: {reaction_data.reaction_type.value}")
+            logger.info("Обновлена реакция пользователя %s на отзыв %s: %s", 
+                       user.id, reaction_data.review_id, reaction_data.reaction_type.value)
             return existing_reaction
         
         # Создаем новую реакцию
@@ -648,14 +658,16 @@ async def add_review_reaction(
         # Инвалидируем кэш в отдельном блоке
         try:
             await invalidate_review_cache(reaction_data.review_id)
-        except Exception as cache_error:
-            logger.error(f"Ошибка при инвалидации кэша для отзыва {reaction_data.review_id}: {str(cache_error)}")
+        except (ValueError, AttributeError, KeyError, TypeError) as cache_error:
+            logger.error("Ошибка при инвалидации кэша для отзыва %s: %s", 
+                        reaction_data.review_id, str(cache_error))
         
-        logger.info(f"Создана реакция пользователя {user.id} на отзыв {reaction_data.review_id}: {reaction_data.reaction_type.value}")
+        logger.info("Создана реакция пользователя %s на отзыв %s: %s", 
+                   user.id, reaction_data.review_id, reaction_data.reaction_type.value)
         return reaction
-    except Exception as e:
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
         await session.rollback()
-        logger.error(f"Ошибка при добавлении реакции на отзыв: {str(e)}")
+        logger.error("Ошибка при добавлении реакции на отзыв: %s", str(e))
         return None
 
 async def get_product_review_stats(
@@ -677,7 +689,7 @@ async def get_product_review_stats(
         cache_key = f"{CACHE_KEYS['product_statistics']}{product_id}"
         cached_data = await cache_get(cache_key)
         if cached_data:
-            logger.debug(f"Статистика отзывов для товара {product_id} получена из кэша")
+            logger.debug("Статистика отзывов для товара %s получена из кэша", product_id)
             return cached_data
         
         # Получаем средний рейтинг
@@ -713,8 +725,8 @@ async def get_product_review_stats(
         await cache_set(cache_key, stats, CACHE_TTL["statistics"])
         
         return stats
-    except Exception as e:
-        logger.error(f"Ошибка при получении статистики отзывов о товаре {product_id}: {str(e)}")
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
+        logger.error("Ошибка при получении статистики отзывов о товаре %s: %s", product_id, str(e))
         return {
             "average_rating": 0.0,
             "total_reviews": 0,
@@ -736,14 +748,14 @@ async def get_batch_product_review_stats(
         Dict[str, Any]: Словарь со статистикой отзывов для каждого товара
     """
     try:
-        logger.info(f"Запрос пакетной статистики отзывов для товаров: {product_ids}")
+        logger.info("Запрос пакетной статистики отзывов для товаров: %s", product_ids)
         
         # Проверяем кэш для всего пакета
         cache_key = f"{CACHE_KEYS['product_batch_statistics']}{','.join(map(str, sorted(product_ids)))}"
         cached_data = await cache_get(cache_key)
         
         if cached_data:
-            logger.debug(f"Пакетная статистика отзывов получена из кэша для {len(product_ids)} товаров")
+            logger.debug("Пакетная статистика отзывов получена из кэша для %s товаров", len(product_ids))
             return cached_data
             
         # Результирующий словарь
@@ -810,8 +822,8 @@ async def get_batch_product_review_stats(
         await cache_set(cache_key, results, CACHE_TTL["statistics"])
         
         return results
-    except Exception as e:
-        logger.error(f"Ошибка при пакетном получении статистики отзывов: {str(e)}")
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
+        logger.error("Ошибка при пакетном получении статистики отзывов: %s", str(e))
         # Возвращаем пустую статистику для каждого товара в случае ошибки
         return {
             str(product_id): {
@@ -838,7 +850,7 @@ async def get_store_review_stats(
         cache_key = f"{CACHE_KEYS['store_review_stats']}"
         cached_data = await cache_get(cache_key)
         if cached_data:
-            logger.debug(f"Статистика отзывов о магазине получена из кэша")
+            logger.debug("Статистика отзывов о магазине получена из кэша")
             return cached_data
         
         # Получаем средний рейтинг из БД
@@ -877,8 +889,8 @@ async def get_store_review_stats(
         await cache_set(cache_key, result, CACHE_TTL["stats"])
         
         return result
-    except Exception as e:
-        logger.error(f"Ошибка при получении статистики отзывов о магазине: {str(e)}")
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
+        logger.error("Ошибка при получении статистики отзывов о магазине: %s", str(e))
         return {
             "average_rating": 0.0,
             "total_reviews": 0,

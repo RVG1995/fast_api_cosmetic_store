@@ -1,13 +1,15 @@
-from fastapi import Depends, HTTPException, status, Cookie
-from sqlalchemy import select
-from typing import Optional, Annotated
-from sqlalchemy.ext.asyncio import AsyncSession
-from database import get_session
-from models import UserModel
-import jwt
+"""Модуль с утилитами для аутентификации и авторизации пользователей."""
+
 import os
 import logging
+from typing import Annotated
+
+from fastapi import Depends, HTTPException, status, Cookie
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from database import get_session
+from models import UserModel
 from app.services import (
     TokenService,
     user_service,
@@ -43,8 +45,8 @@ async def get_current_user(
     Raises:
         HTTPException: При ошибке аутентификации
     """
-    logger.debug(f"Получен токен из куки: {token and 'Yes' or 'No'}")
-    logger.debug(f"Получен токен из заголовка: {authorization and 'Yes' or 'No'}")
+    logger.debug("Получен токен из куки: %s", token and 'Yes' or 'No')
+    logger.debug("Получен токен из заголовка: %s", authorization and 'Yes' or 'No')
 
     actual_token = None
     
@@ -84,7 +86,7 @@ async def get_current_user(
         # Проверяем, не отозван ли токен
         jti = payload.get("jti")
         if jti and not await session_service.is_session_active(session, jti):
-            logger.warning(f"Попытка использования отозванного токена с JTI: {jti}")
+            logger.warning("Попытка использования отозванного токена с JTI: %s", jti)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Токен был отозван",
@@ -94,18 +96,18 @@ async def get_current_user(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка декодирования токена: {str(e)}")
-        raise credentials_exception
+        logger.error("Ошибка декодирования токена: %s", str(e))
+        raise credentials_exception from e
     
     # Получаем пользователя с использованием кэширования
     user = await user_service.get_user_by_id(session, int(user_id))
     if user is None:
-        logger.error(f"Пользователь с ID {user_id} не найден")
+        logger.error("Пользователь с ID %s не найден", user_id)
         raise credentials_exception
         
     # Проверяем, активен ли пользователь
     if not user.is_active:
-        logger.warning(f"Попытка авторизации с неактивным аккаунтом, ID: {user_id}")
+        logger.warning("Попытка авторизации с неактивным аккаунтом, ID: %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Аккаунт не активирован",

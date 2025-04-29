@@ -1,9 +1,26 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, func, select, UniqueConstraint
-from sqlalchemy.ext.asyncio import AsyncSession
+"""Модели корзины и элементов корзины"""
+
+import logging
 from datetime import datetime
 from typing import Optional, List, Tuple
-from sqlalchemy.orm import selectinload
+
+# third-party imports
+from sqlalchemy import (
+    Integer,
+    String,
+    ForeignKey,
+    CheckConstraint,
+    DateTime,
+    select,
+    UniqueConstraint,
+    text
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, selectinload
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql.functions import func
+
+logger = logging.getLogger(__name__)
 
 class Base(DeclarativeBase):
     pass
@@ -15,8 +32,15 @@ class CartModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)  # Может быть NULL для неавторизованных пользователей
     session_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)  # Для неавторизованных пользователей
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("CURRENT_TIMESTAMP"),
+        server_onupdate=text("CURRENT_TIMESTAMP")
+    )
     
     # Связь с элементами корзины
     items = relationship("CartItemModel", back_populates="cart", cascade="all, delete-orphan")
@@ -36,9 +60,8 @@ class CartModel(Base):
             ).filter(cls.id == cart_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            # Логируем ошибку и возвращаем None
-            print(f"Ошибка при получении корзины по ID: {str(e)}")
+        except SQLAlchemyError:
+            logger.exception("Ошибка при получении корзины по ID")
             return None
     
     @classmethod
@@ -50,9 +73,8 @@ class CartModel(Base):
             ).filter(cls.user_id == user_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            # Логируем ошибку и возвращаем None
-            print(f"Ошибка при получении корзины пользователя: {str(e)}")
+        except SQLAlchemyError:
+            logger.exception("Ошибка при получении корзины пользователя")
             return None
     
     @classmethod
@@ -64,9 +86,8 @@ class CartModel(Base):
             ).filter(cls.session_id == session_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            # Логируем ошибку и возвращаем None
-            print(f"Ошибка при получении корзины сессии: {str(e)}")
+        except SQLAlchemyError:
+            logger.exception("Ошибка при получении корзины сессии")
             return None
             
     @classmethod
@@ -78,7 +99,7 @@ class CartModel(Base):
         sort_by: str = "updated_at",
         sort_order: str = "desc",
         user_id: Optional[int] = None,
-        filter: Optional[str] = None,
+        item_filter: Optional[str] = None,
         search: Optional[str] = None
     ) -> Tuple[List["CartModel"], int]:
         """
@@ -91,7 +112,7 @@ class CartModel(Base):
             sort_by: Поле для сортировки (id, user_id, created_at, updated_at)
             sort_order: Порядок сортировки (asc, desc)
             user_id: Опциональный фильтр по ID пользователя
-            filter: Опциональный фильтр (with_items/empty)
+            item_filter: Опциональный фильтр (with_items/empty)
             search: Опциональный поиск по ID корзины или ID пользователя
             
         Returns:
@@ -102,7 +123,7 @@ class CartModel(Base):
             query = select(cls).options(
                 selectinload(cls.items)
             ).filter(
-                cls.user_id != None  # только корзины с user_id (не анонимные)
+                cls.user_id is not None  # только корзины с user_id (не анонимные)
             )
             
             # Если указан фильтр по user_id, добавляем его
@@ -110,11 +131,11 @@ class CartModel(Base):
                 query = query.filter(cls.user_id == user_id)
             
             # Применяем фильтр
-            if filter == "with_items":
+            if item_filter == "with_items":
                 # Фильтрация корзин с товарами
                 subquery = select(CartItemModel.cart_id).distinct()
                 query = query.filter(cls.id.in_(subquery))
-            elif filter == "empty":
+            elif item_filter == "empty":
                 # Фильтрация пустых корзин
                 subquery = select(CartItemModel.cart_id).distinct()
                 query = query.filter(cls.id.not_in(subquery))
@@ -141,13 +162,13 @@ class CartModel(Base):
                 
             # Выполняем запрос для подсчета общего количества корзин
             count_query = select(func.count()).select_from(
-                select(cls).filter(cls.user_id != None).subquery()
+                select(cls).filter(cls.user_id is not None).subquery()
             )
             
             # Если указан фильтр по user_id, добавляем его и в запрос подсчета
             if user_id is not None:
                 count_query = select(func.count()).select_from(
-                    select(cls).filter(cls.user_id != None, cls.user_id == user_id).subquery()
+                    select(cls).filter(cls.user_id is not None, cls.user_id is user_id).subquery()
                 )
                 
             count_result = await session.execute(count_query)
@@ -163,9 +184,9 @@ class CartModel(Base):
             
             return carts, total_count
             
-        except Exception as e:
+        except SQLAlchemyError:
             # Логируем ошибку и возвращаем пустой список
-            print(f"Ошибка при получении списка корзин пользователей: {str(e)}")
+            logger.exception("Ошибка при получении списка корзин пользователей")
             return [], 0
 
 class CartItemModel(Base):
@@ -180,8 +201,8 @@ class CartItemModel(Base):
     cart_id: Mapped[int] = mapped_column(ForeignKey("carts.id", ondelete="CASCADE"))
     product_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    added_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+    added_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP"))
     
     # Связь с корзиной
     cart = relationship("CartModel", back_populates="items")
@@ -193,7 +214,6 @@ class CartItemModel(Base):
             query = select(cls).filter(cls.cart_id == cart_id, cls.product_id == product_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            # Логируем ошибку и возвращаем None
-            print(f"Ошибка при получении элемента корзины: {str(e)}")
-            return None 
+        except SQLAlchemyError:
+            logger.exception("Ошибка при получении элемента корзины")
+            return None

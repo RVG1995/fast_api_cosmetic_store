@@ -1,13 +1,19 @@
-from fastapi import FastAPI, Depends, Request, Response
-from database import setup_database, engine
-from cache import initialize_redis, close_redis_connection
-from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
-from routers.reviews import router as reviews_router
-from routers.admin import router as admin_router
+"""
+Сервис отзывов на товары и магазин.
+Предоставляет API для управления отзывами, включая создание, получение и модерацию.
+"""
+
 import logging
 import os
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from database import setup_database, engine
+from cache import initialize_redis, close_redis_connection
+from routers.reviews import router as reviews_router
+from routers.admin import router as admin_router
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -71,9 +77,9 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Логирование всех запросов к API"""
-    logger.info(f"Получен запрос: {request.method} {request.url}")
+    logger.info("Получен запрос: %s %s", request.method, request.url)
     response = await call_next(request)
-    logger.info(f"Отправлен ответ: {response.status_code}")
+    logger.info("Отправлен ответ: %d", response.status_code)
     return response
 
 # Добавление роутеров
@@ -98,4 +104,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8004, reload=True) 
+    uvicorn.run("main:app", host="0.0.0.0", port=8004, reload=True)

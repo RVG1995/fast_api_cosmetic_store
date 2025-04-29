@@ -1,12 +1,12 @@
-import asyncio
+"""Модуль для инициализации базовых данных в системе заказов."""
+
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, text
-import os
+from sqlalchemy import select
 from dotenv import load_dotenv
 
-from models import OrderStatusModel, Base
+from models import OrderStatusModel
 from database import DATABASE_URL
 
 # Настройка логирования
@@ -96,6 +96,6 @@ async def init_order_statuses():
         if statuses_to_add:
             session.add_all(statuses_to_add)
             await session.commit()
-            logger.info(f"Добавлено {len(statuses_to_add)} новых статусов заказа")
+            logger.info("Добавлено %d новых статусов заказа", len(statuses_to_add))
         else:
             logger.info("Все статусы заказа уже существуют в базе данных")

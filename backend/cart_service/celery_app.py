@@ -1,9 +1,11 @@
+"""Celery configuration for cart service with scheduled tasks and Redis backend."""
+
+import logging
+import os
+import pathlib
 from celery import Celery
 from celery.schedules import crontab
-import os
 from dotenv import load_dotenv
-import logging
-import pathlib
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -16,17 +18,17 @@ parent_env_file = current_dir.parent / ".env"
 
 # Проверяем и загружаем .env файлы
 if env_file.exists():
-    logger.info(f"Загружаем .env из {env_file}")
+    logger.info("Загружаем .env из %s", env_file)
     load_dotenv(dotenv_path=env_file)
 elif parent_env_file.exists():
-    logger.info(f"Загружаем .env из {parent_env_file}")
+    logger.info("Загружаем .env из %s", parent_env_file)
     load_dotenv(dotenv_path=parent_env_file)
 else:
     logger.warning("Файл .env не найден!")
 
 # URL для подключения к брокеру Redis
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-logger.info(f"URL для Redis: {REDIS_URL}")
+logger.info("URL для Redis: %s", REDIS_URL)
 
 # Инициализация Celery с настройками
 app = Celery(

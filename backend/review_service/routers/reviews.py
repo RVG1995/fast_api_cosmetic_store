@@ -1,7 +1,12 @@
+"""Модуль для обработки API-запросов, связанных с отзывами на товары и магазины."""
+
+import logging
+from typing import Optional, Dict, Any
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
-from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
+from sqlalchemy.exc import SQLAlchemyError
 from database import get_session
 from auth import get_current_user, require_user, User
 from models import ReviewTypeEnum, ReviewModel, ReviewReactionModel
@@ -16,7 +21,6 @@ from services import (
     add_review_reaction, get_product_review_stats, get_store_review_stats,
     get_review_by_id, invalidate_review_cache, get_batch_product_review_stats
 )
-import logging
 
 # Настройка логирования
 logger = logging.getLogger("review_service.routers.reviews")
@@ -220,9 +224,11 @@ async def add_reaction(
         "user_reaction": user_reaction.reaction_type if user_reaction else None
     }
     
-    logger.info(f"Обработана реакция для отзыва {review.id}, пользователь {current_user.id}, " +
-               f"тип реакции: {user_reaction.reaction_type if user_reaction else 'None'}, " +
-               f"стат: likes={response_data['reaction_stats']['likes']}, dislikes={response_data['reaction_stats']['dislikes']}")
+    logger.info("Обработана реакция для отзыва %d, пользователь %d, тип реакции: %s, стат: likes=%d, dislikes=%d",
+               review.id, current_user.id, 
+               user_reaction.reaction_type if user_reaction else 'None',
+               response_data['reaction_stats']['likes'], 
+               response_data['reaction_stats']['dislikes'])
     
     return ReviewRead.model_validate(response_data)
 
@@ -252,8 +258,8 @@ async def get_user_reaction(
             }
         else:
             return {"has_reaction": False, "reaction_type": None}
-    except Exception as e:
-        logger.error(f"Ошибка при получении реакции пользователя на отзыв {review_id}: {str(e)}")
+    except (ValueError, AttributeError, SQLAlchemyError) as e:
+        logger.error("Ошибка при получении реакции пользователя на отзыв %d: %s", review_id, str(e))
         return {"has_reaction": False, "reaction_type": None}
 
 @router.delete("/reactions/{review_id}", status_code=status.HTTP_200_OK)
@@ -279,8 +285,8 @@ async def delete_reaction(
         # Инвалидируем кэш в отдельном блоке try после успешного коммита
         try:
             await invalidate_review_cache(review_id)
-        except Exception as cache_error:
-            logger.error(f"Ошибка при инвалидации кэша после удаления реакции на отзыв {review_id}: {str(cache_error)}")
+        except (ConnectionError, TimeoutError, ValueError, AttributeError) as cache_error:
+            logger.error("Ошибка при инвалидации кэша после удаления реакции на отзыв %d: %s", review_id, str(cache_error))
     
     # Получаем обновленный отзыв для возврата клиенту
     review = await get_review_by_id(session, review_id)
@@ -316,6 +322,13 @@ async def delete_reaction(
         "reaction_stats": review.get_reaction_stats(),
         "user_reaction": None  # Реакция удалена
     }
+    
+    logger.info("Удалена реакция для отзыва %d, пользователь %d, старый тип реакции: %s, новая реакция: %s, стат: likes=%d, dislikes=%d",
+               review.id, current_user.id, 
+               user_reaction.reaction_type if user_reaction else 'None',
+               response_data['user_reaction'],
+               response_data['reaction_stats']['likes'], 
+               response_data['reaction_stats']['dislikes'])
     
     return ReviewRead.model_validate(response_data)
 
@@ -450,8 +463,8 @@ async def delete_reaction_post_method(
         # Инвалидируем кэш в отдельном блоке try после успешного коммита
         try:
             await invalidate_review_cache(review_id)
-        except Exception as cache_error:
-            logger.error(f"Ошибка при инвалидации кэша после удаления реакции на отзыв {review_id}: {str(cache_error)}")
+        except (ConnectionError, TimeoutError, ValueError, AttributeError) as cache_error:
+            logger.error("Ошибка при инвалидации кэша после удаления реакции на отзыв %d: %s", review_id, str(cache_error))
     
     # Получаем обновленный отзыв для возврата клиенту
     review = await get_review_by_id(session, review_id)
@@ -501,8 +514,11 @@ async def delete_reaction_post_method(
         "user_reaction": user_reaction_after.reaction_type if user_reaction_after else None
     }
     
-    logger.info(f"Удалена реакция для отзыва {review.id}, пользователь {current_user.id}, " +
-               f"старый тип реакции: {old_reaction_type}, новая реакция: {response_data['user_reaction']}, " +
-               f"стат: likes={response_data['reaction_stats']['likes']}, dislikes={response_data['reaction_stats']['dislikes']}")
+    logger.info("Удалена реакция для отзыва %d, пользователь %d, старый тип реакции: %s, новая реакция: %s, стат: likes=%d, dislikes=%d",
+               review.id, current_user.id, 
+               old_reaction_type, 
+               response_data['user_reaction'],
+               response_data['reaction_stats']['likes'], 
+               response_data['reaction_stats']['dislikes'])
     
-    return ReviewRead.model_validate(response_data) 
+    return ReviewRead.model_validate(response_data)

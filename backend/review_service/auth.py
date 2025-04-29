@@ -1,13 +1,13 @@
+"""Модуль для аутентификации и авторизации пользователей в review_service."""
 import os
-import requests
 import logging
+import json
+from typing import Dict, Optional, Any
+import requests
 import jwt
-from datetime import datetime, timedelta
-from typing import Dict, Optional, Any, Union
-from fastapi import HTTPException, Depends, Cookie, Request, status
+from fastapi import HTTPException, Depends, Cookie, status
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
-import json
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -51,7 +51,6 @@ class User:
         return f"User(id={self.id}, email={self.email}, is_admin={self.is_admin})"
 
 async def get_current_user(
-    request: Request,
     token: str = Cookie(None, alias="access_token"),
     authorization: str = Depends(oauth2_scheme)
 ) -> Optional[User]:
@@ -59,7 +58,6 @@ async def get_current_user(
     Получение текущего пользователя на основе JWT токена
     
     Args:
-        request: Запрос
         token: Токен из куки
         authorization: Токен из заголовка Authorization
         
@@ -82,43 +80,43 @@ async def get_current_user(
             # Декодируем токен локально
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             user_id = payload.get("sub")
-            logger.info(f"Декодирован токен, payload: {payload}")
+            logger.info("Декодирован токен, payload: %s", payload)
             if not user_id:
                 logger.warning("Токен не содержит идентификатор пользователя (sub)")
                 return None
         except jwt.PyJWTError as e:
-            logger.warning(f"Ошибка декодирования токена: {str(e)}")
+            logger.warning("Ошибка декодирования токена: %s", e)
             return None
         
         # Получаем данные о пользователе через API аутентификации
         headers = {"Authorization": f"Bearer {token}"}
-        logger.info(f"Запрашиваем данные пользователя из сервиса auth: {AUTH_SERVICE_URL}/auth/users/me/profile")
+        logger.info("Запрашиваем данные пользователя из сервиса auth: %s/auth/users/me/profile", AUTH_SERVICE_URL)
         try:
             response = requests.get(f"{AUTH_SERVICE_URL}/auth/users/me/profile", headers=headers, timeout=10)
             
             if response.status_code != 200:
-                logger.warning(f"Не удалось получить профиль пользователя: код {response.status_code}")
-                logger.warning(f"Ответ сервера: {response.text[:500]}")
+                logger.warning("Не удалось получить профиль пользователя: код %s", response.status_code)
+                logger.warning("Ответ сервера: %s", response.text[:500])
                 return None
             
             try:
                 user_data = response.json()
-                logger.info(f"Получены данные пользователя: {json.dumps(user_data)}")
+                logger.info("Получены данные пользователя: %s", json.dumps(user_data))
                 
                 # Защита от отсутствия обязательных полей
                 if "id" not in user_data:
                     user_data["id"] = int(user_id)
                 
                 return User(user_data)
-            except Exception as e:
-                logger.error(f"Ошибка при обработке ответа сервиса аутентификации: {str(e)}")
+            except ValueError as e:
+                logger.error("Ошибка при обработке ответа сервиса аутентификации: %s", e)
                 return User({"id": int(user_id), "email": "", "first_name": "Пользователь", "last_name": str(user_id)})
         except requests.exceptions.RequestException as e:
-            logger.error(f"Ошибка соединения с сервисом аутентификации: {str(e)}")
+            logger.error("Ошибка соединения с сервисом аутентификации: %s", e)
             # Создаем минимальный объект пользователя, чтобы процесс мог продолжаться
             return User({"id": int(user_id), "email": "", "first_name": "Пользователь", "last_name": str(user_id)})
-    except Exception as e:
-        logger.error(f"Непредвиденная ошибка при получении пользователя: {str(e)}")
+    except (jwt.PyJWTError, requests.exceptions.RequestException, json.JSONDecodeError) as e:
+        logger.error("Непредвиденная ошибка при получении пользователя: %s", e)
         return None
 
 async def require_user(current_user: Optional[User] = Depends(get_current_user)) -> User:
@@ -168,4 +166,4 @@ async def require_admin(current_user: Optional[User] = Depends(get_current_user)
             detail="Для выполнения данного действия необходимы права администратора"
         )
     
-    return current_user 
+    return current_user

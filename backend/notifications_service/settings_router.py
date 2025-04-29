@@ -1,16 +1,19 @@
+"""Модуль для управления настройками уведомлений пользователей."""
+
+import logging
+from typing import List, Dict
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Dict, Optional
-import logging
 from .notifications_service import send_email_message,update_order_status
 
 from . import models, schemas
 from .database import get_db
 from .auth import require_user, require_admin, verify_service_jwt, User
 from .cache import (
-    cache_get_settings, cache_set_settings, 
+    cache_get_settings, cache_set_settings,
     invalidate_settings_cache
 )
 
@@ -42,13 +45,14 @@ USER_EVENT_TYPES = [
 
 @router.get("/settings", response_model=List[schemas.NotificationSettingResponse])
 async def get_settings(user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
-    logger.info(f"[GET /settings] user_id={user.id}")
+    """Получить настройки уведомлений для текущего пользователя."""
+    logger.info("[GET /settings] user_id=%s", user.id)
     user_id = user.id
     
     # Попытка получить настройки из кеша
     cached = await cache_get_settings(user_id)
     if cached is not None:
-        logger.info(f"[GET /settings] cache hit user_id={user_id}")
+        logger.info("[GET /settings] cache hit user_id=%s", user_id)
         return cached
     
     # Определяем доступные типы событий на основе роли пользователя
@@ -56,7 +60,7 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
     if user.is_admin or user.is_super_admin:
         allowed_event_types.extend(ADMIN_ONLY_EVENT_TYPES)
     
-    logger.debug(f"Allowed event types for user {user_id}: {allowed_event_types}")
+    logger.debug("Allowed event types for user %s: %s", user_id, allowed_event_types)
         
     result = await db.execute(
         select(models.NotificationSetting)
@@ -69,7 +73,7 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
     
     # Если настроек вообще нет, создаем базовые
     if not settings:
-        logger.info(f"No settings found for user {user_id}, creating default settings")
+        logger.info("No settings found for user %s, creating default settings", user_id)
         defaults = []
         for event_type in allowed_event_types:
             new_setting = models.NotificationSetting(
@@ -90,8 +94,8 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
             data = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in defaults]
             await cache_set_settings(user_id, data)
             return data
-        except Exception as e:
-            logger.error(f"Error creating default settings: {str(e)}")
+        except (IntegrityError, SQLAlchemyError) as exc:
+            logger.error("Error creating default settings: %s", str(exc))
             await db.rollback()
             # Даже если не удалось сохранить, вернем временные объекты
             return defaults
@@ -113,11 +117,11 @@ async def check_settings(
     db: AsyncSession = Depends(get_db)
 ):
     """Проверка настроек уведомлений для указанного пользователя и типа события"""
-    logger.info(f"[GET /settings/check] user_id={user_id}, event_type={event_type}")
+    logger.info("[GET /settings/check] user_id=%s, event_type=%s", user_id, event_type)
     # Попытка использовать закэшированные настройки
     cached = await cache_get_settings(int(user_id))
     if cached is not None:
-        logger.info(f"[GET /settings/check] cache hit user_id={user_id}")
+        logger.info("[GET /settings/check] cache hit user_id=%s", user_id)
         for s in cached:
             if s.get("event_type") == event_type:
                 return {"email_enabled": s.get("email_enabled", False), "push_enabled": s.get("push_enabled", False)}
@@ -140,12 +144,14 @@ async def check_settings(
 
 @router.post("/settings/events", dependencies=[Depends(verify_service_jwt)])
 async def receive_notification(event: schemas.NotificationEvent, db: AsyncSession = Depends(get_db)):
-    logger.info(f"[POST /settings/events] event_type={event.event_type}, user_id={event.user_id}, payload={event.payload}")
+    """Обработка входящих событий уведомлений и отправка соответствующих сообщений."""
+    logger.info("[POST /settings/events] event_type=%s, user_id=%s, payload=%s", 
+                event.event_type, event.user_id, event.payload)
     flags = await check_settings(event.user_id, event.event_type, db)
-    if flags['email_enabled'] == True and event.event_type == 'order.created':
+    if flags['email_enabled'] is True and event.event_type is 'order.created':
         if event.payload.get('email') and event.payload.get('user_id'):
             await send_email_message(event.payload)
-    elif flags['email_enabled'] == True and event.event_type == 'order.status_changed':
+    elif flags['email_enabled'] is True and event.event_type is 'order.status_changed':
         if event.payload.get('email') and event.payload.get('user_id'):
             await update_order_status(
                 event.payload,
@@ -155,7 +161,8 @@ async def receive_notification(event: schemas.NotificationEvent, db: AsyncSessio
 
 @router.post("/settings", response_model=schemas.NotificationSettingResponse)
 async def create_setting(setting: schemas.NotificationSettingCreate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
-    logger.info(f"[POST /settings] user_id={user.id}, payload={setting.model_dump()}")
+    """Создать новую настройку уведомлений для пользователя."""
+    logger.info("[POST /settings] user_id=%s, payload=%s", user.id, setting.model_dump())
     
     # Проверяем, имеет ли пользователь право на настройку указанного типа события
     event_type = setting.event_type
@@ -178,14 +185,15 @@ async def create_setting(setting: schemas.NotificationSettingCreate, user: User 
         all_settings = result_all.scalars().all()
         data_all = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
         await cache_set_settings(user.id, data_all)
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(status_code=400, detail="Setting already exists")
+        raise HTTPException(status_code=400, detail="Setting already exists") from exc
     return obj
 
 @router.patch("/settings", response_model=schemas.NotificationSettingResponse)
 async def update_setting(event_type: str, update: schemas.NotificationSettingUpdate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
-    logger.info(f"[PATCH /settings] user_id={user.id}, event_type={event_type}, update={update.model_dump(exclude_none=True)}")
+    """Обновить настройку уведомлений для указанного типа события."""
+    logger.info("[PATCH /settings] user_id=%s, event_type=%s, update=%s", user.id, event_type, update.model_dump(exclude_none=True))
     
     # Проверяем, имеет ли пользователь право на настройку указанного типа события
     if event_type in ADMIN_ONLY_EVENT_TYPES and not (user.is_admin or user.is_super_admin):
@@ -220,8 +228,8 @@ async def update_setting(event_type: str, update: schemas.NotificationSettingUpd
     dependencies=[Depends(require_admin)]
 )
 async def admin_get_all_settings(db: AsyncSession = Depends(get_db)):
+    """Получить все настройки уведомлений (только для администраторов)."""
     logger.info("[GET /admin/settings]")
-    """Просмотр всех настроек (только для админов)"""
     result = await db.execute(select(models.NotificationSetting))
     return result.scalars().all()
 
@@ -234,8 +242,8 @@ async def admin_delete_setting(
     event_type: str,
     db: AsyncSession = Depends(get_db)
 ):
-    logger.info(f"[DELETE /admin/settings/{{user_id}}/{{event_type}}] user_id={user_id}, event_type={event_type}")
     """Удаление настройки пользователя (только для админов)"""
+    logger.info("[DELETE /admin/settings/%s/%s] user_id=%s, event_type=%s", user_id, event_type, user_id, event_type)
     result = await db.execute(
         select(models.NotificationSetting)
         .where(models.NotificationSetting.user_id == user_id,
@@ -254,4 +262,4 @@ async def admin_delete_setting(
     all_settings = result_all.scalars().all()
     data_all = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
     await cache_set_settings(user_id, data_all)
-    return {"detail": "Deleted"} 
+    return {"detail": "Deleted"}

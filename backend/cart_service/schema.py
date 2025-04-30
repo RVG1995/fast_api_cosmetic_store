@@ -1,6 +1,9 @@
-from pydantic import BaseModel, ConfigDict
+"""Схемы Pydantic для сервиса корзины."""
+
 from typing import Optional, List
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
 
 class CartItemAddSchema(BaseModel):
     """Схема для добавления товара в корзину"""
@@ -18,7 +21,7 @@ class ProductInfoSchema(BaseModel):
     price: int
     image: Optional[str] = None
     stock: int
-    
+   
     model_config = ConfigDict(from_attributes=True)
 
 class CartItemSchema(BaseModel):
@@ -133,4 +136,4 @@ class CartMergeItemSchema(BaseModel):
     quantity: int
 
 class CartMergeSchema(BaseModel):
-    items: list[CartMergeItemSchema] 
+    items: list[CartMergeItemSchema]

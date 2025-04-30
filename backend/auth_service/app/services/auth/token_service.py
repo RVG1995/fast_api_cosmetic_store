@@ -1,9 +1,12 @@
-import jwt
-import uuid
+"""Модуль для работы с JWT токенами."""
+
+import logging
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple, Optional, Any
-import logging
+
+import jwt
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +51,7 @@ class TokenService:
         
         # Создаем токен
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-        logger.info(f"Создан токен с JTI: {jti}, истечет: {expire}")
+        logger.info("Создан токен с JTI: %s, истечет: %s", jti, expire)
         
         return encoded_jwt, jti
     
@@ -73,7 +76,7 @@ class TokenService:
             logger.warning("Попытка использования истекшего токена")
             raise
         except jwt.InvalidTokenError as e:
-            logger.warning(f"Недействительный токен: {str(e)}")
+            logger.warning("Недействительный токен: %s", str(e))
             raise
     
     @staticmethod
@@ -93,6 +96,6 @@ class TokenService:
             if exp:
                 return datetime.fromtimestamp(exp, tz=timezone.utc)
             return None
-        except Exception as e:
-            logger.error(f"Ошибка при получении времени истечения токена: {str(e)}")
+        except (jwt.InvalidTokenError, jwt.DecodeError) as e:
+            logger.error("Ошибка при получении времени истечения токена: %s", str(e))
             return None 

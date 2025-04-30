@@ -1,15 +1,16 @@
-from typing import Optional, Dict, Any
-from fastapi import Depends, HTTPException, status, Header,Cookie
-from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
+"""Модуль для работы с зависимостями."""
+
 import os
-import jwt
-from jwt.exceptions import PyJWTError
 import logging
+from datetime import datetime, timezone
+
+import jwt
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
 from dotenv import load_dotenv
 from cache import cache_get, cache_set
-from datetime import datetime, timezone
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -57,8 +58,8 @@ async def _get_service_token():
         try:
             r = await client.post(f"{AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
             r.raise_for_status()
-        except Exception as e:
-            logger.error(f"_get_service_token: failed fetch token: {e}")
+        except httpx.HTTPError as e:
+            logger.error("_get_service_token: failed fetch token: %s", e)
             raise
         new_token = r.json().get("access_token")
         if not new_token:
@@ -70,7 +71,7 @@ async def _get_service_token():
         exp = payload.get("exp")
         if exp:
             ttl = max(int(exp - datetime.now(timezone.utc).timestamp() - 5), 1)
-    except Exception:
+    except (jwt.DecodeError, jwt.InvalidTokenError):
         pass
     await cache_set("service_token_carts", new_token, ttl)
     return new_token
@@ -83,8 +84,8 @@ async def verify_service_jwt(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
         payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
     return True

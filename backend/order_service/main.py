@@ -1,28 +1,23 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Query, Path
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional, Dict, Any
+"""
+Сервис управления заказами на FastAPI.
+Обрабатывает заказы, отслеживает их статусы и связанные операции.
+"""
+
 import logging
 import os
-from math import ceil
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from sqlalchemy.exc import SQLAlchemyError
-import sys
 
-from database import get_session, setup_database, init_db
-from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel
-from auth import User, get_current_user, check_admin_access, check_authenticated
-from product_api import ProductAPI, get_product_api
-from cart_api import CartAPI, get_cart_api
-from email_service import EmailService
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from database import setup_database
 from database import engine
 from routers.orders import router as orders_router, admin_router as orders_admin_router
 from routers.order_statuses import router as order_statuses_router
 from routers.payment_statuses import router as payment_statuses_router
 from routers.promo_codes import router as promo_codes_router, admin_router as promo_codes_admin_router
 from routers.dadata import router as dadata_router
-from cache import close_redis
+from cache import close_redis, cache_service
 from init_data import init_order_statuses
 # Загрузка переменных окружения
 load_dotenv()
@@ -45,6 +40,11 @@ async def lifespan(app: FastAPI):
     logger.info("Запуск сервиса заказов...")
     await setup_database()
     await init_order_statuses()
+    
+    # Инициализируем кэш
+    await cache_service.initialize()
+    logger.info("Кэш инициализирован")
+    
     logger.info("Сервис заказов успешно запущен")
     
     yield  # здесь приложение будет работать
@@ -130,4 +130,4 @@ if __name__ == "__main__":
         host=host,
         port=port,
         reload=True,
-    ) 
+    )

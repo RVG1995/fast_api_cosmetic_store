@@ -1,18 +1,18 @@
+"""Зависимости и утилиты для сервиса заказов."""
+
+import logging
+import os
+from datetime import datetime, timezone
+
 from typing import Optional, Dict, Any
 from fastapi import Depends, HTTPException, status, Header,Cookie
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-import os
 import jwt
 from jwt.exceptions import PyJWTError
-import logging
 import httpx
 from dotenv import load_dotenv
-from cache import get_cached_data, set_cached_data, redis_client
-from datetime import datetime, timezone
+from cache import get_cached_data, set_cached_data
 
-
-from database import get_db
 from schemas import OrderFilterParams
 from product_api import get_product_api
 
@@ -67,7 +67,7 @@ async def _get_service_token():
         exp = payload.get("exp")
         if exp:
             ttl = max(int(exp - datetime.now(timezone.utc).timestamp() - 5), 1)
-    except Exception:
+    except (jwt.InvalidTokenError, jwt.DecodeError):
         pass
     await set_cached_data("service_token", new_token, ttl)
     return new_token
@@ -80,8 +80,8 @@ async def verify_service_jwt(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
         payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
     return True
@@ -96,39 +96,33 @@ async def get_current_user(
     x_service_name: Optional[str] = Header(None),
     service_jwt: Optional[bool] = Depends(bearer_scheme)
 )-> Optional[Dict[str, Any]]:
-    logger.info(f"Получен токен из куки: {token}")
-    logger.info(f"Получен токен из заголовка: {authorization}")
+    logger.info("Получен токен из куки: %s", token)
+    logger.info("Получен токен из заголовка: %s", authorization)
 
     actual_token = None
     
     # Если токен есть в куках, используем его
     if token:
         actual_token = token
-        logger.info(f"Используем токен из куки: {token[:20]}...")
+        logger.info("Используем токен из куки: %s...", token[:20])
     # Если в куках нет, но есть в заголовке, используем его
     elif authorization:
         if authorization.startswith('Bearer '):
             actual_token = authorization[7:]
         else:
             actual_token = authorization
-        logger.info(f"Используем токен из заголовка Authorization: {actual_token[:20]}...")
+        logger.info("Используем токен из заголовка Authorization: %s...", actual_token[:20])
     
     # Если токен не найден, возвращаем None для анонимного доступа
     if actual_token is None:
         logger.info("Токен не найден, продолжаем с анонимным доступом")
         return None
     
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Невозможно проверить учетные данные",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    
     # Проверяем, это сервисный JWT с параметром scope=service
     try:
         payload = jwt.decode(actual_token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("scope") == "service" and x_service_name:
-            logger.info(f"Внутренний запрос от сервиса {x_service_name} авторизован через JWT")
+            logger.info("Внутренний запрос от сервиса %s авторизован через JWT", x_service_name)
             # Возвращаем специальные данные для внутреннего сервиса с повышенными правами
             return {
                 "user_id": None,
@@ -138,13 +132,13 @@ async def get_current_user(
                 "service_name": x_service_name,
                 "token": actual_token
             }
-    except Exception:
+    except (jwt.InvalidTokenError, jwt.DecodeError):
         # Если не сервисный JWT, продолжаем обычный путь аутентификации
         pass
         
     try:
         # Декодируем токен пользователя
-        logger.info(f"Попытка декодирования токена пользователя: {actual_token[:20]}...")
+        logger.info("Попытка декодирования токена пользователя: %s...", actual_token[:20])
         payload = jwt.decode(actual_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         
         # Используем ключ "sub" вместо "user_id" как в других сервисах
@@ -154,7 +148,7 @@ async def get_current_user(
             return None
             
         # Возвращаем данные пользователя с добавлением токена для передачи в другие сервисы
-        logger.info(f"Пользователь {user_id} успешно аутентифицирован (admin={payload.get('is_admin', False)})")
+        logger.info("Пользователь %s успешно аутентифицирован (admin=%s)", user_id, payload.get('is_admin', False))
         return {
             "user_id": int(user_id),
             "is_admin": payload.get("is_admin", False),
@@ -162,7 +156,7 @@ async def get_current_user(
             "token": actual_token
         }
     except PyJWTError as e:
-        logger.error(f"Ошибка при декодировании токена: {str(e)}")
+        logger.error("Ошибка при декодировании токена: %s", str(e))
         return None
 
 # Функция для проверки прав администратора
@@ -278,7 +272,7 @@ async def check_products_availability(product_ids: list[int], token: Optional[st
         if low_stock_products and len(low_stock_products) > 0:
             # Логируем информацию о товарах с низким остатком
             low_stock_names = [f"{p['name']} (ID: {p['id']}, остаток: {p['stock']})" for p in low_stock_products]
-            logger.warning(f"Обнаружены товары с низким остатком: {', '.join(low_stock_names)}")
+            logger.warning("Обнаружены товары с низким остатком: %s", ', '.join(low_stock_names))
             
             # Используем глобальный флаг для отслеживания отправки уведомлений
             # Предотвращаем повторную отправку в рамках одного запроса
@@ -289,11 +283,11 @@ async def check_products_availability(product_ids: list[int], token: Optional[st
                 await notification_message_about_low_stock(low_stock_products, user_id, token)
                 # Устанавливаем флаг, что уведомление уже отправлено
                 check_products_availability._notification_sent = True
-                logger.info(f"Запущена отправка уведомлений о {len(low_stock_products)} товарах с низким остатком")
+                logger.info("Запущена отправка уведомлений о %d товарах с низким остатком", len(low_stock_products))
             else:
-                logger.info(f"Пропуск повторной отправки уведомления о товарах с низким остатком")
+                logger.info("Пропуск повторной отправки уведомления о товарах с низким остатком")
         
-        logger.info(f"Products: {products}")
+        logger.info("Products: %s", products)
         
         # Проверяем наличие (stock > 0)
         result = {}
@@ -304,14 +298,14 @@ async def check_products_availability(product_ids: list[int], token: Optional[st
                 # Если продукт не найден, считаем его недоступным
                 result[product_id] = False
         
-        logger.info(f"Проверка наличия товаров: {result}")
+        logger.info("Проверка наличия товаров: %s", result)
         return result
     except Exception as e:
-        logger.error(f"Ошибка при проверке наличия товаров: {str(e)}")
+        logger.error("Ошибка при проверке наличия товаров: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Сервис продуктов недоступен",
-        )
+        ) from e
 
 # Установка начального значения для флага отправки уведомлений
 check_products_availability._notification_sent = False
@@ -340,14 +334,14 @@ async def get_products_info(product_ids: list[int], token: Optional[str] = None)
         for product_id, product in products.items():
             result[product_id] = product.to_dict()
         
-        logger.info(f"Получена информация о товарах: {list(result.keys())}")
+        logger.info("Получена информация о товарах: %s", list(result.keys()))
         return result
     except Exception as e:
-        logger.error(f"Ошибка при получении информации о товарах: {str(e)}")
+        logger.error("Ошибка при получении информации о товарах: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Сервис продуктов недоступен",
-        )
+        ) from e
 
 # Функция для получения корзины пользователя из сервиса корзин
 async def get_user_cart(user_id: int) -> Dict[str, Any]:
@@ -372,17 +366,17 @@ async def get_user_cart(user_id: int) -> Dict[str, Any]:
             elif response.status_code == 404:
                 return {"items": []}
             else:
-                logger.error(f"Ошибка при получении корзины пользователя: {response.text}")
+                logger.error("Ошибка при получении корзины пользователя: %s", response.text)
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Сервис корзин недоступен",
                 )
     except httpx.RequestError as e:
-        logger.error(f"Ошибка при запросе к сервису корзин: {str(e)}")
+        logger.error("Ошибка при запросе к сервису корзин: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Сервис корзин недоступен",
-        )
+        ) from e
 
 # Функция для очистки корзины пользователя в сервисе корзин
 async def clear_user_cart(user_id: int) -> bool:
@@ -405,8 +399,8 @@ async def clear_user_cart(user_id: int) -> bool:
             if response.status_code in (200, 204):
                 return True
             else:
-                logger.error(f"Ошибка при очистке корзины пользователя: {response.text}")
+                logger.error("Ошибка при очистке корзины пользователя: %s", response.text)
                 return False
     except httpx.RequestError as e:
-        logger.error(f"Ошибка при запросе к сервису корзин: {str(e)}")
-        return False 
+        logger.error("Ошибка при запросе к сервису корзин: %s", str(e))
+        return False

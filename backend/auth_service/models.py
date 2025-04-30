@@ -1,15 +1,18 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import text, select
-from sqlalchemy.ext.asyncio import AsyncSession
+"""Модели для сервиса аутентификации, включая управление пользователями и сессиями."""
+
 from typing import Optional, List
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
+from datetime import datetime, timezone
+
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import text, select, String, Boolean, DateTime, ForeignKey
+from sqlalchemy.ext.asyncio import AsyncSession
 
 class Base(DeclarativeBase):
+    """Базовый класс для всех моделей SQLAlchemy."""
     pass
 
 class UserModel(Base):
+    """Модель пользователя с основными полями и методами для работы с аккаунтом."""
     __tablename__ = "users"
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -156,4 +159,3 @@ class UserSessionModel(Base):
         
         await session.commit()
         return revoke_count
-    

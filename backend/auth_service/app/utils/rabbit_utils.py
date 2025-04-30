@@ -1,7 +1,6 @@
-import asyncio
-import json
+"""Утилиты для работы с RabbitMQ в сервисе аутентификации."""
+
 import os
-from typing import Dict, List, Any
 
 import aio_pika
 from dotenv import load_dotenv
@@ -64,9 +63,8 @@ async def declare_queue(channel: aio_pika.Channel, queue_name: str) -> aio_pika.
             }
         )
         return queue
-    except aio_pika.exceptions.QueueDeclarationError as e:
+    except aio_pika.exceptions.ChannelClosed as e:
         # Если очередь уже существует, используем её как есть
-        # (это может произойти, если email_consumer уже создал очереди)
         print(f"Очередь {queue_name} уже существует с другими параметрами. Используем как есть: {e}")
         queue = await channel.declare_queue(
             queue_name,

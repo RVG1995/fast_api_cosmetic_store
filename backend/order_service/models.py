@@ -1,16 +1,22 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, Boolean, Text, func, select, Enum
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
-from typing import Optional, List, Tuple
-from sqlalchemy.orm import selectinload
+"""Модели для сервиса заказов."""
+
 import enum
 import logging
+from datetime import datetime
+from typing import Optional, List, Tuple
+
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, Boolean, Text, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import SQLAlchemyError
 
 class Base(DeclarativeBase):
+    """Базовый класс для всех моделей SQLAlchemy."""
     pass
 
 class OrderStatusEnum(enum.Enum):
+    """Перечисление статусов заказа."""
     PENDING = "pending"
     PROCESSING = "processing"
     SHIPPED = "shipped"
@@ -41,7 +47,7 @@ class OrderStatusModel(Base):
             query = select(cls).order_by(cls.sort_order.asc())
             result = await session.execute(query)
             return result.scalars().all()
-        except Exception as e:
+        except SQLAlchemyError as e:
             print(f"Ошибка при получении статусов заказов: {str(e)}")
             return []
     
@@ -51,7 +57,7 @@ class OrderStatusModel(Base):
         try:
             result = await session.get(cls, status_id)
             return result
-        except Exception as e:
+        except SQLAlchemyError as e:
             print(f"Ошибка при получении статуса заказа: {str(e)}")
             return None
     
@@ -62,12 +68,12 @@ class OrderStatusModel(Base):
             query = select(cls).order_by(cls.sort_order.asc()).limit(1)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
+        except SQLAlchemyError as e:
             print(f"Ошибка при получении статуса заказа по умолчанию: {str(e)}")
             return None
 
 class OrderModel(Base):
-    """Модель заказа"""
+    """Модель заказа."""
     __tablename__ = 'orders'
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -123,7 +129,7 @@ class OrderModel(Base):
             ).filter(cls.id == order_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
+        except SQLAlchemyError as e:
             print(f"Ошибка при получении заказа: {str(e)}")
             return None
     
@@ -168,7 +174,7 @@ class OrderModel(Base):
             items = result.scalars().all()
             
             return items, total
-        except Exception as e:
+        except SQLAlchemyError as e:
             print(f"Ошибка при получении заказов пользователя: {str(e)}")
             return [], 0
     
@@ -191,8 +197,8 @@ class OrderModel(Base):
         try:
             # Логируем входящие параметры фильтрации
             logger = logging.getLogger("order_model")
-            logger.info(f"Запрос всех заказов с параметрами: page={page}, limit={limit}, status_id={status_id}, "
-                       f"user_id={user_id}, id={id}, date_from={date_from}, date_to={date_to}, username={username}")
+            logger.info("Запрос всех заказов с параметрами: page=%s, limit=%s, status_id=%s, user_id=%s, id=%s, date_from=%s, date_to=%s, username=%s",
+                       page, limit, status_id, user_id, id, date_from, date_to, username)
             
             # Формируем базовый запрос
             query = select(cls)
@@ -212,9 +218,8 @@ class OrderModel(Base):
                 # Используем оператор ILIKE для регистронезависимого поиска по части имени
                 # Обратите внимание, что % нужно добавить и в начало, и в конец для поиска по подстроке
                 filters.append(cls.full_name.ilike(f'%{username}%'))
-                logger.info(f"Применяется фильтр по имени пользователя: full_name ILIKE %{username}%")
-                # Добавляем отладочную информацию
-                logger.debug(f"Текущие фильтры: {filters}")
+                logger.info("Применяется фильтр по имени пользователя: full_name ILIKE %%%s%%", username)
+                logger.debug("Текущие фильтры: %s", filters)
             
             # Добавляем фильтрацию по датам
             if date_from is not None:
@@ -222,18 +227,18 @@ class OrderModel(Base):
                     # Создаем объект datetime для начала дня
                     date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
                     filters.append(cls.created_at >= date_from_obj)
-                    logger.info(f"Применяется фильтр по начальной дате: created_at >= {date_from_obj}")
-                except Exception as e:
-                    logger.error(f"Ошибка при обработке date_from={date_from}: {str(e)}")
+                    logger.info("Применяется фильтр по начальной дате: created_at >= %s", date_from_obj)
+                except ValueError as e:
+                    logger.error("Ошибка при обработке date_from=%s: %s", date_from, str(e))
             
             if date_to is not None:
                 try:
                     # Создаем объект datetime для конца дня
                     date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
                     filters.append(cls.created_at <= date_to_obj)
-                    logger.info(f"Применяется фильтр по конечной дате: created_at <= {date_to_obj}")
-                except Exception as e:
-                    logger.error(f"Ошибка при обработке date_to={date_to}: {str(e)}")
+                    logger.info("Применяется фильтр по конечной дате: created_at <= %s", date_to_obj)
+                except ValueError as e:
+                    logger.error("Ошибка при обработке date_to=%s: %s", date_to, str(e))
             
             if filters:
                 query = query.filter(*filters)
@@ -267,13 +272,13 @@ class OrderModel(Base):
             items = result.scalars().all()
             
             return items, total
-        except Exception as e:
+        except SQLAlchemyError as e:
             logger = logging.getLogger("order_model")
-            logger.error(f"Ошибка при получении всех заказов: {str(e)}")
+            logger.error("Ошибка при получении всех заказов: %s", str(e))
             return [], 0
 
 class OrderItemModel(Base):
-    """Модель элемента заказа"""
+    """Модель элемента заказа."""
     __tablename__ = 'order_items'
     __table_args__ = (
         CheckConstraint('quantity > 0', name='order_item_quantity_positive'),
@@ -292,7 +297,7 @@ class OrderItemModel(Base):
     order = relationship("OrderModel", back_populates="items")
 
 class OrderStatusHistoryModel(Base):
-    """Модель истории изменения статуса заказа"""
+    """Модель истории изменения статуса заказа."""
     __tablename__ = 'order_status_history'
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -327,7 +332,7 @@ class OrderStatusHistoryModel(Base):
         return history_record
 
 class ShippingAddressModel(Base):
-    """Модель адреса доставки"""
+    """Модель адреса доставки."""
     __tablename__ = 'shipping_addresses'
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -345,7 +350,7 @@ class ShippingAddressModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
 
 class BillingAddressModel(Base):
-    """Модель адреса для выставления счета"""
+    """Модель адреса для выставления счета."""
     __tablename__ = 'billing_addresses'
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -363,9 +368,7 @@ class BillingAddressModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
 
 class PaymentStatusModel(Base):
-    """
-    Модель для статусов оплаты заказов
-    """
+    """Модель статуса оплаты заказа."""
     __tablename__ = "payment_statuses"
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -444,7 +447,7 @@ class PaymentStatusModel(Base):
         return False 
 
 class PromoCodeModel(Base):
-    """Модель промокода"""
+    """Модель промокода."""
     __tablename__ = 'promo_codes'
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -473,8 +476,8 @@ class PromoCodeModel(Base):
             query = select(cls).filter(cls.code == code)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
-            logging.error(f"Ошибка при получении промокода: {str(e)}")
+        except SQLAlchemyError as e:
+            logging.error("Ошибка при получении промокода: %s", str(e))
             return None
     
     @classmethod
@@ -483,8 +486,8 @@ class PromoCodeModel(Base):
             query = select(cls).order_by(cls.created_at.desc()).offset(skip).limit(limit)
             result = await session.execute(query)
             return result.scalars().all()
-        except Exception as e:
-            logging.error(f"Ошибка при получении промокодов: {str(e)}")
+        except SQLAlchemyError as e:
+            logging.error("Ошибка при получении промокодов: %s", str(e))
             return []
     
     @classmethod
@@ -496,12 +499,12 @@ class PromoCodeModel(Base):
             ).order_by(cls.created_at.desc())
             result = await session.execute(query)
             return result.scalars().all()
-        except Exception as e:
-            logging.error(f"Ошибка при получении активных промокодов: {str(e)}")
+        except SQLAlchemyError as e:
+            logging.error("Ошибка при получении активных промокодов: %s", str(e))
             return []
 
 class PromoCodeUsageModel(Base):
-    """Модель использования промокода"""
+    """Модель использования промокода."""
     __tablename__ = 'promo_code_usages'
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -524,6 +527,6 @@ class PromoCodeUsageModel(Base):
             )
             result = await session.execute(query)
             return result.scalars().first() is not None
-        except Exception as e:
-            logging.error(f"Ошибка при проверке использования промокода: {str(e)}")
+        except SQLAlchemyError as e:
+            logging.error("Ошибка при проверке использования промокода: %s", str(e))
             return False 

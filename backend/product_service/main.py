@@ -17,7 +17,7 @@ import json
 from typing import List, Optional, Union, Annotated, Any
 from fastapi.staticfiles import StaticFiles
 # Импортируем функции для работы с кэшем
-from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, CACHE_TTL, close_redis_connection
+from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, DEFAULT_CACHE_TTL, close_redis_connection
 from routers import (
     product_router,
     category_router,
@@ -37,6 +37,11 @@ async def lifespan(app: FastAPI):
     # Код, который должен выполниться при запуске приложения (startup)
     await setup_database()  # вызываем асинхронную функцию для создания таблиц или миграций
     logger.info("База данных сервиса продуктов инициализирована")
+    
+    # Инициализируем кэш
+    from cache import cache_service
+    await cache_service.initialize()
+    
     yield  # здесь приложение будет работать
     # Код для завершения работы приложения (shutdown) можно добавить после yield, если нужно
     logger.info("Завершение работы сервиса продуктов")

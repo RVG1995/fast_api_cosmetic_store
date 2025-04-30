@@ -1,7 +1,7 @@
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
+from typing import List, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update
 import logging
 
 from database import get_db
@@ -11,7 +11,7 @@ from schemas import (
     ShippingAddressResponse, BillingAddressResponse,
     AddressUpdate
 )
-from dependencies import get_current_user, get_admin_user
+from dependencies import get_current_user
 
 # Настройка логирования
 logger = logging.getLogger("address_router")

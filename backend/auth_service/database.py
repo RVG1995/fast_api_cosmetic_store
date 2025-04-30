@@ -1,27 +1,30 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker,AsyncSession
-from models import Base,UserModel
-from typing import AsyncGenerator
-import os
-from utils import get_password_hash
+"""Модуль конфигурации и инициализации базы данных для сервиса аутентификации."""
+
 import logging
+import os
+from typing import AsyncGenerator
+from dotenv import load_dotenv
+
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from models import Base, UserModel
+from utils import get_password_hash
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from dotenv import load_dotenv
-
 load_dotenv()
 
 # Получение URL базы данных из переменных окружения
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/auth_db")
-logger.info(f"URL базы данных: {DATABASE_URL}")
 
 engine = create_async_engine(DATABASE_URL, echo = True)
 
 new_session = async_sessionmaker(engine,expire_on_commit=False)
 
 async def get_session()-> AsyncGenerator[AsyncSession, None]:
+    """Возвращает асинхронную сессию базы данных."""
     async with new_session() as session:
         yield session
 
@@ -35,7 +38,7 @@ async def create_superadmin() -> None:
         last_name = os.getenv("SUPERADMIN_LAST_NAME", "User")
         
         if not admin_email or not admin_password:
-            print("SUPERADMIN_EMAIL или SUPERADMIN_PASSWORD не указаны в .env файле")
+            logger.warning("SUPERADMIN_EMAIL или SUPERADMIN_PASSWORD не указаны в .env файле")
             return
         
         # Используем уже существующую сессию new_session
@@ -44,7 +47,7 @@ async def create_superadmin() -> None:
             existing_admin = await UserModel.get_by_email(session, admin_email)
             
             if existing_admin and existing_admin.is_super_admin:
-                print(f"Суперпользователь с email {admin_email} уже существует")
+                logger.info("Суперпользователь с email %s уже существует", admin_email)
                 return
                 
             # Создаем суперпользователя
@@ -62,9 +65,9 @@ async def create_superadmin() -> None:
             
             session.add(superadmin)
             await session.commit()
-            print(f"Суперпользователь создан с email: {admin_email}")
-    except Exception as e:
-        print(f"Ошибка при создании суперпользователя: {e}")
+            logger.info("Суперпользователь создан с email: %s", admin_email)
+    except SQLAlchemyError as e:
+        logger.error("Ошибка при создании суперпользователя: %s", e)
 
 async def create_default_user() -> None:
     """Создает обычного пользователя, если он не существует"""
@@ -76,7 +79,7 @@ async def create_default_user() -> None:
         last_name = os.getenv("DEFAULT_USER_LAST_NAME", "User")
         
         if not user_email or not user_password:
-            print("DEFAULT_USER_EMAIL или DEFAULT_USER_PASSWORD не указаны в .env файле")
+            logger.warning("DEFAULT_USER_EMAIL или DEFAULT_USER_PASSWORD не указаны в .env файле")
             return
         
         # Используем уже существующую сессию new_session
@@ -85,7 +88,7 @@ async def create_default_user() -> None:
             existing_user = await UserModel.get_by_email(session, user_email)
             
             if existing_user:
-                print(f"Пользователь с email {user_email} уже существует")
+                logger.info("Пользователь с email %s уже существует", user_email)
                 return
                 
             # Создаем обычного пользователя
@@ -103,9 +106,9 @@ async def create_default_user() -> None:
             
             session.add(default_user)
             await session.commit()
-            print(f"Пользователь создан с email: {user_email}")
-    except Exception as e:
-        print(f"Ошибка при создании пользователя: {e}")
+            logger.info("Пользователь создан с email: %s", user_email)
+    except SQLAlchemyError as e:
+        logger.error("Ошибка при создании пользователя: %s", e)
 
 async def setup_database():
     """

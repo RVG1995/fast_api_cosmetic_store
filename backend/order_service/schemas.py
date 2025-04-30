@@ -14,6 +14,13 @@ class OrderStatusEnum(str, Enum):
     RETURNED = "returned"
     REFUNDED = "refunded"
 
+
+class SuggestRequest(BaseModel):
+    query: str = Field(..., description="Строка для подсказки")
+    from_bound: dict = Field(None, example={"value": "city"})
+    to_bound: dict = Field(None, example={"value": "city"})
+    locations: list = Field(None, description="Фильтры местоположения")
+
 # Базовые модели
 class AddressBase(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)

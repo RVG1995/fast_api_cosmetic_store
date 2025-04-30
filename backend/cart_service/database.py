@@ -1,10 +1,12 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
+"""Модуль для работы с базой данных корзины."""
+from typing import AsyncGenerator
 import os
 import logging
 import pathlib
-from typing import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
 
 from models import Base
 
@@ -19,17 +21,17 @@ parent_env_file = current_dir.parent / ".env"
 
 # Проверяем и загружаем .env файлы
 if env_file.exists():
-    logger.info(f"Загружаем .env из {env_file}")
+    logger.info("Загружаем .env из %s", env_file)
     load_dotenv(dotenv_path=env_file)
 elif parent_env_file.exists():
-    logger.info(f"Загружаем .env из {parent_env_file}")
+    logger.info("Загружаем .env из %s", parent_env_file)
     load_dotenv(dotenv_path=parent_env_file)
 else:
     logger.warning("Файл .env не найден!")
 
 # Получаем URL подключения к базе данных из переменных окружения
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5434/cart_db")
-logger.info(f"URL базы данных: {DATABASE_URL}")
+logger.info("URL базы данных: %s", DATABASE_URL)
 
 # Создаем движок SQLAlchemy для асинхронной работы с базой данных
 engine = create_async_engine(
@@ -52,7 +54,7 @@ async def setup_database():
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Таблицы успешно созданы")
     except Exception as e:
-        logger.error(f"Ошибка при создании таблиц: {str(e)}")
+        logger.error("Ошибка при создании таблиц: %s", str(e))
         raise
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -61,7 +63,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         except Exception as e:
-            logger.error(f"Ошибка при работе с базой данных: {str(e)}")
+            logger.error("Ошибка при работе с базой данных: %s", str(e))
             await session.rollback()
             raise
         finally:

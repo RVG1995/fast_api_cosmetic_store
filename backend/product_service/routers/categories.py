@@ -8,7 +8,7 @@ from models import CategoryModel
 from schema import CategorySchema, CategoryAddSchema, CategoryUpdateSchema
 from database import get_session
 from auth import require_admin, get_current_user
-from cache import cache_get, cache_set, cache_delete_pattern, CACHE_KEYS, CACHE_TTL, invalidate_cache
+from cache import cache_get, cache_set, cache_delete_pattern, CACHE_KEYS, DEFAULT_CACHE_TTL, invalidate_cache
 
 import logging
 
@@ -48,7 +48,7 @@ async def get_categories(session: SessionDep):
             del cat['_sa_instance_state']
     
     # Сохраняем в кэш
-    await cache_set(cache_key, categories_list, CACHE_TTL)
+    await cache_set(cache_key, categories_list, DEFAULT_CACHE_TTL)
     
     return categories
 
@@ -161,7 +161,7 @@ async def get_category_by_id(category_id: int, session: SessionDep):
         del category_dict['_sa_instance_state']
     
     # Сохраняем в кэш
-    await cache_set(cache_key, category_dict, CACHE_TTL)
+    await cache_set(cache_key, category_dict, DEFAULT_CACHE_TTL)
     
     return category
 

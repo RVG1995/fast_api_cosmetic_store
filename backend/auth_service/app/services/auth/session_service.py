@@ -1,8 +1,11 @@
+"""Модуль для управления пользовательскими сессиями и JWT токенами."""
+
 import logging
-from typing import Optional, Dict, Any, List
+from typing import List
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from models import UserSessionModel
 from .cache_service import cache_service, cached, USER_CACHE_TTL
@@ -56,8 +59,8 @@ class SessionService:
             await cache_service.delete(cache_key)
             
             return new_session
-        except Exception as e:
-            logger.error(f"Ошибка при создании сессии: {str(e)}")
+        except SQLAlchemyError as e:
+            logger.error("Ошибка при создании сессии: %s", str(e))
             raise
     
     @staticmethod
@@ -86,8 +89,8 @@ class SessionService:
             sessions = result.scalars().all()
             
             return sessions
-        except Exception as e:
-            logger.error(f"Ошибка при получении сессий пользователя: {str(e)}")
+        except SQLAlchemyError as e:
+            logger.error("Ошибка при получении сессий пользователя: %s", str(e))
             return []
     
     @staticmethod
@@ -115,7 +118,7 @@ class SessionService:
             user_session = result.scalars().first()
             
             if not user_session:
-                logger.warning(f"Сессия {session_id} не найдена или не принадлежит пользователю {user_id}")
+                logger.warning("Сессия %s не найдена или не принадлежит пользователю %s", session_id, user_id)
                 return False
             
             # Отзываем сессию
@@ -130,8 +133,8 @@ class SessionService:
             await cache_service.delete(cache_key)
             
             return True
-        except Exception as e:
-            logger.error(f"Ошибка при отзыве сессии: {str(e)}")
+        except SQLAlchemyError as e:
+            logger.error("Ошибка при отзыве сессии: %s", str(e))
             return False
     
     @staticmethod
@@ -157,7 +160,7 @@ class SessionService:
             user_session = result.scalars().first()
             
             if not user_session:
-                logger.warning(f"Активная сессия с JTI {jti} не найдена")
+                logger.warning("Активная сессия с JTI %s не найдена", jti)
                 return False
             
             # Отзываем сессию
@@ -172,8 +175,8 @@ class SessionService:
             await cache_service.delete(cache_key)
             
             return True
-        except Exception as e:
-            logger.error(f"Ошибка при отзыве сессии по JTI: {str(e)}")
+        except SQLAlchemyError as e:
+            logger.error("Ошибка при отзыве сессии по JTI: %s", str(e))
             return False
     
     @staticmethod
@@ -220,8 +223,8 @@ class SessionService:
                 await cache_service.delete(cache_key)
             
             return revoke_count
-        except Exception as e:
-            logger.error(f"Ошибка при отзыве всех сессий пользователя: {str(e)}")
+        except SQLAlchemyError as e:
+            logger.error("Ошибка при отзыве всех сессий пользователя: %s", str(e))
             return 0
     
     @staticmethod
@@ -256,11 +259,11 @@ class SessionService:
             
             if count > 0:
                 await session.commit()
-                logger.info(f"Деактивировано {count} просроченных сессий")
+                logger.info("Деактивировано %d просроченных сессий", count)
             
             return count
-        except Exception as e:
-            logger.error(f"Ошибка при очистке просроченных сессий: {str(e)}")
+        except SQLAlchemyError as e:
+            logger.error("Ошибка при очистке просроченных сессий: %s", str(e))
             return 0
     
     @staticmethod
@@ -285,9 +288,9 @@ class SessionService:
             user_session = result.scalars().first()
             
             return user_session is not None
-        except Exception as e:
-            logger.error(f"Ошибка при проверке активности сессии: {str(e)}")
+        except SQLAlchemyError as e:
+            logger.error("Ошибка при проверке активности сессии: %s", str(e))
             return False
 
 # Создаем глобальный экземпляр сервиса для использования в приложении
-session_service = SessionService() 
+session_service = SessionService()

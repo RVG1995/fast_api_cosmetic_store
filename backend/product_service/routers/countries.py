@@ -8,7 +8,7 @@ from models import CountryModel
 from schema import CountrySchema, CountryAddSchema, CountryUpdateSchema
 from database import get_session
 from auth import require_admin, get_current_user
-from cache import cache_get, cache_set, cache_delete_pattern, CACHE_KEYS, CACHE_TTL, invalidate_cache
+from cache import cache_get, cache_set, cache_delete_pattern, CACHE_KEYS, DEFAULT_CACHE_TTL, invalidate_cache
 
 import logging
 
@@ -48,7 +48,7 @@ async def get_countries(session: SessionDep):
             del country['_sa_instance_state']
     
     # Сохраняем в кэш
-    await cache_set(cache_key, countries_list, CACHE_TTL)
+    await cache_set(cache_key, countries_list, DEFAULT_CACHE_TTL)
     
     return countries
 
@@ -161,7 +161,7 @@ async def get_country_by_id(country_id: int, session: SessionDep):
         del country_dict['_sa_instance_state']
     
     # Сохраняем в кэш
-    await cache_set(cache_key, country_dict, CACHE_TTL)
+    await cache_set(cache_key, country_dict, DEFAULT_CACHE_TTL)
     
     return country
 

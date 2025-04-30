@@ -1,14 +1,15 @@
-from fastapi import Depends, HTTPException, status, Cookie, Request, Header
-from fastapi.security import OAuth2PasswordBearer
-from typing import Optional, Annotated, List
-import jwt
-from datetime import datetime
-import os
-from dotenv import load_dotenv
+"""Утилиты аутентификации и авторизации для сервиса корзины."""
+
 import logging
+import os
 import pathlib
 import uuid
-from dependencies import verify_service_jwt
+from typing import Optional, Annotated
+
+from fastapi import Depends, HTTPException, status, Cookie, Request, Header
+from fastapi.security import OAuth2PasswordBearer
+import jwt
+from dotenv import load_dotenv
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
@@ -21,13 +22,13 @@ parent_env_file = current_dir.parent / ".env"
 
 # Проверяем и загружаем .env файлы
 if env_file.exists():
-    logger.info(f"Загружаем .env из {env_file}")
+    logger.info("Загружаем .env из %s", env_file)
     load_dotenv(dotenv_path=env_file)
-    logger.info(f"Содержимое JWT_SECRET_KEY в .env: {os.getenv('JWT_SECRET_KEY', 'не найден')}")
+    logger.info("Содержимое JWT_SECRET_KEY в .env: %s", os.getenv('JWT_SECRET_KEY', 'не найден'))
 elif parent_env_file.exists():
-    logger.info(f"Загружаем .env из {parent_env_file}")
+    logger.info("Загружаем .env из %s", parent_env_file)
     load_dotenv(dotenv_path=parent_env_file)
-    logger.info(f"Содержимое JWT_SECRET_KEY в родительском .env: {os.getenv('JWT_SECRET_KEY', 'не найден')}")
+    logger.info("Содержимое JWT_SECRET_KEY в родительском .env: %s", os.getenv('JWT_SECRET_KEY', 'не найден'))
 else:
     logger.warning("Файл .env не найден!")
 
@@ -38,13 +39,14 @@ ALGORITHM = "HS256"
 # Сервисный API-ключ
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
 
-logger.info(f"Загружена конфигурация JWT. SECRET_KEY: {SECRET_KEY[:5]}...")
+logger.info("Загружена конфигурация JWT. SECRET_KEY: %s...", SECRET_KEY[:5])
 
 # Схема авторизации через OAuth2
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
 # Класс пользователя для хранения данных из токена
 class User:
+    """Класс для хранения данных пользователя из JWT токена."""
     def __init__(self, id: int, is_admin: bool = False, is_super_admin: bool = False, is_active: bool = True):
         self.id = id
         self.is_admin = is_admin
@@ -65,32 +67,31 @@ async def get_session_id(
     3. Генерация нового ID
     """
     # Логируем источники session_id для отладки
-    logger.debug(f"get_session_id: cookie={session}, param={session_id_param}")
+    logger.debug("get_session_id: cookie=%s, param=%s", session, session_id_param)
     
     # Если session_id есть в cookie, используем его
     if session:
-        logger.debug(f"Используем session_id из cookie: {session}")
+        logger.debug("Используем session_id из cookie: %s", session)
         return session
         
     # Если передан параметр session_id_param, используем его
     if session_id_param:
-        logger.debug(f"Используем session_id из параметра: {session_id_param}")
+        logger.debug("Используем session_id из параметра: %s", session_id_param)
         return session_id_param
     
     # Пытаемся получить session_id из query параметров запроса, если request доступен
     if request and request.query_params.get("session_id"):
         session_id_from_query = request.query_params.get("session_id")
-        logger.debug(f"Используем session_id из query параметра: {session_id_from_query}")
+        logger.debug("Используем session_id из query параметра: %s", session_id_from_query)
         return session_id_from_query
     
     # Создаем новый ID сессии, если его нет
     session = str(uuid.uuid4())
-    logger.info(f"Создан новый session_id: {session}")
+    logger.info("Создан новый session_id: %s", session)
     
     return session
 
 async def get_token_from_cookie_or_header(
-    request: Request,
     token: Annotated[str, Depends(oauth2_scheme)] = None,
     access_token: Optional[str] = Cookie(None),
     authorization: Optional[str] = Header(None),
@@ -102,9 +103,9 @@ async def get_token_from_cookie_or_header(
     3. Header 'Authorization' в формате Bearer
     """
     # Логируем все возможные источники токена
-    logger.debug(f"OAuth token: {token}")
-    logger.debug(f"Cookie token: {access_token}")
-    logger.debug(f"Header Authorization: {authorization}")
+    logger.debug("OAuth token: %s", token)
+    logger.debug("Cookie token: %s", access_token)
+    logger.debug("Header Authorization: %s", authorization)
     
     # Приоритет токенов: сначала OAuth2, затем Cookie, потом Header
     if token:
@@ -125,13 +126,24 @@ async def get_current_user(
     access_token: Optional[str] = Cookie(None),
     authorization: Optional[str] = Header(None)
 ) -> Optional[User]:
-    logger.info(f"Запрос авторизации: {request.method} {request.url.path}")
+    """
+    Получает текущего пользователя из JWT токена.
+    
+    Args:
+        request: Объект запроса FastAPI
+        access_token: JWT токен из cookie
+        authorization: JWT токен из заголовка Authorization
+        
+    Returns:
+        Optional[User]: Объект пользователя или None, если токен невалиден
+    """
+    logger.info("Запрос авторизации: %s %s", request.method, request.url.path)
     
     # Если нет куки-токена, проверяем заголовок Authorization
     if not access_token and authorization:
         if authorization.startswith("Bearer "):
             access_token = authorization.replace("Bearer ", "")
-            logger.info(f"Токен получен из заголовка Authorization: {access_token[:20]}...")
+            logger.info("Токен получен из заголовка Authorization: %s...", access_token[:20])
         else:
             logger.warning("Заголовок Authorization не содержит Bearer токен")
     
@@ -140,8 +152,8 @@ async def get_current_user(
         return None
     
     try:
-        logger.info(f"Попытка декодирования токена: {access_token[:20]}...")
-        logger.info(f"Используемый SECRET_KEY: {SECRET_KEY}")
+        logger.info("Попытка декодирования токена: %s...", access_token[:20])
+        logger.info("Используемый SECRET_KEY: %s", SECRET_KEY)
         payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = payload.get("sub")
         if user_id is None:
@@ -153,7 +165,7 @@ async def get_current_user(
         is_super_admin = payload.get("is_super_admin", False)
         is_active = payload.get("is_active", True)
         
-        logger.info(f"Токен декодирован успешно: user_id={user_id}, is_admin={is_admin}, is_super_admin={is_super_admin}")
+        logger.info("Токен декодирован успешно: user_id=%s, is_admin=%s, is_super_admin=%s", user_id, is_admin, is_super_admin)
         
         return User(
             id=int(user_id), 
@@ -163,7 +175,7 @@ async def get_current_user(
         )
     except jwt.InvalidSignatureError:
         logger.error("Ошибка декодирования JWT: Неверная подпись токена")
-        logger.error(f"Используемый SECRET_KEY: {SECRET_KEY}")
+        logger.error("Используемый SECRET_KEY: %s", SECRET_KEY)
         return None
     except jwt.ExpiredSignatureError:
         logger.error("Ошибка декодирования JWT: Токен просрочен")
@@ -172,7 +184,7 @@ async def get_current_user(
         logger.error("Ошибка декодирования JWT: Невозможно декодировать токен")
         return None
     except jwt.PyJWTError as e:
-        logger.error(f"Ошибка декодирования JWT: {e}, тип: {type(e).__name__}")
+        logger.error("Ошибка декодирования JWT: %s, тип: %s", e, type(e).__name__)
         return None
 
 async def get_current_admin_user(
@@ -200,11 +212,11 @@ async def get_current_admin_user(
          
     # Проверяем, что пользователь имеет права администратора или суперадминистратора
     if not current_user.is_admin and not current_user.is_super_admin:
-        logger.warning(f"get_current_admin_user: Пользователь {current_user.id} не имеет прав администратора")
+        logger.warning("get_current_admin_user: Пользователь %s не имеет прав администратора", current_user.id)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для выполнения операции",
         )
         
-    logger.info(f"get_current_admin_user: Пользователь {current_user.id} успешно авторизован как администратор")
-    return current_user 
+    logger.info("get_current_admin_user: Пользователь %s успешно авторизован как администратор", current_user.id)
+    return current_user

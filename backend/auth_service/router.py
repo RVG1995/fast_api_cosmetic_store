@@ -1,30 +1,31 @@
-from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, BackgroundTasks, Request, Header, Form
-from sqlalchemy import select 
+"""Модуль аутентификации и авторизации пользователей."""
+
+import logging
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Annotated, List, Dict, Any
+
+# Импорты из fastapi
+from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, Request, Header, Form
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_session
-from models import UserModel, UserSessionModel
+from models import UserModel
 import jwt
 from schema import TokenSchema, UserCreateShema, UserReadSchema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema
-from datetime import datetime, timedelta, timezone
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
-import secrets
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
-import os
 from dotenv import load_dotenv
 from utils import get_password_hash, verify_password  # Импортируем из utils
-from app.services.email_service import send_email_activation_message, send_password_reset_email
-import logging
-import uuid  # Если это еще не импортировано
 from auth_utils import get_current_user, get_admin_user  # Импортируем из auth_utils.py
 
-# Импортируем наши сервисы
+# Импорты из пакета app
+from app.services.email_service import send_password_reset_email
 from app.services import (
     TokenService,
     bruteforce_protection,
     user_service,
     session_service,
-    cache_service
 )
 
 # Настройка логгера
@@ -43,27 +44,15 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "
 SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
 SERVICE_CLIENTS = {kv.split(":")[0]: kv.split(":")[1] for kv in SERVICE_CLIENTS_RAW.split(",") if ":" in kv}
 SERVICE_TOKEN_EXPIRE_MINUTES = int(os.getenv("SERVICE_TOKEN_EXPIRE_MINUTES", "15"))
-logger.info(f"SERVICE_CLIENTS keys: {list(SERVICE_CLIENTS.keys())}")
 
 router = APIRouter(prefix='/auth', tags=['Авторизация'])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
-conf = ConnectionConfig(
-    MAIL_USERNAME = os.getenv('MAIL_USERNAME'),
-    MAIL_PASSWORD = os.getenv('MAIL_PASSWORD'),
-    MAIL_FROM = os.getenv('MAIL_FROM'),
-    MAIL_PORT = int(os.getenv('MAIL_PORT', 465)),
-    MAIL_SERVER = os.getenv('MAIL_SERVER'),
-    MAIL_STARTTLS = os.getenv('MAIL_STARTTLS', 'False').lower() == 'true',
-    MAIL_SSL_TLS = os.getenv('MAIL_SSL_TLS', 'True').lower() == 'true'
-)
-
 @router.post("/register", response_model=UserReadSchema, status_code=status.HTTP_201_CREATED, summary="Регистрация")
 async def register(
     user: UserCreateShema,
     session: SessionDep,
-    request: Request
 ) -> UserReadSchema:
     """
     Регистрация нового пользователя
@@ -102,7 +91,7 @@ async def register(
             activation_token
         )
         
-        logger.info(f"Пользователь зарегистрирован: {user.email}, ID: {new_user.id}")
+        logger.info("Пользователь зарегистрирован: %s, ID: %s", user.email, new_user.id)
         
         return UserReadSchema(
             id=new_user.id,
@@ -114,15 +103,15 @@ async def register(
     except Exception as e:
         # Если произошла ошибка, откатываем изменения
         await session.rollback()
-        logger.error(f"Ошибка при регистрации: {str(e)}")
+        logger.error("Ошибка при регистрации: %s", e)
         raise HTTPException(
             status_code=500,
             detail="Произошла ошибка при регистрации. Пожалуйста, попробуйте позже."
-        )
+        ) from e
 
 @router.post("/login", response_model=TokenSchema, summary="Вход")
 async def login(
-    session: SessionDep, 
+    session: SessionDep,
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(), 
     response: Response = None
@@ -195,7 +184,7 @@ async def login(
     
     # Создаем токен с использованием сервиса
     access_token, jti = await TokenService.create_access_token(
-        data=token_data, 
+        data=token_data,
         expires_delta=access_token_expires
     )
     
@@ -232,7 +221,7 @@ async def login(
 
 @router.post("/logout", summary="Выход из системы")
 async def logout(
-    response: Response, 
+    response: Response,
     session: SessionDep,
     token: str = Cookie(None, alias="access_token"),
     authorization: str = Depends(oauth2_scheme)
@@ -266,9 +255,9 @@ async def logout(
             if jti:
                 success = await session_service.revoke_session_by_jti(session, jti, "User logout")
                 if success:
-                    logger.info(f"Сессия с JTI {jti} отозвана при выходе")
-        except Exception as e:
-            logger.error(f"Ошибка при отзыве сессии: {str(e)}")
+                    logger.info("Сессия с JTI %s отозвана при выходе", jti)
+        except (jwt.InvalidTokenError, jwt.ExpiredSignatureError) as e:
+            logger.error("Ошибка при отзыве сессии: %s", e)
     
     # Удаляем куки в любом случае
     response.delete_cookie(key="access_token")
@@ -306,11 +295,11 @@ async def get_user_sessions(
         
         return {"sessions": session_data}
     except Exception as e:
-        logger.error(f"Ошибка при получении сессий: {str(e)}")
+        logger.error("Ошибка при получении сессий: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при получении информации о сессиях"
-        )
+        ) from e
 
 @router.post("/users/me/sessions/{session_id}/revoke", summary="Отзыв сессии пользователя")
 async def revoke_user_session(
@@ -347,11 +336,11 @@ async def revoke_user_session(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка при отзыве сессии: {str(e)}")
+        logger.error("Ошибка при отзыве сессии: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при отзыве сессии"
-        )
+        ) from e
 
 @router.post("/users/me/sessions/revoke-all", summary="Отзыв всех сессий пользователя, кроме текущей")
 async def revoke_all_user_sessions(
@@ -399,11 +388,11 @@ async def revoke_all_user_sessions(
             "revoked_count": revoked_count
         }
     except Exception as e:
-        logger.error(f"Ошибка при отзыве всех сессий: {str(e)}")
+        logger.error("Ошибка при отзыве всех сессий: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при отзыве сессий"
-        )
+        ) from e
 
 @router.get("/users/me", response_model=None, summary="Получение базовой информации о текущем пользователе")
 async def read_users_me_basic(current_user: UserModel = Depends(get_current_user)):
@@ -450,8 +439,8 @@ async def read_users_me_profile(current_user: UserModel = Depends(get_current_us
 
 @router.get("/activate/{token}", summary="Активация аккаунта")
 async def activate_user(
-    token: str, 
-    session: SessionDep, 
+    token: str,
+    session: SessionDep,
     response: Response
 ) -> Dict[str, Any]:
     """
@@ -498,7 +487,7 @@ async def activate_user(
         secure=secure
     )
     
-    logger.info(f"Аккаунт активирован: {user.email}, ID: {user.id}")
+    logger.info("Аккаунт активирован: %s, ID: %s", user.email, user.id)
     
     return {
         "status": "success",
@@ -550,7 +539,7 @@ async def change_password(
             detail="Не удалось изменить пароль"
         )
     
-    logger.info(f"Пароль изменен для пользователя: {current_user.email}, ID: {current_user.id}")
+    logger.info("Пароль изменен для пользователя: %s, ID: %s", current_user.email, current_user.id)
     
     return {"status": "success", "message": "Пароль успешно изменен"}
 
@@ -573,7 +562,7 @@ async def check_user_permissions(
     Returns:
         Dict с результатами проверки разрешения
     """
-    logger.info(f"Запрос проверки разрешений для пользователя ID={current_user.id}, permission={permission}")
+    logger.info("Запрос проверки разрешений для пользователя ID=%s, permission=%s", current_user.id, permission)
 
     result = {
         "is_authenticated": True,
@@ -588,7 +577,6 @@ async def check_user_permissions(
             return result
         if permission == "admin_access":
             if not (current_user.is_admin or current_user.is_super_admin):
-                from fastapi import HTTPException, status
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
             result["has_permission"] = True
             return result
@@ -611,6 +599,16 @@ async def check_user_permissions(
 
 @router.post("/request-password-reset")
 async def request_password_reset(data: PasswordResetRequestSchema, session: SessionDep):
+    """
+    Запрашивает сброс пароля для пользователя по email.
+    
+    Args:
+        data: Данные запроса сброса пароля
+        session: Сессия базы данных
+        
+    Returns:
+        Dict[str, str]: Статус операции
+    """
     user = await user_service.get_user_by_email(session, data.email)
     if not user:
         return {"status": "ok"}
@@ -623,6 +621,19 @@ async def request_password_reset(data: PasswordResetRequestSchema, session: Sess
 
 @router.post("/reset-password")
 async def reset_password(data: PasswordResetSchema, session: SessionDep):
+    """
+    Сбрасывает пароль пользователя по токену.
+    
+    Args:
+        data: Данные для сброса пароля
+        session: Сессия базы данных
+        
+    Returns:
+        Dict[str, str]: Статус операции
+        
+    Raises:
+        HTTPException: При неверном токене или несовпадении паролей
+    """
     user = await UserModel.get_by_reset_token(session, data.token)
     if not user or not user.reset_token or user.reset_token != data.token:
         raise HTTPException(status_code=400, detail="Неверный или истёкший токен")
@@ -653,7 +664,7 @@ async def verify_service_key_or_super_admin(
     
     # Проверка прав суперадминистратора у текущего пользователя
     if current_user and current_user.is_super_admin:
-        logger.info(f"Запрос авторизован суперадминистратором ID={current_user.id}")
+        logger.info("Запрос авторизован суперадминистратором ID=%s", current_user.id)
         return True
     
     # Если ни один из методов не подошел, выбрасываем исключение
@@ -670,8 +681,8 @@ async def verify_service_jwt(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
         payload = jwt.decode(cred.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
     return True
@@ -704,7 +715,7 @@ async def get_all_admins(
         for admin in admins
     ]
     
-    logger.info(f"Найдено {len(admins_list)} администраторов")
+    logger.info("Найдено %d администраторов", len(admins_list))
     return admins_list
 
 
@@ -735,7 +746,7 @@ async def get_all_users(
         for user in users
     ]
     
-    logger.info(f"Найдено {len(users_list)} пользователей")
+    logger.info("Найдено %d пользователей", len(users_list))
     return users_list
 
 
@@ -745,7 +756,21 @@ async def service_token(
     client_id: str = Form(...),
     client_secret: str = Form(...)
 ):
-    logger.info(f"Token request received: grant_type={grant_type}, client_id={client_id}")
+    """
+    Получение JWT токена для сервисного доступа.
+    
+    Args:
+        grant_type: Тип гранта (должен быть "client_credentials")
+        client_id: Идентификатор клиента
+        client_secret: Секретный ключ клиента
+        
+    Returns:
+        TokenSchema: JWT токен доступа
+        
+    Raises:
+        HTTPException: При неверных учетных данных или неподдерживаемом типе гранта
+    """
+    logger.info("Token request received: grant_type=%s, client_id=%s", grant_type, client_id)
     if grant_type != "client_credentials":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported grant_type")
     # Получаем секрет из mapping и проверяем

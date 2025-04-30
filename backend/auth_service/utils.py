@@ -1,15 +1,12 @@
-from passlib.context import CryptContext
-from typing import Optional, Dict, Any
-from fastapi import Depends, HTTPException, status, Header,Cookie
-from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
+"""Утилиты для аутентификации и авторизации."""
+
 import os
 import jwt
-from jwt.exceptions import PyJWTError
-import logging
-import httpx
+
+from passlib.context import CryptContext
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
-from datetime import datetime, timezone
 
 load_dotenv()
 
@@ -38,8 +35,8 @@ async def verify_service_jwt(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
         payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
     return True

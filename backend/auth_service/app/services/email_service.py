@@ -1,7 +1,9 @@
-import logging
-from ..utils.rabbit_utils import get_connection, close_connection, declare_queue
+"""Сервис для отправки email-сообщений через RabbitMQ."""
+
 import json
+import logging
 import aio_pika
+from ..utils.rabbit_utils import get_connection, close_connection, declare_queue
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ async def send_email_activation_message(
             ),
             routing_key=queue.name
         )
-        logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+        logger.info("RabbitMQ: %s", json.dumps(message_body, ensure_ascii=False))
     finally:
         # Закрываем соединение в любом случае
         await close_connection(connection)
@@ -66,6 +68,6 @@ async def send_password_reset_email(user_id: str, email: str, reset_token: str):
             ),
             routing_key=queue.name
         )
-        logger.info(f"RabbitMQ: {json.dumps(message_body, ensure_ascii=False)}")
+        logger.info("RabbitMQ: %s", json.dumps(message_body, ensure_ascii=False))
     finally:
         await close_connection(connection)

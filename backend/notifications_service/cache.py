@@ -1,87 +1,245 @@
+"""Сервис кэширования на основе Redis с асинхронной поддержкой для уведомлений."""
+
 import os
 import json
 import logging
-from typing import Any, Optional, List, Dict
-# Современный импорт для Redis вместо устаревшего
-from redis.asyncio import Redis, from_url
+import hashlib
+from functools import wraps
+
+from typing import Any, Optional, List, Dict, Callable
+import redis.asyncio as redis
 from .config import REDIS_URL, SETTINGS_CACHE_TTL
 
 logger = logging.getLogger("notifications_cache")
 
-# Global Redis client
-_redis_client: Optional[Redis] = None
+# Настройки Redis
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_DB = 5  # Notifications service использует DB 5
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 
-async def get_redis() -> Optional[Redis]:
-    """Get or create a Redis connection"""
-    global _redis_client
-    if _redis_client is None:
+# Настройки кэширования
+CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+
+# Формируем URL для подключения
+REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+if REDIS_PASSWORD:
+    REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+
+class CacheService:
+    """Сервис кэширования данных с использованием Redis"""
+    
+    def __init__(self):
+        """Инициализация сервиса кэширования"""
+        self.enabled = CACHE_ENABLED
+        self.redis = None
+            
+        if not self.enabled:
+            logger.info("Кэширование отключено в настройках")
+            return
+            
+        logger.info("Кэширование включено, инициализация соединения с Redis")
+    
+    async def initialize(self):
+        """Асинхронная инициализация соединения с Redis"""
+        if not self.enabled:
+            return
+            
         try:
-            _redis_client = await from_url(
+            # Создаем строку подключения Redis
+            redis_url = "redis://"
+            if REDIS_PASSWORD:
+                redis_url += f":{REDIS_PASSWORD}@"
+            redis_url += f"{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+            
+            # Создаем асинхронное подключение к Redis с использованием нового API
+            self.redis = await redis.Redis.from_url(
                 REDIS_URL,
                 encoding="utf-8",
-                decode_responses=True
+                decode_responses=True  # Декодируем ответы для поддержки JSON
             )
-            logger.info(f"Connected to Redis: {REDIS_URL}")
-        except Exception as e:
-            logger.error(f"Redis connect error: {e}")
-            _redis_client = None
-    return _redis_client
+            
+            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", REDIS_HOST, REDIS_PORT, REDIS_DB)
+        except (redis.ConnectionError, redis.TimeoutError, redis.RedisError) as e:
+            logger.error("Ошибка подключения к Redis для кэширования: %s", str(e))
+            self.redis = None
+            self.enabled = False
+    
+    async def get(self, key: str) -> Optional[Any]:
+        """
+        Получает значение из кэша по ключу
+        
+        Args:
+            key: Ключ кэша
+            
+        Returns:
+            Optional[Any]: Значение из кэша или None, если ключ не найден
+        """
+        if not self.enabled or not self.redis:
+            return None
+            
+        try:
+            data = await self.redis.get(key)
+            if data:
+                return json.loads(data)
+            return None
+        except (redis.RedisError, json.JSONDecodeError) as e:
+            logger.error("Ошибка при получении данных из кэша: %s", str(e))
+            return None
+    
+    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        """
+        Сохраняет значение в кэш
+        
+        Args:
+            key: Ключ кэша
+            value: Значение для сохранения
+            ttl: Время жизни ключа в секундах
+            
+        Returns:
+            bool: True при успешном сохранении, иначе False
+        """
+        if not self.enabled or not self.redis:
+            return False
+            
+        try:
+            serialized = json.dumps(value, default=str)
+            if ttl:
+                await self.redis.setex(key, ttl, serialized)
+            else:
+                await self.redis.set(key, serialized)
+            return True
+        except (redis.RedisError, json.JSONDecodeError) as e:
+            logger.error("Ошибка при сохранении данных в кэш: %s", str(e))
+            return False
+    
+    async def delete(self, key: str) -> bool:
+        """
+        Удаляет ключ из кэша
+        
+        Args:
+            key: Ключ для удаления
+            
+        Returns:
+            bool: True при успешном удалении, иначе False
+        """
+        if not self.enabled or not self.redis:
+            return False
+            
+        try:
+            await self.redis.delete(key)
+            return True
+        except redis.RedisError as e:
+            logger.error("Ошибка при удалении ключа из кэша: %s", str(e))
+            return False
+    
+    async def delete_pattern(self, pattern: str) -> int:
+        """
+        Удаляет ключи, соответствующие шаблону
+        
+        Args:
+            pattern: Шаблон ключей для удаления (например, "notifications:*")
+            
+        Returns:
+            int: Количество удаленных ключей
+        """
+        if not self.enabled or not self.redis:
+            return 0
+            
+        try:
+            # Используем команду SCAN для поиска ключей по шаблону
+            keys_to_delete = []
+            cur = 0
+            while True:
+                cur, keys = await self.redis.scan(cursor=cur, match=pattern, count=100)
+                keys_to_delete.extend(keys)
+                if cur == 0:
+                    break
+            
+            # Удаляем найденные ключи
+            if keys_to_delete:
+                return await self.redis.delete(*keys_to_delete)
+            return 0
+        except redis.RedisError as e:
+            logger.error("Ошибка при удалении ключей по шаблону %s: %s", pattern, str(e))
+            return 0
+    
+    def get_key_for_function(self, prefix: str, *args, **kwargs) -> str:
+        """
+        Формирует ключ кэша для функции на основе аргументов
+        
+        Args:
+            prefix: Префикс ключа (обычно имя функции)
+            *args: Позиционные аргументы
+            **kwargs: Именованные аргументы
+            
+        Returns:
+            str: Ключ кэша
+        """
+        # Создаем хеш от аргументов функции
+        key_parts = [prefix]
+        
+        # Добавляем позиционные аргументы
+        if args:
+            for arg in args:
+                key_parts.append(str(arg))
+        
+        # Добавляем именованные аргументы в отсортированном порядке
+        if kwargs:
+            for k in sorted(kwargs.keys()):
+                key_parts.append(f"{k}:{kwargs[k]}")
+        
+        # Объединяем все части ключа
+        key_str = ":".join(key_parts)
+        
+        # Если ключ получился слишком длинным, хешируем его
+        if len(key_str) > 100:
+            key_hash = hashlib.md5(key_str.encode()).hexdigest()
+            return f"{prefix}:hash:{key_hash}"
+            
+        return key_str
+    
+    async def close(self):
+        """Закрывает соединение с Redis"""
+        if self.redis:
+            await self.redis.close()
+            logger.info("Соединение с Redis закрыто")
+
+# Создаем глобальный экземпляр сервиса кэширования
+cache_service = CacheService()
+
+# Функции-обертки для обратной совместимости
+
+async def get_redis() -> Optional[redis.Redis]:
+    """Get or create a Redis connection"""
+    if not cache_service.redis:
+        await cache_service.initialize()
+    return cache_service.redis
 
 async def close_redis() -> None:
     """Close Redis connection"""
-    global _redis_client
-    if _redis_client:
-        try:
-            await _redis_client.close()
-            logger.info("Redis connection closed")
-        except Exception as e:
-            logger.error(f"Redis close error: {e}")
-        _redis_client = None
+    await cache_service.close()
 
 async def cache_get_settings(user_id: int) -> Optional[List[Dict]]:
     """Retrieve cached notification settings for a user"""
-    redis = await get_redis()
-    if not redis:
-        return None
     key = f"notifications:settings:{user_id}"
-    try:
-        data = await redis.get(key)
-        if data:
-            logger.debug(f"Cache hit for user {user_id} settings")
-            return json.loads(data)
-        logger.debug(f"Cache miss for user {user_id} settings")
-    except Exception as e:
-        logger.warning(f"Redis get error for key {key}: {e}")
-    return None
+    return await cache_service.get(key)
 
 async def cache_set_settings(user_id: int, settings: List[Dict]) -> bool:
     """Cache notification settings for a user"""
-    redis = await get_redis()
-    if not redis:
-        return False
     key = f"notifications:settings:{user_id}"
-    try:
-        serialized = json.dumps(settings, default=str)
-        await redis.setex(key, SETTINGS_CACHE_TTL, serialized)
-        logger.debug(f"Cached settings for user {user_id} (TTL={SETTINGS_CACHE_TTL}s)")
-        return True
-    except Exception as e:
-        logger.warning(f"Redis set error for key {key}: {e}")
-    return False
+    success = await cache_service.set(key, settings, SETTINGS_CACHE_TTL)
+    if success:
+        logger.debug("Cached settings for user %s (TTL=%ss)", user_id, SETTINGS_CACHE_TTL)
+    return success
 
 async def cache_delete_settings(user_id: int) -> bool:
     """Delete cached notification settings for a user"""
-    redis = await get_redis()
-    if not redis:
-        return False
     key = f"notifications:settings:{user_id}"
-    try:
-        await redis.delete(key)
-        logger.debug(f"Deleted cache for user {user_id}")
-        return True
-    except Exception as e:
-        logger.warning(f"Redis delete error for key {key}: {e}")
-    return False
+    success = await cache_service.delete(key)
+    if success:
+        logger.debug("Deleted cache for user %s", user_id)
+    return success
 
 async def invalidate_settings_cache(user_id: int) -> bool:
     """
@@ -89,5 +247,54 @@ async def invalidate_settings_cache(user_id: int) -> bool:
     и делает его недействительным, чтобы следующий запрос получил
     актуальные данные из базы данных.
     """
-    logger.info(f"Invalidating notification settings cache for user {user_id}")
-    return await cache_delete_settings(user_id) 
+    logger.info("Invalidating notification settings cache for user %s", user_id)
+    return await cache_delete_settings(user_id)
+
+# Декоратор для кэширования
+def cached(ttl: int, prefix: str = None, key_builder: Callable = None):
+    """
+    Декоратор для кэширования результатов асинхронных функций
+    
+    Args:
+        ttl: Время жизни кэша в секундах
+        prefix: Префикс ключа кэша (по умолчанию имя функции)
+        key_builder: Функция для построения ключа кэша (если нужна особая логика)
+        
+    Returns:
+        Callable: Декорированная функция
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            if not cache_service.enabled or not cache_service.redis:
+                # Если кэширование отключено, просто выполняем функцию
+                return await func(*args, **kwargs)
+                
+            # Определяем ключ кэша
+            if key_builder:
+                # Если указан пользовательский построитель ключа
+                cache_key = key_builder(*args, **kwargs)
+            else:
+                # По умолчанию используем имя функции как префикс
+                func_prefix = prefix or func.__name__
+                cache_key = cache_service.get_key_for_function(func_prefix, *args, **kwargs)
+                
+            # Пытаемся получить результат из кэша
+            cached_result = await cache_service.get(cache_key)
+            
+            if cached_result is not None:
+                logger.debug("Получены данные из кэша для ключа: %s", cache_key)
+                return cached_result
+                
+            # Если в кэше нет, выполняем функцию
+            result = await func(*args, **kwargs)
+            
+            # Сохраняем результат в кэш
+            if result is not None:
+                await cache_service.set(cache_key, result, ttl)
+                logger.debug("Сохранены данные в кэш для ключа: %s", cache_key)
+                
+            return result
+            
+        return wrapper
+    return decorator

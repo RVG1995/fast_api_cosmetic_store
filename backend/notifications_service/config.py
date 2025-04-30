@@ -1,3 +1,5 @@
+"""Конфигурационные настройки для сервиса уведомлений."""
+
 import os
 from dotenv import load_dotenv
 

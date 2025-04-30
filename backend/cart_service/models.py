@@ -1,11 +1,15 @@
+"""Модели для сервиса корзины."""
+from datetime import datetime
+from typing import Optional, List, Tuple
+
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, func, select, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
-from typing import Optional, List, Tuple
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import SQLAlchemyError
 
 class Base(DeclarativeBase):
+    """Базовый класс для всех моделей SQLAlchemy."""
     pass
 
 class CartModel(Base):
@@ -36,7 +40,7 @@ class CartModel(Base):
             ).filter(cls.id == cart_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
+        except SQLAlchemyError as e:
             # Логируем ошибку и возвращаем None
             print(f"Ошибка при получении корзины по ID: {str(e)}")
             return None
@@ -50,7 +54,7 @@ class CartModel(Base):
             ).filter(cls.user_id == user_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
+        except SQLAlchemyError as e:
             # Логируем ошибку и возвращаем None
             print(f"Ошибка при получении корзины пользователя: {str(e)}")
             return None
@@ -64,7 +68,7 @@ class CartModel(Base):
             ).filter(cls.session_id == session_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
+        except SQLAlchemyError as e:
             # Логируем ошибку и возвращаем None
             print(f"Ошибка при получении корзины сессии: {str(e)}")
             return None
@@ -72,8 +76,8 @@ class CartModel(Base):
     @classmethod
     async def get_user_carts(
         cls, 
-        session: AsyncSession, 
-        page: int = 1, 
+        session: AsyncSession,
+        page: int = 1,
         limit: int = 10,
         sort_by: str = "updated_at",
         sort_order: str = "desc",
@@ -163,7 +167,7 @@ class CartModel(Base):
             
             return carts, total_count
             
-        except Exception as e:
+        except SQLAlchemyError as e:
             # Логируем ошибку и возвращаем пустой список
             print(f"Ошибка при получении списка корзин пользователей: {str(e)}")
             return [], 0
@@ -193,7 +197,7 @@ class CartItemModel(Base):
             query = select(cls).filter(cls.cart_id == cart_id, cls.product_id == product_id)
             result = await session.execute(query)
             return result.scalars().first()
-        except Exception as e:
+        except SQLAlchemyError as e:
             # Логируем ошибку и возвращаем None
             print(f"Ошибка при получении элемента корзины: {str(e)}")
-            return None 
+            return None

@@ -1,11 +1,13 @@
-from typing import List, Optional
+"""Модуль для работы с промокодами в системе заказов."""
+
+from typing import List
+import logging
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
-from datetime import datetime, timedelta
 
 from database import get_db
-from models import PromoCodeModel, PromoCodeUsageModel
+from models import PromoCodeModel
 from schemas import (
     PromoCodeCreate, PromoCodeUpdate, PromoCodeResponse, 
     PromoCodeCheckRequest, PromoCodeCheckResponse
@@ -71,16 +73,15 @@ async def check_promo_code_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при проверке промокода"
-        )
+        ) from e
 
 # Административные эндпоинты
 
-@admin_router.get("", response_model=List[PromoCodeResponse])
+@admin_router.get("", response_model=List[PromoCodeResponse],dependencies=[Depends(get_admin_user)])
 async def get_all_promo_codes(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
-    admin_user: dict = Depends(get_admin_user)
 ):
     """
     Получение списка всех промокодов (только для администраторов)
@@ -91,10 +92,9 @@ async def get_all_promo_codes(
     promo_codes = await PromoCodeModel.get_all(session, skip, limit)
     return [PromoCodeResponse.model_validate(code) for code in promo_codes]
 
-@admin_router.get("/active", response_model=List[PromoCodeResponse])
+@admin_router.get("/active", response_model=List[PromoCodeResponse],dependencies=[Depends(get_admin_user)])
 async def get_active_promo_codes(
     session: AsyncSession = Depends(get_db),
-    admin_user: dict = Depends(get_admin_user)
 ):
     """
     Получение списка активных промокодов (только для администраторов)
@@ -102,11 +102,10 @@ async def get_active_promo_codes(
     promo_codes = await PromoCodeModel.get_active(session)
     return [PromoCodeResponse.model_validate(code) for code in promo_codes]
 
-@admin_router.get("/{promo_code_id}", response_model=PromoCodeResponse)
+@admin_router.get("/{promo_code_id}", response_model=PromoCodeResponse,dependencies=[Depends(get_admin_user)])
 async def get_promo_code(
     promo_code_id: int = Path(..., ge=1),
     session: AsyncSession = Depends(get_db),
-    admin_user: dict = Depends(get_admin_user)
 ):
     """
     Получение информации о промокоде по ID (только для администраторов)
@@ -121,11 +120,10 @@ async def get_promo_code(
         )
     return PromoCodeResponse.model_validate(promo_code)
 
-@admin_router.post("", response_model=PromoCodeResponse, status_code=status.HTTP_201_CREATED)
+@admin_router.post("", response_model=PromoCodeResponse, status_code=status.HTTP_201_CREATED,dependencies=[Depends(get_admin_user)])
 async def create_promo_code(
     promo_code_data: PromoCodeCreate,
     session: AsyncSession = Depends(get_db),
-    admin_user: dict = Depends(get_admin_user)
 ):
     """
     Создание нового промокода (только для администраторов)
@@ -164,14 +162,13 @@ async def create_promo_code(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при создании промокода"
-        )
+        ) from e
 
-@admin_router.put("/{promo_code_id}", response_model=PromoCodeResponse)
+@admin_router.put("/{promo_code_id}", response_model=PromoCodeResponse,dependencies=[Depends(get_admin_user)])
 async def update_promo_code(
     promo_code_id: int = Path(..., ge=1),
     promo_code_data: PromoCodeUpdate = Body(...),
     session: AsyncSession = Depends(get_db),
-    admin_user: dict = Depends(get_admin_user)
 ):
     """
     Обновление промокода (только для администраторов)
@@ -231,13 +228,12 @@ async def update_promo_code(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при обновлении промокода"
-        )
+        ) from e
 
-@admin_router.delete("/{promo_code_id}", status_code=status.HTTP_204_NO_CONTENT)
+@admin_router.delete("/{promo_code_id}", status_code=status.HTTP_204_NO_CONTENT,dependencies=[Depends(get_admin_user)])
 async def delete_promo_code(
     promo_code_id: int = Path(..., ge=1),
     session: AsyncSession = Depends(get_db),
-    admin_user: dict = Depends(get_admin_user)
 ):
     """
     Удаление промокода (только для администраторов)
@@ -268,4 +264,4 @@ async def delete_promo_code(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при удалении промокода"
-        ) 
+        ) from e

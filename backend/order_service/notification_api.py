@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, List
 import asyncio
 from datetime import datetime, timezone
 import jwt
-from cache import get_cached_data, set_cached_data, redis_client
+from cache import get_cached_data, set_cached_data, cache_service
 from dotenv import load_dotenv
 from dependencies import _get_service_token, NOTIFICATION_SERVICE_URL, AUTH_SERVICE_URL
 
@@ -41,7 +41,7 @@ async def check_notification_settings(user_id: str, event_type: str, payload: di
                 )
                 if response.status_code == 401:
                     # token expired - clear cache and retry
-                    await redis_client.delete("service_token")
+                    await cache_service.delete("service_token")
                     await asyncio.sleep(delay)
                     continue
                 break

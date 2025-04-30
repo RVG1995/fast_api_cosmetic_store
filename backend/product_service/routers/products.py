@@ -17,7 +17,7 @@ import json
 from typing import List, Optional, Union, Annotated, Any, Dict
 from fastapi.staticfiles import StaticFiles
 # Импортируем функции для работы с кэшем
-from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, CACHE_TTL, close_redis_connection
+from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, DEFAULT_CACHE_TTL, close_redis_connection
 from sqlalchemy.orm import selectinload
 
 # Определяем директорию для сохранения изображений
@@ -252,7 +252,7 @@ async def get_admin_products(
     
     # Сохраняем данные в кэш с уменьшенным TTL для админского интерфейса
     # Для админского интерфейса устанавливаем меньшее время жизни кэша, чтобы данные быстрее обновлялись
-    await cache_set(cache_key, response_data, CACHE_TTL // 2)
+    await cache_set(cache_key, response_data, DEFAULT_CACHE_TTL // 2)
     logger.info(f"Админские данные о продуктах сохранены в кэш: page={page}, limit={limit}, total={total}")
     
     return response_data
@@ -306,7 +306,7 @@ async def search_products(session: SessionDep, name: str):
         response_list.append(product_dict)
     
     # Сохраняем результаты в кэш с меньшим TTL, так как поисковые запросы часто меняются
-    await cache_set(cache_key, response_list, CACHE_TTL // 2)
+    await cache_set(cache_key, response_list, DEFAULT_CACHE_TTL // 2)
     logger.info(f"Результаты поиска '{name}' сохранены в кэш: {len(response_list)} товаров")
     
     return response_list

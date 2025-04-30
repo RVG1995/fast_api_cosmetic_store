@@ -1,12 +1,15 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+"""FastAPI приложение для обработки уведомлений."""
+
 import logging
 from contextlib import asynccontextmanager
 import os
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from .database import engine, Base
 from .settings_router import router as settings_router
-from .cache import get_redis, close_redis, invalidate_settings_cache, cache_set_settings
+from .cache import get_redis, close_redis
 
 logger = logging.getLogger(__name__)
 
@@ -59,4 +62,4 @@ if __name__ == "__main__":
         port=port,
         reload=True,
         reload_dirs=[service_dir]
-    ) 
+    )

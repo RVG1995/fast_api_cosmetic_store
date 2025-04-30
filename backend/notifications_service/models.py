@@ -1,11 +1,14 @@
-from sqlalchemy import Integer, String, Boolean, DateTime, UniqueConstraint, Text
+"""SQLAlchemy модели для службы уведомлений."""
+
+from datetime import datetime
+
+from sqlalchemy import Integer, String, Boolean, DateTime, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column
 from .database import Base
-from datetime import datetime
-
 
 class NotificationSetting(Base):
+    """Настройки уведомлений для пользователя."""
     __tablename__ = "notification_settings"
     __table_args__ = (UniqueConstraint('user_id', 'event_type', name='uq_user_event_type'),)
 
@@ -20,10 +23,11 @@ class NotificationSetting(Base):
 
 
 class SentNotification(Base):
+    """История отправленных уведомлений."""
     __tablename__ = "sent_notifications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(Integer, index=True)
     event_type: Mapped[str] = mapped_column(String, index=True)
     event_id: Mapped[str] = mapped_column(String, index=True)
-    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now()) 
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

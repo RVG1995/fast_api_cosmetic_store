@@ -1,11 +1,15 @@
-from fastapi import FastAPI
-from database import setup_database, engine, create_superadmin, create_default_user
-from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
+"""Основной модуль сервиса аутентификации, содержащий конфигурацию FastAPI приложения и middleware."""
+
+import logging
 import os
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from database import setup_database, engine, create_superadmin, create_default_user
 from router import router as auth_router
 from admin_router import router as admin_router
-import logging
 from app.services import (
     cache_service,
     bruteforce_protection
@@ -14,9 +18,6 @@ from app.services import (
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-from fastapi.staticfiles import StaticFiles
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -61,7 +62,7 @@ origins = [
     # Добавляем и другие источники, которые могут быть использованы в разработке
 ]
 
-logger.info(f"Настройка CORS с разрешенными источниками: {origins}")
+logger.info("Настройка CORS с разрешенными источниками: %s", origins)
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,10 +75,10 @@ app.add_middleware(
 
 @app.middleware("http")
 async def log_requests(request, call_next):
-    logger.info(f"Получен запрос: {request.method} {request.url}")
-    logger.info(f"Заголовки запроса: {request.headers}")
+    logger.info("Получен запрос: %s %s", request.method, request.url)
+    logger.info("Заголовки запроса: %s", request.headers)
     response = await call_next(request)
-    logger.info(f"Ответ: {response.status_code}")
+    logger.info("Ответ: %s", response.status_code)
     return response
 
 app.include_router(auth_router)

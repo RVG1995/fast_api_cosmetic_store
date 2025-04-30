@@ -1,30 +1,21 @@
-import uuid
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Body, Header
-from database import setup_database, get_session, engine
-from models import SubCategoryModel,CategoryModel, ProductModel,CountryModel, BrandModel
-from auth import require_admin, get_current_user, User
-from schema import BrandAddSchema, BrandSchema, BrandUpdateSchema, CategoryAddSchema, CategorySchema, CategoryUpdateSchema, CountryAddSchema, CountrySchema, CountryUpdateSchema, ProductAddSchema,ProductSchema, ProductUpdateSchema, SubCategoryAddSchema, SubCategorySchema, SubCategoryUpdateSchema, PaginatedProductResponse, ProductDetailSchema
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import load_only
 import os
 import logging
-from sqlalchemy import func
-import json
-from typing import List, Optional, Union, Annotated, Any
+from typing import Annotated
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Depends
+from database import setup_database, get_session, engine
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 # Импортируем функции для работы с кэшем
-from cache import cache_get, cache_set, cache_delete_pattern, invalidate_cache, CACHE_KEYS, DEFAULT_CACHE_TTL, close_redis_connection
+from cache import cache_service,close_redis_connection
 from routers import (
     product_router,
     category_router,
     brand_router,
     country_router,
     subcategory_router,
-    auth_router,
     product_batch_router
 )
 
@@ -39,7 +30,6 @@ async def lifespan(app: FastAPI):
     logger.info("База данных сервиса продуктов инициализирована")
     
     # Инициализируем кэш
-    from cache import cache_service
     await cache_service.initialize()
     
     yield  # здесь приложение будет работать
@@ -78,7 +68,6 @@ app.include_router(category_router)
 app.include_router(brand_router)
 app.include_router(country_router)
 app.include_router(subcategory_router)
-app.include_router(auth_router)
 app.include_router(product_batch_router)
 
 if __name__ == "__main__":

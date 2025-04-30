@@ -14,7 +14,6 @@ from database import setup_database
 from database import engine
 from routers.orders import router as orders_router, admin_router as orders_admin_router
 from routers.order_statuses import router as order_statuses_router
-from routers.payment_statuses import router as payment_statuses_router
 from routers.promo_codes import router as promo_codes_router, admin_router as promo_codes_admin_router
 from routers.dadata import router as dadata_router
 from cache import close_redis, cache_service
@@ -104,7 +103,6 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", "static/uploads")
 app.include_router(orders_router)
 app.include_router(orders_admin_router)
 app.include_router(order_statuses_router)
-app.include_router(payment_statuses_router)
 app.include_router(promo_codes_router)
 app.include_router(promo_codes_admin_router)
 app.include_router(dadata_router)

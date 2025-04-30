@@ -1155,7 +1155,7 @@ async def get_user_carts(
     """
     Получает список всех корзин пользователей (для администраторов)
     """
-    logger.info("Запрос списка корзин пользователей: page=%d, limit=%d, sort_by=%s, sort_order=%s, user_id=%d, filter=%s", page, limit, sort_by, sort_order, user_id, filter)
+    logger.info("Запрос списка корзин пользователей: page=%d, limit=%d, sort_by=%s, sort_order=%s, user_id=%s, filter=%s", page, limit, sort_by, sort_order, str(user_id) if user_id is not None else "None", filter)
     
     try:
         # Проверяем кэш

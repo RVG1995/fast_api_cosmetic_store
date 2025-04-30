@@ -1,16 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
+"""Роуты для работы с категориями товаров."""
+
+import logging
+from typing import List, Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from typing import List, Optional, Annotated
 
 from models import CategoryModel
 from schema import CategorySchema, CategoryAddSchema, CategoryUpdateSchema
 from database import get_session
-from auth import require_admin, get_current_user
-from cache import cache_get, cache_set, cache_delete_pattern, CACHE_KEYS, DEFAULT_CACHE_TTL, invalidate_cache
+from auth import require_admin
+from cache import cache_get, cache_set, CACHE_KEYS, DEFAULT_CACHE_TTL, invalidate_cache
 
-import logging
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -27,13 +30,14 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 @router.get('', response_model=List[CategorySchema])
 async def get_categories(session: SessionDep):
+    """Получить список всех категорий."""
     # Формируем ключ кэша
     cache_key = f"{CACHE_KEYS['categories']}all"
     
     # Пробуем получить данные из кэша
     cached_data = await cache_get(cache_key)
     if cached_data:
-        logger.info(f"Данные категорий получены из кэша: {cache_key}")
+        logger.info("Данные категорий получены из кэша: %s", cache_key)
         return cached_data
     
     # Если данных в кэше нет, делаем запрос к БД
@@ -52,12 +56,12 @@ async def get_categories(session: SessionDep):
     
     return categories
 
-@router.post('', response_model=CategorySchema)
+@router.post('', response_model=CategorySchema,dependencies=[Depends(require_admin)])
 async def add_category(
     category_data: CategoryAddSchema,
     session: SessionDep,
-    admin = Depends(require_admin)
 ):
+    """Добавить новую категорию."""
     # Создаем новую категорию
     new_category = CategoryModel(**category_data.model_dump())
     
@@ -74,26 +78,26 @@ async def add_category(
         return new_category
     except IntegrityError as e:
         await session.rollback()
-        logger.error(f"Ошибка при добавлении категории: {str(e)}")
+        logger.error("Ошибка при добавлении категории: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Категория с таким названием уже существует"
-        )
+        ) from e
     except Exception as e:
         await session.rollback()
-        logger.error(f"Неизвестная ошибка при добавлении категории: {str(e)}")
+        logger.error("Неизвестная ошибка при добавлении категории: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при добавлении категории"
-        )
+        ) from e
 
-@router.put("/{category_id}", response_model=CategorySchema)
+@router.put("/{category_id}", response_model=CategorySchema,dependencies=[Depends(require_admin)])
 async def update_category(
     category_id: int, 
     category_data: CategoryUpdateSchema,
     session: SessionDep,
-    admin = Depends(require_admin)
 ):
+    """Обновить существующую категорию по ID."""
     # Находим категорию по ID
     query = select(CategoryModel).where(CategoryModel.id == category_id)
     result = await session.execute(query)
@@ -120,28 +124,29 @@ async def update_category(
         return category
     except IntegrityError as e:
         await session.rollback()
-        logger.error(f"Ошибка при обновлении категории: {str(e)}")
+        logger.error("Ошибка при обновлении категории: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Категория с таким названием уже существует"
-        )
+        ) from e
     except Exception as e:
         await session.rollback()
-        logger.error(f"Неизвестная ошибка при обновлении категории: {str(e)}")
+        logger.error("Неизвестная ошибка при обновлении категории: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при обновлении категории"
-        )
+        ) from e
 
 @router.get('/{category_id}', response_model=CategorySchema)
 async def get_category_by_id(category_id: int, session: SessionDep):
+    """Получить категорию по ID."""
     # Формируем ключ кэша
     cache_key = f"{CACHE_KEYS['categories']}{category_id}"
     
     # Пробуем получить данные из кэша
     cached_data = await cache_get(cache_key)
     if cached_data:
-        logger.info(f"Данные категории получены из кэша: {cache_key}")
+        logger.info("Данные категории получены из кэша: %s", cache_key)
         return cached_data
     
     # Если данных в кэше нет, делаем запрос к БД
@@ -165,11 +170,10 @@ async def get_category_by_id(category_id: int, session: SessionDep):
     
     return category
 
-@router.delete("/{category_id}", status_code=204)
+@router.delete("/{category_id}", status_code=204,dependencies=[Depends(require_admin)])
 async def delete_category(
     category_id: int,
     session: SessionDep,
-    admin = Depends(require_admin)
 ):
     # Находим категорию по ID
     query = select(CategoryModel).where(CategoryModel.id == category_id)
@@ -192,16 +196,16 @@ async def delete_category(
         await invalidate_cache(f"{CACHE_KEYS['products']}*")
         
         return None
-    except IntegrityError:
+    except IntegrityError as e:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Невозможно удалить категорию, т.к. существуют связанные записи"
-        )
+        ) from e
     except Exception as e:
         await session.rollback()
-        logger.error(f"Неизвестная ошибка при удалении категории: {str(e)}")
+        logger.error("Неизвестная ошибка при удалении категории: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при удалении категории"
-        )
+        ) from e

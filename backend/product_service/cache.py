@@ -1,11 +1,16 @@
+"""
+Модуль кэширования для product_service. Использует Redis для хранения кэша, поддерживает асинхронные операции, TTL, инвалидацию и декоратор для кэширования функций.
+"""
+
 import os
 import logging
-import pickle
-import json
-import redis.asyncio as redis
 import hashlib
-from typing import Any, Optional, Union, Dict, List, Callable
+from typing import Any, Optional, Callable
 from functools import wraps
+
+import pickle
+import redis.asyncio as redis
+from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError, ResponseError as RedisResponseError
 
 # Настройка логирования
 logger = logging.getLogger("product_service")
@@ -65,9 +70,9 @@ class CacheService:
             # Явно выбираем базу данных после создания соединения
             await self.redis.select(REDIS_DB)
             
-            logger.info(f"Подключение к Redis для кэширования успешно: {REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
-        except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
-            logger.error(f"Ошибка подключения к Redis для кэширования: {str(e)}")
+            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", REDIS_HOST, REDIS_PORT, REDIS_DB)
+        except (RedisConnectionError, RedisTimeoutError, RedisResponseError) as e:
+            logger.error("Ошибка подключения к Redis для кэширования: %s", str(e))
             self.redis = None
             self.enabled = False
     
@@ -89,8 +94,8 @@ class CacheService:
             if data:
                 return pickle.loads(data)
             return None
-        except Exception as e:
-            logger.error(f"Ошибка при получении данных из кэша: {str(e)}")
+        except (RedisConnectionError, RedisTimeoutError, RedisResponseError, pickle.PickleError) as e:
+            logger.error("Ошибка при получении данных из кэша: %s", str(e))
             return None
     
     async def set(self, key: str, value: Any, ttl: int = DEFAULT_CACHE_TTL) -> bool:
@@ -111,8 +116,8 @@ class CacheService:
         try:
             await self.redis.set(key, pickle.dumps(value), ex=ttl)
             return True
-        except Exception as e:
-            logger.error(f"Ошибка при сохранении данных в кэш: {str(e)}")
+        except (RedisConnectionError, RedisTimeoutError, RedisResponseError, pickle.PickleError) as e:
+            logger.error("Ошибка при сохранении данных в кэш: %s", str(e))
             return False
     
     async def delete(self, key: str) -> bool:
@@ -131,8 +136,8 @@ class CacheService:
         try:
             await self.redis.delete(key)
             return True
-        except Exception as e:
-            logger.error(f"Ошибка при удалении ключа из кэша: {str(e)}")
+        except (RedisConnectionError, RedisTimeoutError, RedisResponseError) as e:
+            logger.error("Ошибка при удалении ключа из кэша: %s", str(e))
             return False
     
     async def delete_pattern(self, pattern: str) -> int:
@@ -162,8 +167,8 @@ class CacheService:
             if keys_to_delete:
                 return await self.redis.delete(*keys_to_delete)
             return 0
-        except Exception as e:
-            logger.error(f"Ошибка при удалении ключей по шаблону {pattern}: {str(e)}")
+        except (RedisConnectionError, RedisTimeoutError, RedisResponseError) as e:
+            logger.error("Ошибка при удалении ключей по шаблону %s: %s", pattern, str(e))
             return 0
     
     async def invalidate_cache(self, entity_type: str = None) -> bool:
@@ -179,7 +184,7 @@ class CacheService:
         try:
             if entity_type:
                 pattern = f"{CACHE_KEYS.get(entity_type, entity_type)}*"
-                logger.info(f"Инвалидация кэша для {entity_type} по шаблону: {pattern}")
+                logger.info("Инвалидация кэша для %s по шаблону: %s", entity_type, pattern)
                 await self.delete_pattern(pattern)
                 
                 # Если инвалидируем продукты, то также инвалидируем кэш в формате, используемом cart_service
@@ -198,8 +203,8 @@ class CacheService:
                 
                 logger.info("Инвалидация всего кэша")
                 return True
-        except Exception as e:
-            logger.error(f"Ошибка при инвалидации кэша: {str(e)}")
+        except (RedisConnectionError, RedisTimeoutError, RedisResponseError) as e:
+            logger.error("Ошибка при инвалидации кэша: %s", str(e))
             return False
     
     def get_key_for_function(self, prefix: str, *args, **kwargs) -> str:
@@ -312,7 +317,7 @@ def cached(ttl: int = DEFAULT_CACHE_TTL, prefix: str = None, key_builder: Callab
             cached_result = await cache_service.get(cache_key)
             
             if cached_result is not None:
-                logger.debug(f"Получены данные из кэша для ключа: {cache_key}")
+                logger.debug("Получены данные из кэша для ключа: %s", cache_key)
                 return cached_result
                 
             # Если в кэше нет, выполняем функцию
@@ -321,9 +326,9 @@ def cached(ttl: int = DEFAULT_CACHE_TTL, prefix: str = None, key_builder: Callab
             # Сохраняем результат в кэш
             if result is not None:
                 await cache_service.set(cache_key, result, ttl)
-                logger.debug(f"Сохранены данные в кэш для ключа: {cache_key}")
+                logger.debug("Сохранены данные в кэш для ключа: %s", cache_key)
                 
             return result
             
         return wrapper
-    return decorator 
+    return decorator

@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
+"""Маршруты для работы со странами (CRUD + кэширование)."""
+
+import logging
+from typing import List, Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from typing import List, Optional, Annotated
 
 from models import CountryModel
 from schema import CountrySchema, CountryAddSchema, CountryUpdateSchema
 from database import get_session
-from auth import require_admin, get_current_user
-from cache import cache_get, cache_set, cache_delete_pattern, CACHE_KEYS, DEFAULT_CACHE_TTL, invalidate_cache
-
-import logging
+from auth import require_admin
+from cache import cache_get, cache_set, CACHE_KEYS, DEFAULT_CACHE_TTL, invalidate_cache
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -27,13 +29,14 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 @router.get('', response_model=List[CountrySchema])
 async def get_countries(session: SessionDep):
+    """Получить список всех стран."""
     # Формируем ключ кэша
     cache_key = f"{CACHE_KEYS['countries']}all"
     
     # Пробуем получить данные из кэша
     cached_data = await cache_get(cache_key)
     if cached_data:
-        logger.info(f"Данные стран получены из кэша: {cache_key}")
+        logger.info("Данные стран получены из кэша: %s", cache_key)
         return cached_data
     
     # Если данных в кэше нет, делаем запрос к БД
@@ -52,11 +55,10 @@ async def get_countries(session: SessionDep):
     
     return countries
 
-@router.post('', response_model=CountrySchema)
+@router.post('', response_model=CountrySchema,dependencies=[Depends(require_admin)])
 async def add_country(
     country_data: CountryAddSchema,
     session: SessionDep,
-    admin = Depends(require_admin)
 ):
     # Создаем новую страну
     new_country = CountryModel(**country_data.model_dump())
@@ -74,26 +76,26 @@ async def add_country(
         return new_country
     except IntegrityError as e:
         await session.rollback()
-        logger.error(f"Ошибка при добавлении страны: {str(e)}")
+        logger.error("Ошибка при добавлении страны: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Страна с таким названием уже существует"
-        )
+        ) from e
     except Exception as e:
         await session.rollback()
-        logger.error(f"Неизвестная ошибка при добавлении страны: {str(e)}")
+        logger.error("Неизвестная ошибка при добавлении страны: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при добавлении страны"
-        )
+        ) from e
 
-@router.put("/{country_id}", response_model=CountrySchema)
+@router.put("/{country_id}", response_model=CountrySchema,dependencies=[Depends(require_admin)])
 async def update_country(
     country_id: int, 
     country_data: CountryUpdateSchema,
     session: SessionDep,
-    admin = Depends(require_admin)
 ):
+    """Обновить существующую страну по ID."""
     # Находим страну по ID
     query = select(CountryModel).where(CountryModel.id == country_id)
     result = await session.execute(query)
@@ -120,28 +122,29 @@ async def update_country(
         return country
     except IntegrityError as e:
         await session.rollback()
-        logger.error(f"Ошибка при обновлении страны: {str(e)}")
+        logger.error("Ошибка при обновлении страны: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Страна с таким названием уже существует"
-        )
+        ) from e
     except Exception as e:
         await session.rollback()
-        logger.error(f"Неизвестная ошибка при обновлении страны: {str(e)}")
+        logger.error("Неизвестная ошибка при обновлении страны: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при обновлении страны"
-        )
+        ) from e
 
 @router.get('/{country_id}', response_model=CountrySchema)
 async def get_country_by_id(country_id: int, session: SessionDep):
+    """Получить страну по ID."""
     # Формируем ключ кэша
     cache_key = f"{CACHE_KEYS['countries']}{country_id}"
     
     # Пробуем получить данные из кэша
     cached_data = await cache_get(cache_key)
     if cached_data:
-        logger.info(f"Данные страны получены из кэша: {cache_key}")
+        logger.info("Данные страны получены из кэша: %s", cache_key)
         return cached_data
     
     # Если данных в кэше нет, делаем запрос к БД
@@ -165,12 +168,12 @@ async def get_country_by_id(country_id: int, session: SessionDep):
     
     return country
 
-@router.delete("/{country_id}", status_code=204)
+@router.delete("/{country_id}", status_code=204,dependencies=[Depends(require_admin)])
 async def delete_country(
     country_id: int,
     session: SessionDep,
-    admin = Depends(require_admin)
 ):
+    """Удалить страну по ID."""
     # Находим страну по ID
     query = select(CountryModel).where(CountryModel.id == country_id)
     result = await session.execute(query)
@@ -197,11 +200,11 @@ async def delete_country(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Невозможно удалить страну, т.к. существуют связанные записи"
-        )
+        ) from e
     except Exception as e:
         await session.rollback()
         logger.error(f"Неизвестная ошибка при удалении страны: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при удалении страны"
-        )
+        ) from e

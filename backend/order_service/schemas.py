@@ -1,11 +1,15 @@
+"""Схемы Pydantic для сервиса заказов."""
+
 from datetime import datetime
-from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
+from typing import List, Optional, Dict, Any
 from enum import Enum
 import logging
 
+from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator, ConfigDict
+
 # Перечисления
 class OrderStatusEnum(str, Enum):
+    """Перечисление статусов заказа."""
     PENDING = "pending"
     PROCESSING = "processing"
     SHIPPED = "shipped"
@@ -16,6 +20,7 @@ class OrderStatusEnum(str, Enum):
 
 
 class SuggestRequest(BaseModel):
+    """Запрос для подсказок."""
     query: str = Field(..., description="Строка для подсказки")
     from_bound: dict = Field(None, example={"value": "city"})
     to_bound: dict = Field(None, example={"value": "city"})
@@ -23,6 +28,7 @@ class SuggestRequest(BaseModel):
 
 # Базовые модели
 class AddressBase(BaseModel):
+    """Базовая модель адреса."""
     full_name: str = Field(..., min_length=2, max_length=255)
     address_line1: str = Field(..., min_length=5, max_length=255)
     address_line2: Optional[str] = Field(None, max_length=255)
@@ -34,12 +40,13 @@ class AddressBase(BaseModel):
     is_default: bool = False
 
 class OrderItemBase(BaseModel):
+    """Базовая модель элемента заказа."""
     product_id: int
     quantity: int = Field(..., gt=0)
 
 # Схемы для промокодов
 class PromoCodeBase(BaseModel):
-    """Базовая схема для промокода"""
+    """Базовая схема для промокода."""
     code: str = Field(..., min_length=3, max_length=50)
     discount_percent: Optional[int] = Field(None, ge=1, le=100, description="Скидка в процентах (от 1 до 100)")
     discount_amount: Optional[int] = Field(None, ge=1, description="Фиксированная скидка в рублях")
@@ -48,7 +55,7 @@ class PromoCodeBase(BaseModel):
     
     @model_validator(mode='after')
     def validate_discount(self):
-        """Валидатор для проверки, что указан только один тип скидки"""
+        """Валидатор для проверки, что указан только один тип скидки."""
         if (self.discount_percent is None and self.discount_amount is None) or \
            (self.discount_percent is not None and self.discount_amount is not None):
             raise ValueError("Необходимо указать либо процент скидки, либо фиксированную сумму скидки")
@@ -56,18 +63,23 @@ class PromoCodeBase(BaseModel):
 
 # Модели для создания
 class AddressCreate(AddressBase):
+    """Модель для создания адреса."""
     pass
 
 class ShippingAddressCreate(AddressBase):
+    """Модель для создания адреса доставки."""
     pass
 
 class BillingAddressCreate(AddressBase):
+    """Модель для создания адреса для выставления счета."""
     pass
 
 class OrderItemCreate(OrderItemBase):
+    """Модель для создания элемента заказа."""
     pass
 
 class OrderCreate(BaseModel):
+    """Модель для создания заказа."""
     items: List[OrderItemCreate] = Field(..., min_items=1)
     
     # Данные о клиенте и доставке
@@ -87,6 +99,17 @@ class OrderCreate(BaseModel):
     
     @field_validator('phone')
     def validate_phone_format(cls, v):
+        """Валидирует формат номера телефона для админского создания заказа.
+        
+        Args:
+            v (str): Номер телефона для валидации
+            
+        Returns:
+            str: Валидный номер телефона
+            
+        Raises:
+            ValueError: Если номер не соответствует формату
+        """
         if not (v.startswith('+7') or v.startswith('8')):
             raise ValueError('Телефон должен начинаться с "+7" или "8"')
         if not (v.startswith('+7') and len(v) == 12) and not (v.startswith('8') and len(v) == 11):
@@ -97,6 +120,7 @@ class OrderCreate(BaseModel):
         return v
 
 class OrderStatusCreate(BaseModel):
+    """Модель для создания статуса заказа."""
     name: str = Field(..., min_length=2, max_length=50)
     description: Optional[str] = None
     color: str = Field('#808080', pattern=r'^#[0-9A-Fa-f]{6}$')
@@ -105,15 +129,17 @@ class OrderStatusCreate(BaseModel):
     sort_order: int = 0
 
 class OrderStatusHistoryCreate(BaseModel):
+    """Модель для создания истории статусов заказа."""
     status_id: int
     notes: Optional[str] = None
 
 class PromoCodeCreate(PromoCodeBase):
-    """Схема для создания промокода"""
+    """Схема для создания промокода."""
     pass
 
 # Модели для обновления
 class AddressUpdate(BaseModel):
+    """Модель для обновления адреса."""
     full_name: Optional[str] = Field(None, min_length=2, max_length=255)
     address_line1: Optional[str] = Field(None, min_length=5, max_length=255)
     address_line2: Optional[str] = None
@@ -125,6 +151,7 @@ class AddressUpdate(BaseModel):
     is_default: Optional[bool] = None
 
 class OrderUpdate(BaseModel):
+    """Модель для обновления заказа."""
     status_id: Optional[int] = None
     
     # Данные о клиенте и доставке
@@ -140,6 +167,17 @@ class OrderUpdate(BaseModel):
     
     @field_validator('phone')
     def validate_phone(cls, v):
+        """Валидирует формат номера телефона для обновления заказа.
+        
+        Args:
+            v (str): Номер телефона для валидации
+            
+        Returns:
+            str: Валидный номер телефона или None
+            
+        Raises:
+            ValueError: Если номер не соответствует формату
+        """
         if v is None:
             return v
         if not (v.startswith('+7') or v.startswith('8')):
@@ -152,6 +190,7 @@ class OrderUpdate(BaseModel):
         return v
 
 class OrderStatusUpdate(BaseModel):
+    """Модель для обновления статуса заказа."""
     name: Optional[str] = Field(None, min_length=2, max_length=50)
     description: Optional[str] = None
     color: Optional[str] = Field(None, pattern=r'^#[0-9A-Fa-f]{6}$')
@@ -160,7 +199,7 @@ class OrderStatusUpdate(BaseModel):
     sort_order: Optional[int] = None
 
 class PromoCodeUpdate(BaseModel):
-    """Схема для обновления промокода"""
+    """Схема для обновления промокода."""
     code: Optional[str] = Field(None, min_length=3, max_length=50)
     discount_percent: Optional[int] = Field(None, ge=1, le=100, description="Скидка в процентах (от 1 до 100)")
     discount_amount: Optional[int] = Field(None, ge=1, description="Фиксированная скидка в рублях")
@@ -169,13 +208,14 @@ class PromoCodeUpdate(BaseModel):
     
     @model_validator(mode='after')
     def validate_discount(self):
-        """Валидатор для проверки, что не указаны оба типа скидки одновременно"""
+        """Валидатор для проверки, что не указаны оба типа скидки одновременно."""
         if self.discount_percent is not None and self.discount_amount is not None:
             raise ValueError("Нельзя указать одновременно и процент скидки, и фиксированную сумму скидки")
         return self
 
 # Модели для ответов
 class OrderStatusResponse(BaseModel):
+    """Модель ответа со статусом заказа."""
     id: int
     name: str
     description: Optional[str] = None
@@ -187,6 +227,7 @@ class OrderStatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class OrderStatusHistoryResponse(BaseModel):
+    """Модель ответа с историей статусов заказа."""
     id: int
     order_id: int
     status_id: int
@@ -198,6 +239,7 @@ class OrderStatusHistoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class AddressResponse(AddressBase):
+    """Модель ответа с адресом."""
     id: int
     user_id: int
     created_at: datetime
@@ -206,13 +248,15 @@ class AddressResponse(AddressBase):
     model_config = ConfigDict(from_attributes=True)
 
 class ShippingAddressResponse(AddressResponse):
+    """Модель ответа с адресом доставки."""
     pass
 
 class BillingAddressResponse(AddressResponse):
+    """Модель ответа с адресом для выставления счета."""
     pass
 
 class PromoCodeResponse(PromoCodeBase):
-    """Схема для ответа с промокодом"""
+    """Схема для ответа с промокодом."""
     id: int
     created_at: datetime
     updated_at: datetime
@@ -220,6 +264,7 @@ class PromoCodeResponse(PromoCodeBase):
     model_config = ConfigDict(from_attributes=True)
 
 class OrderItemResponse(OrderItemBase):
+    """Модель ответа с элементом заказа."""
     id: int
     order_id: int
     product_name: str
@@ -231,28 +276,28 @@ class OrderItemResponse(OrderItemBase):
 
 # Схемы для редактирования товаров в заказе
 class OrderItemUpdate(BaseModel):
-    """Схема для обновления количества товара в заказе"""
+    """Схема для обновления количества товара в заказе."""
     quantity: int = Field(..., gt=0)
 
 class OrderItemAdd(BaseModel):
-    """Схема для добавления товара в заказ"""
+    """Схема для добавления товара в заказ."""
     product_id: int = Field(..., gt=0)
     quantity: int = Field(..., gt=0)
 
 class OrderItemsUpdate(BaseModel):
-    """Схема для массового обновления элементов заказа"""
+    """Схема для массового обновления элементов заказа."""
     items_to_add: Optional[List[OrderItemAdd]] = Field(None, description="Товары для добавления в заказ")
     items_to_update: Optional[Dict[int, int]] = Field(None, description="Словарь {id_товара_в_заказе: новое_количество}")
     items_to_remove: Optional[List[int]] = Field(None, description="ID товаров в заказе для удаления")
 
 class PromoCodeCheckRequest(BaseModel):
-    """Схема для запроса проверки промокода"""
+    """Схема для запроса проверки промокода."""
     code: str = Field(..., min_length=3, max_length=50)
     email: EmailStr = Field(..., description="Email пользователя для проверки использования")
     phone: str = Field(..., min_length=11, max_length=12, description="Телефон пользователя для проверки использования")
 
 class PromoCodeCheckResponse(BaseModel):
-    """Схема для ответа на проверку промокода"""
+    """Схема для ответа на проверку промокода."""
     is_valid: bool
     message: str
     discount_percent: Optional[int] = None
@@ -260,6 +305,7 @@ class PromoCodeCheckResponse(BaseModel):
     promo_code: Optional[PromoCodeResponse] = None
 
 class OrderResponse(BaseModel):
+    """Модель ответа с заказом."""
     id: int
     user_id: Optional[int] = None
     status_id: int
@@ -290,18 +336,20 @@ class OrderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class OrderResponseWithPromo(OrderResponse):
-    """Расширенный ответ заказа с информацией о промокоде (создается вручную)"""
+    """Расширенный ответ заказа с информацией о промокоде (создается вручную)."""
     promo_code: Optional[PromoCodeResponse] = None
 
 class OrderDetailResponse(OrderResponse):
+    """Детальный ответ с заказом."""
     status_history: List[OrderStatusHistoryResponse] = []
 
 class OrderDetailResponseWithPromo(OrderDetailResponse):
-    """Расширенный детальный ответ заказа с информацией о промокоде (создается вручную)"""
+    """Расширенный детальный ответ заказа с информацией о промокоде (создается вручную)."""
     promo_code: Optional[PromoCodeResponse] = None
 
 # Схема ответа об изменении товаров в заказе
 class OrderItemsUpdateResponse(BaseModel):
+    """Схема ответа об изменении товаров в заказе."""
     success: bool
     order: Optional[OrderResponse] = None
     errors: Optional[Dict[str, Any]] = None
@@ -310,6 +358,7 @@ class OrderItemsUpdateResponse(BaseModel):
 
 # Модели для пагинации и фильтрации
 class PaginatedResponse(BaseModel):
+    """Модель для пагинированного ответа."""
     items: List[Any]
     total: int
     page: int
@@ -318,6 +367,15 @@ class PaginatedResponse(BaseModel):
     
     @field_validator('pages', mode='before')
     def calculate_pages(cls, v, info):
+        """Вычисляет общее количество страниц для пагинации.
+        
+        Args:
+            v: Значение поля pages
+            info: Информация о валидации
+            
+        Returns:
+            int: Количество страниц
+        """
         data = info.data
         total = data.get('total', 0)
         size = data.get('size', 1)
@@ -331,11 +389,12 @@ class PaginatedResponse(BaseModel):
         
         # Логирование результата вычисления
         logger = logging.getLogger("pagination")
-        logger.info(f"Вычисление страниц: total={total}, size={size}, pages={pages}")
+        logger.info("Вычисление страниц: total=%d, size=%d, pages=%d", total, size, pages)
         
         return pages
 
 class OrderFilterParams(BaseModel):
+    """Параметры фильтрации заказов."""
     page: int = Field(1, ge=1)
     size: int = Field(10, ge=1, le=100)
     status_id: Optional[int] = None
@@ -349,6 +408,7 @@ class OrderFilterParams(BaseModel):
 
 # Модели для статистики
 class OrderStatistics(BaseModel):
+    """Модель статистики заказов."""
     total_orders: int
     total_revenue: int
     average_order_value: float
@@ -358,12 +418,14 @@ class OrderStatistics(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class BatchStatusUpdate(BaseModel):
+    """Модель для массового обновления статусов."""
     order_ids: List[int]
     status_id: int
     notes: Optional[str] = None
 
 # Схемы для статусов оплаты
 class PaymentStatusBase(BaseModel):
+    """Базовая модель статуса оплаты."""
     name: str
     description: Optional[str] = None
     color: str = "#3498db"  # Цвет по умолчанию (синий)
@@ -371,9 +433,11 @@ class PaymentStatusBase(BaseModel):
     sort_order: int = 0
 
 class PaymentStatusCreate(PaymentStatusBase):
+    """Модель для создания статуса оплаты."""
     pass
 
 class PaymentStatusUpdate(BaseModel):
+    """Модель для обновления статуса оплаты."""
     name: Optional[str] = None
     description: Optional[str] = None
     color: Optional[str] = None
@@ -381,6 +445,7 @@ class PaymentStatusUpdate(BaseModel):
     sort_order: Optional[int] = None
 
 class PaymentStatusResponse(PaymentStatusBase):
+    """Модель ответа со статусом оплаты."""
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -388,7 +453,7 @@ class PaymentStatusResponse(PaymentStatusBase):
     model_config = ConfigDict(from_attributes=True)
 
 class OrderItemSchema(BaseModel):
-    """Схема для элемента заказа"""
+    """Схема для элемента заказа."""
     id: int
     product_id: int
     product_name: str
@@ -400,7 +465,7 @@ class OrderItemSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class OrderStatusSchema(BaseModel):
-    """Схема для отображения статуса заказа"""
+    """Схема для отображения статуса заказа."""
     id: int
     name: str
     description: Optional[str] = None
@@ -412,7 +477,7 @@ class OrderStatusSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class OrderStatusHistorySchema(BaseModel):
-    """Схема для истории статусов заказа"""
+    """Схема для истории статусов заказа."""
     id: int
     order_id: int
     status_id: int
@@ -424,7 +489,7 @@ class OrderStatusHistorySchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class OrderSchema(BaseModel):
-    """Схема для отображения заказа"""
+    """Схема для отображения заказа."""
     id: int
     user_id: int
     status_id: int
@@ -446,7 +511,7 @@ class OrderSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True) 
 
 class AdminOrderCreate(BaseModel):
-    """Схема для создания заказа администратором"""
+    """Схема для создания заказа администратором."""
     items: List[OrderItemCreate] = Field(..., min_items=1)
     
     # Данные о клиенте и доставке
@@ -472,6 +537,17 @@ class AdminOrderCreate(BaseModel):
     
     @field_validator('phone')
     def validate_phone_format(cls, v):
+        """Валидирует формат номера телефона для админского создания заказа.
+        
+        Args:
+            v (str): Номер телефона для валидации
+            
+        Returns:
+            str: Валидный номер телефона
+            
+        Raises:
+            ValueError: Если номер не соответствует формату
+        """
         if not (v.startswith('+7') or v.startswith('8')):
             raise ValueError('Телефон должен начинаться с "+7" или "8"')
         if not (v.startswith('+7') and len(v) == 12) and not (v.startswith('8') and len(v) == 11):

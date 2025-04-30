@@ -441,10 +441,30 @@ class PaymentStatusModel(Base):
     
     @classmethod
     async def is_used_in_orders(cls, session: AsyncSession, status_id: int) -> bool:
-        """Проверка, используется ли статус в заказах"""
-        # TODO: Реализовать проверку использования статуса в заказах
-        # когда будет добавлена связь с заказами
-        return False 
+        """Проверка, используется ли статус в заказах
+        
+        Проверяет наличие заказов с соответствующим статусом оплаты (is_paid).
+        Этот метод позволяет предотвратить удаление статусов, которые используются в заказах.
+        """
+        try:
+            # Получаем статус оплаты
+            payment_status = await cls.get_by_id(session, status_id)
+            if not payment_status:
+                return False
+                
+            # Проверяем наличие заказов, соответствующих статусу оплаты
+            # Если статус оплаты имеет is_paid=True, ищем заказы с is_paid=True
+            # Если статус оплаты имеет is_paid=False, ищем заказы с is_paid=False
+            # Используем exists() и limit(1) для оптимизации запроса - нам важен только факт наличия
+            query = select(OrderModel.id).where(
+                OrderModel.is_paid == payment_status.is_paid
+            ).limit(1)
+            
+            result = await session.execute(query)
+            return result.first() is not None
+        except SQLAlchemyError as e:
+            logging.error("Ошибка при проверке использования статуса оплаты: %s", str(e))
+            return False
 
 class PromoCodeModel(Base):
     """Модель промокода."""
@@ -472,6 +492,7 @@ class PromoCodeModel(Base):
     
     @classmethod
     async def get_by_code(cls, session: AsyncSession, code: str) -> Optional["PromoCodeModel"]:
+        """Получить промокод по его коду."""
         try:
             query = select(cls).filter(cls.code == code)
             result = await session.execute(query)
@@ -482,6 +503,7 @@ class PromoCodeModel(Base):
     
     @classmethod
     async def get_all(cls, session: AsyncSession, skip: int = 0, limit: int = 100) -> List["PromoCodeModel"]:
+        """Получить все промокоды с пагинацией."""
         try:
             query = select(cls).order_by(cls.created_at.desc()).offset(skip).limit(limit)
             result = await session.execute(query)
@@ -492,6 +514,7 @@ class PromoCodeModel(Base):
     
     @classmethod
     async def get_active(cls, session: AsyncSession) -> List["PromoCodeModel"]:
+        """Получить все активные промокоды."""
         try:
             query = select(cls).filter(
                 cls.is_active == True,
@@ -529,4 +552,4 @@ class PromoCodeUsageModel(Base):
             return result.scalars().first() is not None
         except SQLAlchemyError as e:
             logging.error("Ошибка при проверке использования промокода: %s", str(e))
-            return False 
+            return False

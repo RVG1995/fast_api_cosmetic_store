@@ -336,7 +336,7 @@ class UserService:
             
             return True
             
-        except Exception as e:
+        except httpx.HTTPError as e:
             logger.error("Ошибка при активации уведомлений: %s", str(e))
             return False
 

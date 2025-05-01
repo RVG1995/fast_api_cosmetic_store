@@ -28,6 +28,10 @@ from app.services import (
     session_service,
 )
 
+from aiosmtplib.errors import SMTPException
+from aio_pika.exceptions import AMQPError
+import httpx
+
 # Настройка логгера
 logger = logging.getLogger(__name__)
 
@@ -93,10 +97,9 @@ async def register(
                 user.email,
                 activation_token
             )
-        except Exception as email_error:
-            # Логируем ошибку, но не прерываем регистрацию
-            logger.error("Ошибка при отправке письма активации: %s", str(email_error))
-            # Можно добавить запись в лог для повторной отправки письма позже
+        except (SMTPException, AMQPError) as email_error:
+            # Логируем только SMTP-ошибки и не прерываем регистрацию
+            logger.error("Ошибка при отправке письма активации: %s", email_error)
         
         # Если пользователь согласился на уведомления, активируем их        
         logger.info("Пользователь зарегистрирован: %s, ID: %s", user.email, new_user.id)
@@ -527,9 +530,8 @@ async def activate_user(
             else:
                 logger.warning("Не удалось активировать уведомления для пользователя: %s", user.email)
                 
-        except Exception as notification_error:
-            # Не прерываем регистрацию, если не удалось активировать уведомления
-            logger.error("Ошибка при активации уведомлений: %s", str(notification_error))
+        except httpx.RequestError as notification_error:
+            logger.error("Ошибка при активации уведомлений: %s", notification_error)
     
     return {
         "status": "success",

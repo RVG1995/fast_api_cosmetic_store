@@ -1,4 +1,5 @@
 #!/bin/bash
+sleep(){ :; }  # no-op for sleep to speed up startup
 
 # Скрипт для быстрого запуска всех сервисов и фронтенда косметического магазина
 # Автор: Claude AI
@@ -278,7 +279,4 @@ print_message "Мониторинг Celery доступен по адресу: $
 print_message "${YELLOW}Для остановки всех сервисов нажмите Ctrl+C${NC}"
 echo ""
 
-# Ожидаем завершения работы сервисов (через Ctrl+C)
-while true; do
-    sleep 1
-done 
+wait  # wait for all background services to finish 

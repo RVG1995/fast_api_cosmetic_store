@@ -53,7 +53,7 @@ class CacheService:
             self.redis = await redis.Redis.from_url(
                 redis_url,
                 socket_timeout=3,
-                decode_responses=True  # Автоматически декодируем ответы из байтов в строки
+                decode_responses=False  # Возвращаем байты, декодируем вручную
             )
             
             logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", REDIS_HOST, REDIS_PORT, REDIS_DB)
@@ -77,26 +77,20 @@ class CacheService:
             
         try:
             data = await self.redis.get(key)
-            if data:
-                try:
-                    # Если данные хранятся как pickle
-                    if isinstance(data, bytes):
-                        return pickle.loads(data)
-                    elif isinstance(data, str) and data.startswith(b'\x80\x04'):
-                        # Предположительно это pickle в строковом представлении
-                        return pickle.loads(data.encode('latin1'))
-                    
-                    # Если это JSON строка
-                    try:
-                        return json.loads(data)
-                    except json.JSONDecodeError:
-                        # Если не JSON и не pickle, возвращаем как есть
-                        return data
-                except (pickle.UnpicklingError, TypeError, ValueError) as e:
-                    # Если не удалось десериализовать, возвращаем как есть
-                    logger.debug("Не удалось десериализовать данные: %s", str(e))
-                    return data
-            return None
+            if not data:
+                return None
+            # сначала пробуем распаковать pickle
+            try:
+                return pickle.loads(data)
+            except (pickle.UnpicklingError, TypeError, ValueError):
+                pass
+            # пробуем JSON декодирование
+            try:
+                text = data.decode('utf-8')
+                return json.loads(text)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                # возвращаем сырые байты
+                return data
         except (redis.RedisError, pickle.UnpicklingError, TypeError) as e:
             logger.error("Ошибка при получении данных из кэша: %s", str(e))
             return None

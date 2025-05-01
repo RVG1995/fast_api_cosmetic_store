@@ -81,16 +81,24 @@ async def register(
             last_name=user.last_name,
             email=user.email,
             password=user.password,
-            is_active=False
+            is_active=False,
+            personal_data_agreement=bool(user.personal_data_agreement),
+            notification_agreement=bool(user.notification_agreement)
         )
         
         # Отправляем письмо активации
-        await user_service.send_activation_email(
-            str(new_user.id),
-            user.email,
-            activation_token
-        )
+        try:
+            await user_service.send_activation_email(
+                str(new_user.id),
+                user.email,
+                activation_token
+            )
+        except Exception as email_error:
+            # Логируем ошибку, но не прерываем регистрацию
+            logger.error("Ошибка при отправке письма активации: %s", str(email_error))
+            # Можно добавить запись в лог для повторной отправки письма позже
         
+        # Если пользователь согласился на уведомления, активируем их        
         logger.info("Пользователь зарегистрирован: %s, ID: %s", user.email, new_user.id)
         
         return UserReadSchema(
@@ -488,6 +496,40 @@ async def activate_user(
     )
     
     logger.info("Аккаунт активирован: %s, ID: %s", user.email, user.id)
+
+    # Если пользователь согласился на уведомления, активируем их
+    if bool(user.notification_agreement):
+        logger.info("Активация уведомлений для пользователя: %s, ID: %s", user.email, user.id)
+        try:
+            # Создаем сервисный токен напрямую через TokenService
+            service_token, _ = await TokenService.create_access_token(
+                data={
+                    "sub": "auth_service", 
+                    "scope": "service"
+                },
+                expires_delta=timedelta(minutes=SERVICE_TOKEN_EXPIRE_MINUTES)
+            )
+            
+            if not service_token:
+                logger.error("Не удалось создать сервисный токен")
+                raise ValueError("Failed to create service token")
+            
+            # Активируем уведомления с полученным токеном
+            notifications_result = await user_service.activate_notifications(
+                str(user.id),
+                user.email,
+                is_admin=user.is_admin,
+                service_token=service_token
+            )
+            
+            if notifications_result:
+                logger.info("Уведомления успешно активированы для пользователя: %s", user.email)
+            else:
+                logger.warning("Не удалось активировать уведомления для пользователя: %s", user.email)
+                
+        except Exception as notification_error:
+            # Не прерываем регистрацию, если не удалось активировать уведомления
+            logger.error("Ошибка при активации уведомлений: %s", str(notification_error))
     
     return {
         "status": "success",

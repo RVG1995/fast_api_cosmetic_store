@@ -60,7 +60,9 @@ async def create_superadmin() -> None:
                 last_name=last_name,
                 is_active=True,
                 is_admin=True,
-                is_super_admin=True
+                is_super_admin=True,
+                personal_data_agreement=True,
+                notification_agreement=True
             )
             
             session.add(superadmin)
@@ -101,7 +103,9 @@ async def create_default_user() -> None:
                 last_name=last_name,
                 is_active=True,
                 is_admin=False,
-                is_super_admin=False
+                is_super_admin=False,
+                personal_data_agreement=True,
+                notification_agreement=True
             )
             
             session.add(default_user)

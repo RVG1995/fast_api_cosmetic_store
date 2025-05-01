@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "user")
+RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "password")
 
 # Настройки для Dead Letter Exchange - должны совпадать с настройками в email_consumer
 DLX_NAME = "dead_letter_exchange"

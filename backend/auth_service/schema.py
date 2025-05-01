@@ -13,6 +13,8 @@ class UserCreateShema(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=100, description="Пароль")
     confirm_password: str = Field(..., min_length=8, max_length=100, description="Подтверждение пароля")
+    personal_data_agreement: bool = Field(..., description="Согласие на обработку персональных данных")
+    notification_agreement: bool = Field(..., description="Согласие на получение уведомлений")
     
     @model_validator(mode="after")
     def check_passwords_match(cls, model: "UserCreateShema") -> "UserCreateShema":

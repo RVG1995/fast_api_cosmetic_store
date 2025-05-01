@@ -262,3 +262,98 @@ async def admin_delete_setting(
     data_all = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
     await cache_set_settings(user_id, data_all)
     return {"detail": "Deleted"}
+
+@router.post(
+    "/service/activate-notifications",
+    dependencies=[Depends(verify_service_jwt)]
+)
+async def activate_user_notifications(
+    data: schemas.UserNotificationActivation,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Активация всех доступных уведомлений для пользователя.
+    Может вызываться только из других сервисов с service token.
+    
+    Args:
+        data: Данные для активации уведомлений
+        db: Сессия базы данных
+    
+    Returns:
+        Dict[str, Any]: Результат операции и количество активированных настроек
+    """
+    logger.info("[POST /service/activate-notifications] Получен запрос на активацию уведомлений: user_id=%s, email=%s, is_admin=%s", 
+               data.user_id, data.email, data.is_admin)
+    
+    # Определяем доступные типы событий для пользователя
+    event_types = USER_EVENT_TYPES.copy()
+    
+    if data.is_admin:
+        event_types.extend(ADMIN_ONLY_EVENT_TYPES)
+    
+    logger.debug("Типы событий для активации: %s", event_types)
+    
+    activated_count = 0
+    user_id = int(data.user_id)
+    
+    try:
+        # Проверяем существующие настройки
+        result = await db.execute(
+            select(models.NotificationSetting)
+            .where(models.NotificationSetting.user_id == user_id)
+        )
+        existing_settings = {setting.event_type: setting for setting in result.scalars().all()}
+        logger.debug("Найдено существующих настроек: %d", len(existing_settings))
+        
+        # Создаем или обновляем настройки для каждого типа события
+        for event_type in event_types:
+            if event_type in existing_settings:
+                # Обновляем существующую настройку
+                setting = existing_settings[event_type]
+                if not setting.email_enabled:
+                    setting.email_enabled = True
+                    setting.email = data.email
+                    activated_count += 1
+                    logger.debug("Обновлена настройка: user_id=%s, event_type=%s", user_id, event_type)
+            else:
+                # Создаем новую настройку
+                new_setting = models.NotificationSetting(
+                    user_id=user_id,
+                    event_type=event_type,
+                    email=data.email,
+                    email_enabled=True,
+                    push_enabled=False
+                )
+                db.add(new_setting)
+                activated_count += 1
+                logger.debug("Создана новая настройка: user_id=%s, event_type=%s", user_id, event_type)
+        
+        # Сохраняем изменения
+        await db.commit()
+        logger.info("Изменения сохранены в БД. Активировано настроек: %d", activated_count)
+        
+        # Инвалидируем и обновляем кэш
+        await invalidate_settings_cache(user_id)
+        
+        # Получаем обновленные настройки для обновления кэша
+        result_all = await db.execute(
+            select(models.NotificationSetting).where(models.NotificationSetting.user_id == user_id)
+        )
+        all_settings = result_all.scalars().all()
+        data_all = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+        await cache_set_settings(user_id, data_all)
+        logger.info("Кэш обновлен для user_id=%s", user_id)
+        
+        return {
+            "status": "success",
+            "message": f"Activated {activated_count} notification settings",
+            "activated_count": activated_count
+        }
+    except Exception as e:
+        logger.error("Ошибка при активации уведомлений: %s", str(e))
+        await db.rollback()
+        return {
+            "status": "error",
+            "message": f"Error activating notifications: {str(e)}",
+            "activated_count": 0
+        }

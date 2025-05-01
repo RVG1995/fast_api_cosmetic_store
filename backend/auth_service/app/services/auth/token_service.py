@@ -98,4 +98,29 @@ class TokenService:
             return None
         except (jwt.InvalidTokenError, jwt.DecodeError) as e:
             logger.error("Ошибка при получении времени истечения токена: %s", str(e))
-            return None 
+            return None
+
+    @staticmethod
+    async def create_service_token(service_name: str = "auth_service") -> str:
+        """
+        Создает сервисный JWT токен для межсервисного взаимодействия
+        
+        Args:
+            service_name: Имя сервиса-отправителя
+            
+        Returns:
+            str: JWT токен для межсервисного взаимодействия
+        """
+        SERVICE_TOKEN_EXPIRE_MINUTES = int(os.getenv("SERVICE_TOKEN_EXPIRE_MINUTES", "15"))
+        
+        expires_delta = timedelta(minutes=SERVICE_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + expires_delta
+        
+        to_encode = {
+            "sub": service_name, 
+            "scope": "service",
+            "exp": expire
+        }
+        
+        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        return encoded_jwt 

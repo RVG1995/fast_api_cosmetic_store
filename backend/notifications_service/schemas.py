@@ -40,3 +40,9 @@ class NotificationEvent(BaseModel):
     event_type: str
     user_id: int
     payload: dict
+
+class UserNotificationActivation(BaseModel):
+    """Схема для активации уведомлений пользователя через сервисный API."""
+    user_id: str
+    email: str
+    is_admin: bool = False

@@ -4,8 +4,11 @@ import logging
 import secrets
 from datetime import datetime
 from typing import Optional, Tuple
+import os
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
+import httpx
 
 from models import UserModel
 from utils import get_password_hash, verify_password
@@ -58,7 +61,9 @@ class UserService:
         last_name: str,
         email: str,
         password: str,
-        is_active: bool = False
+        is_active: bool = False,
+        personal_data_agreement: bool = False,
+        notification_agreement: bool = False
     ) -> Tuple[UserModel, str]:
         """
         Создание нового пользователя
@@ -87,7 +92,9 @@ class UserService:
             email=email,
             hashed_password=hashed_password,
             is_active=is_active,
-            activation_token=None if is_active else activation_token
+            activation_token=None if is_active else activation_token,
+            personal_data_agreement=personal_data_agreement,
+            notification_agreement=notification_agreement
         )
         
         session.add(new_user)
@@ -249,6 +256,89 @@ class UserService:
         except SQLAlchemyError as e:
             logger.error("Ошибка при отправке письма активации: %s", str(e))
             return False
+    
+    @staticmethod
+    async def activate_notifications(user_id: str, email: str, is_admin: bool = False, service_token: str = None) -> bool:
+        """
+        Активация всех доступных уведомлений для пользователя
+        
+        Args:
+            user_id: ID пользователя
+            email: Email пользователя
+            is_admin: Флаг администратора
+            service_token: Сервисный JWT токен для авторизации
             
+        Returns:
+            bool: True при успешной активации, иначе False
+        """
+        try:            
+            # URL сервиса уведомлений
+            notifications_service_url = os.getenv("NOTIFICATIONS_SERVICE_URL", "http://localhost:8005")
+            
+            # Проверяем, был ли передан сервисный токен
+            if not service_token:
+                logger.error("Отсутствует сервисный токен для активации уведомлений")
+                return False
+            
+            # Отправляем запрос на активацию уведомлений
+            async with httpx.AsyncClient() as client:
+                # Подготавливаем данные
+                activation_data = {
+                    "user_id": user_id,
+                    "email": email,
+                    "is_admin": is_admin
+                }
+                
+                # Логируем детали запроса для отладки
+                logger.info(
+                    "Отправка запроса на активацию уведомлений: URL=%s, TOKEN=%s..., DATA=%s", 
+                    f"{notifications_service_url}/notifications/service/activate-notifications",
+                    service_token[:15] if service_token else "None",
+                    activation_data
+                )
+                
+                # Отправляем запрос
+                headers = {"Authorization": f"Bearer {service_token}"}
+                
+                # Увеличиваем таймаут и добавляем отладочную информацию
+                try:
+                    response = await client.post(
+                        f"{notifications_service_url}/notifications/service/activate-notifications",
+                        headers=headers,
+                        json=activation_data,
+                        timeout=15.0  # Увеличиваем таймаут для запроса
+                    )
+                    
+                    # Логируем ответ для отладки
+                    logger.info(
+                        "Получен ответ от сервиса уведомлений: CODE=%s, BODY=%s", 
+                        response.status_code, 
+                        response.text
+                    )
+                    
+                    if response.status_code not in (200, 201, 204):
+                        logger.error(
+                            "Ошибка при активации уведомлений: %s, %s", 
+                            response.status_code, 
+                            response.text
+                        )
+                        return False
+                    
+                    result = response.json()
+                    logger.info(
+                        "Активировано %s уведомлений для пользователя %s", 
+                        result.get("activated_count", 0),
+                        user_id
+                    )
+                except httpx.RequestError as e:
+                    logger.error("Ошибка HTTP запроса при активации уведомлений: %s", str(e))
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error("Ошибка при активации уведомлений: %s", str(e))
+            return False
+
 # Создаем глобальный экземпляр сервиса для использования в приложении
 user_service = UserService()

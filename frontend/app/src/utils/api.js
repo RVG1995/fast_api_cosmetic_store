@@ -113,7 +113,20 @@ export const authAPI = {
       }
     });
   },
-  register: async (userData) => await authApi.post('/auth/register', userData),
+  register: async (userData) => {
+    // Убедимся, что поля соответствуют ожидаемым на бэкенде
+    const registrationData = {
+      first_name: userData.first_name,
+      last_name: userData.last_name,
+      email: userData.email,
+      password: userData.password,
+      confirm_password: userData.confirm_password,
+      personal_data_agreement: userData.personal_data_agreement || false,
+      notification_agreement: userData.notification_agreement || false
+    };
+    
+    return await authApi.post('/auth/register', registrationData);
+  },
   logout: async () => await authApi.post('/auth/logout'),
   getCurrentUser: async () => await authApi.get('/auth/users/me'),
   getUserProfile: async () => await authApi.get('/auth/users/me/profile'),

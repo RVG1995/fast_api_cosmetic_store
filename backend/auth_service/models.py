@@ -30,6 +30,9 @@ class UserModel(Base):
     is_user: Mapped[bool] = mapped_column(default=True, server_default=text('true'), nullable=False)
     is_admin: Mapped[bool] = mapped_column(default=False, server_default=text('false'), nullable=False)
     is_super_admin: Mapped[bool] = mapped_column(default=False, server_default=text('false'), nullable=False)
+
+    personal_data_agreement: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    notification_agreement: Mapped[bool] = mapped_column(Boolean)
     
     extend_existing = True
 

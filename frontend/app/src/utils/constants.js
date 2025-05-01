@@ -3,21 +3,21 @@
  */
 
 // Базовый URL API для хука useApi
-export const API_URL = 'http://localhost:8000';
+export const API_URL = 'http://localhost:8088/api';
 
 // API URLs для различных сервисов
 export const API_URLS = {
-  AUTH_SERVICE: process.env.REACT_APP_AUTH_SERVICE_URL || 'http://localhost:8000',
-  PRODUCT_SERVICE: process.env.REACT_APP_PRODUCT_SERVICE_URL || 'http://localhost:8001',
-  PRODUCT: process.env.REACT_APP_PRODUCT_SERVICE_URL || 'http://localhost:8001',
-  CART_SERVICE: process.env.REACT_APP_CART_SERVICE_URL || 'http://localhost:8002',
-  ORDER_SERVICE: process.env.REACT_APP_ORDER_SERVICE_URL || 'http://localhost:8003',
-  REVIEW_SERVICE: process.env.REACT_APP_REVIEW_SERVICE_URL || 'http://localhost:8004',
-  PAYMENT_SERVICE: process.env.REACT_APP_PAYMENT_SERVICE_URL || 'http://localhost:8005',
-  USER: 'http://localhost:8006',       // Сервис пользователей (если будет)
-  CONTENT: 'http://localhost:8007',    // Сервис контента (если будет)
-  NOTIFICATION: 'http://localhost:8008', // Сервис уведомлений (если будет)
-  NOTIFICATION_SERVICE_URL: process.env.REACT_APP_NOTIFICATION_SERVICE_URL || 'http://localhost:8005'
+  AUTH_SERVICE: 'http://localhost:8088/api',
+  PRODUCT_SERVICE: 'http://localhost:8088/api',
+  PRODUCT: 'http://localhost:8088/api',
+  CART_SERVICE: 'http://localhost:8088/api',
+  ORDER_SERVICE: 'http://localhost:8088/api',
+  REVIEW_SERVICE: 'http://localhost:8088/api',
+  PAYMENT_SERVICE: 'http://localhost:8088/api',
+  USER: 'http://localhost:8088/api',
+  CONTENT: 'http://localhost:8088/api',
+  NOTIFICATION: 'http://localhost:8088/api',
+  NOTIFICATION_SERVICE_URL: 'http://localhost:8088/api'
 };
 
 // Маршруты

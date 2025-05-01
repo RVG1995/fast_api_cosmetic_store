@@ -2,6 +2,7 @@
   "name": "cosmetic_store_app",
   "version": "0.1.0",
   "private": true,
+  "proxy": "http://localhost",
   "dependencies": {
     "@tailwindcss/cli": "^4.0.9",
     "@testing-library/dom": "^10.4.0",

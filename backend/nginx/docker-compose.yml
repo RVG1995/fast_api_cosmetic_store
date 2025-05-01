@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  api-gateway-nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8088:80"
+    volumes:
+      - ../../frontend/app/build:/usr/share/nginx/html:ro
+      - ../../backend/product_service/static/images:/static/product_images:ro
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway" 

@@ -550,25 +550,74 @@ export const productAPI = {
   deleteProduct: async (id) => await productApi.delete(`/products/${id}`),
   
   // Категории
-  getCategories: async () => await productApi.get('/categories'),
+  getCategories: async () => {
+    try {
+      return await productApi.get('/categories', {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'If-Modified-Since': '0'
+        }
+      });
+    } catch (error) {
+      console.error("Ошибка в getCategories:", error);
+      throw error;
+    }
+  },
   createCategory: async (data) => await productApi.post('/categories', data),
   updateCategory: async (id, data) => await productApi.put(`/categories/${id}`, data),
   deleteCategory: async (id) => await productApi.delete(`/categories/${id}`),
   
   // Бренды
-  getBrands: async () => await productApi.get('/brands'),
+  getBrands: async () => {
+    try {
+      return await productApi.get('/brands', {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'If-Modified-Since': '0'
+        }
+      });
+    } catch (error) {
+      console.error("Ошибка в getBrands:", error);
+      throw error;
+    }
+  },
   createBrand: async (data) => await productApi.post('/brands', data),
   updateBrand: async (id, data) => await productApi.put(`/brands/${id}`, data),
   deleteBrand: async (id) => await productApi.delete(`/brands/${id}`),
   
   // Страны
-  getCountries: async () => await productApi.get('/countries'),
+  getCountries: async () => {
+    try {
+      // Добавляем дополнительные заголовки для решения проблем с CORS
+      return await productApi.get('/countries', {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'If-Modified-Since': '0'
+        }
+      });
+    } catch (error) {
+      console.error("Ошибка в getCountries:", error);
+      throw error;
+    }
+  },
   createCountry: async (data) => await productApi.post('/countries', data),
   updateCountry: async (id, data) => await productApi.put(`/countries/${id}`, data),
   deleteCountry: async (id) => await productApi.delete(`/countries/${id}`),
   
   // Подкатегории
-  getSubcategories: async () => await productApi.get('/subcategories'),
+  getSubcategories: async () => {
+    try {
+      return await productApi.get('/subcategories', {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'If-Modified-Since': '0'
+        }
+      });
+    } catch (error) {
+      console.error("Ошибка в getSubcategories:", error);
+      throw error;
+    }
+  },
   createSubcategory: async (data) => await productApi.post('/subcategories', data),
   updateSubcategory: async (id, data) => await productApi.put(`/subcategories/${id}`, data),
   deleteSubcategory: async (id) => await productApi.delete(`/subcategories/${id}`),

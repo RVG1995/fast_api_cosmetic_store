@@ -26,7 +26,7 @@ const ProductsPage = () => {
   const [brands, setBrands] = useState([]);
   const [countries, setCountries] = useState([]);
   
-  const { fetchBatchProductRatings } = useReviews();
+  const { fetchBatchProductRatings, productRatings } = useReviews();
   
   // Параметры фильтрации и сортировки
   const filters = useMemo(() => ({
@@ -98,27 +98,63 @@ const ProductsPage = () => {
       if (filters.is_available) queryParams.is_available = filters.is_available;
       if (filters.search) queryParams.search = filters.search;
       
-      // Сортировка
-      const [sortField, sortOrder] = filters.sort.split('_');
-      queryParams.sort_by = sortField;
-      queryParams.sort_order = sortOrder;
+      // Определяем, сортировка по рейтингу или обычная
+      const isRatingSort = filters.sort === 'rating_desc' || filters.sort === 'rating_asc';
       
-      // Пагинация
-      queryParams.page = filters.page;
-      queryParams.limit = filters.limit;
-      
-      const response = await productAPI.getProducts(
-        filters.page,
-        filters.limit,
-        queryParams,
-        filters.sort
-      );
-      
-      if (response && response.data) {
-        setProducts(response.data.items || []);
-        setTotalProducts(response.data.total || 0);
+      if (isRatingSort) {
+        // Для сортировки по рейтингу всегда запрашиваем все товары с сервера
+        // с базовой сортировкой "newest" (новые сначала)
+        const allProductsResponse = await productAPI.getProducts(
+          1,             // первая страница 
+          500,           // большой лимит, чтобы получить все товары
+          queryParams,
+          'newest'       // базовая сортировка - новые сначала
+        );
+        
+        if (allProductsResponse && allProductsResponse.data) {
+          // Сохраняем все товары и общее количество
+          setProducts(allProductsResponse.data.items || []);
+          setTotalProducts(allProductsResponse.data.total || 0);
+          
+          // Загружаем рейтинги для всех полученных товаров
+          const allItems = allProductsResponse.data.items || [];
+          if (allItems.length > 0) {
+            const productIds = allItems.map(product => product.id);
+            fetchBatchProductRatings(productIds);
+          }
+        } else {
+          setError('Ошибка при загрузке товаров: неверный формат ответа');
+        }
       } else {
-        setError('Ошибка при загрузке товаров: неверный формат ответа');
+        // Для обычной сортировки используем параметры с сервера
+        // Поддерживаемые сервером типы сортировки: newest, price_asc, price_desc
+        // На сервере их преобразуют в параметры sort_by и sort_order
+        
+        // Добавляем параметры пагинации
+        queryParams.page = filters.page;
+        queryParams.limit = filters.limit;
+        
+        // Делаем запрос с серверной сортировкой и пагинацией
+        const response = await productAPI.getProducts(
+          filters.page,
+          filters.limit,
+          queryParams,
+          filters.sort  // sort передается напрямую в API
+        );
+        
+        if (response && response.data) {
+          setProducts(response.data.items || []);
+          setTotalProducts(response.data.total || 0);
+          
+          // Загружаем рейтинги для полученной страницы товаров
+          const pageItems = response.data.items || [];
+          if (pageItems.length > 0) {
+            const productIds = pageItems.map(product => product.id);
+            fetchBatchProductRatings(productIds);
+          }
+        } else {
+          setError('Ошибка при загрузке товаров: неверный формат ответа');
+        }
       }
     } catch (err) {
       setError('Не удалось загрузить товары. Пожалуйста, попробуйте позже.');
@@ -126,7 +162,7 @@ const ProductsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, fetchBatchProductRatings]);
   
   // Загружаем товары при изменении фильтров
   useEffect(() => {
@@ -145,8 +181,11 @@ const ProductsPage = () => {
   
   // Подсчет количества страниц
   const totalPages = useMemo(() => 
-    Math.ceil(totalProducts / filters.limit), 
-    [totalProducts, filters.limit]
+    // Для рейтинговой сортировки считаем страницы из загруженных товаров
+    filters.sort === 'rating_asc' || filters.sort === 'rating_desc' 
+      ? Math.ceil(products.length / filters.limit) 
+      : Math.ceil(totalProducts / filters.limit), 
+    [totalProducts, filters.limit, filters.sort, products.length]
   );
   
   // Обработчик изменения страницы
@@ -158,6 +197,37 @@ const ProductsPage = () => {
   const handleResetFilters = useCallback(() => {
     setSearchParams({});
   }, [setSearchParams]);
+  
+  // Клиентская сортировка по рейтингу и пагинация
+  const displayProducts = useMemo(() => {
+    // Для рейтинговой сортировки
+    if (filters.sort === 'rating_desc' || filters.sort === 'rating_asc') {
+      // Копируем массив продуктов для сортировки
+      const sortedItems = [...products];
+      
+      // Сортируем по рейтингу
+      if (filters.sort === 'rating_desc') {
+        sortedItems.sort((a, b) => 
+          (productRatings[b.id]?.average_rating || 0) - 
+          (productRatings[a.id]?.average_rating || 0)
+        );
+      } else { // rating_asc
+        sortedItems.sort((a, b) => 
+          (productRatings[a.id]?.average_rating || 0) - 
+          (productRatings[b.id]?.average_rating || 0)
+        );
+      }
+      
+      // Применяем клиентскую пагинацию к отсортированным данным
+      const startIndex = (filters.page - 1) * filters.limit;
+      const endIndex = startIndex + filters.limit;
+      return sortedItems.slice(startIndex, endIndex);
+    }
+    
+    // Для не-рейтинговых сортировок просто возвращаем продукты как есть
+    // (пагинация и сортировка уже применены на сервере)
+    return products;
+  }, [products, filters.sort, filters.page, filters.limit, productRatings]);
   
   return (
     <Container className="products-page py-4">
@@ -214,7 +284,7 @@ const ProductsPage = () => {
           ) : (
             <>
               <Row xs={1} sm={2} md={2} lg={3} className="g-4 mb-4">
-                {products.map(product => (
+                {displayProducts.map(product => (
                   <Col key={product.id}>
                     <ProductCard product={product} />
                   </Col>

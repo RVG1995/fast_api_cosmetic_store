@@ -23,6 +23,8 @@ const SortOptions = memo(({ value = 'price_asc', onChange, className = '' }) => 
       >
         <option value="price_asc">По цене (сначала дешевле)</option>
         <option value="price_desc">По цене (сначала дороже)</option>
+        <option value="rating_asc">Рейтинг (по возрастанию)</option>
+        <option value="rating_desc">Рейтинг (по убыванию)</option>
       </Form.Select>
     </Form.Group>
   );

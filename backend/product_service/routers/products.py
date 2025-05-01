@@ -3,7 +3,7 @@
 import uuid
 import os
 import logging
-from typing import List, Optional, Annotated, Any, Dict
+from typing import List, Optional, Annotated, Dict
 
 from fastapi import Depends, HTTPException, UploadFile, File, Form, Query, Body,APIRouter
 from database import get_session
@@ -40,7 +40,7 @@ admin_router = APIRouter(
 
 SessionDep = Annotated[AsyncSession,Depends(get_session)]
 
-@router.post("", response_model=ProductSchema, status_code=201)
+@router.post("", response_model=ProductSchema, status_code=201,dependencies=[Depends(require_admin)])
 async def add_product(
     name: str = Form(...),
     price: str = Form(...),
@@ -51,7 +51,6 @@ async def add_product(
     country_id: str = Form(...),
     brand_id: str = Form(...),
     image: Optional[UploadFile] = File(None),
-    admin = Depends(require_admin),
     session: AsyncSession = Depends(get_session)
 ):
     """Добавление нового продукта."""
@@ -69,7 +68,7 @@ async def add_product(
         brand_id_int = int(brand_id)
     except ValueError as e:
         logger.error("Ошибка конвертации типов: %s", str(e))
-        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}")
+        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}") from e
 
     # Если image равен None, принудительно делаем его None
     if not image:
@@ -91,7 +90,7 @@ async def add_product(
             logger.info("Изображение сохранено по пути: %s", image_url)
         except Exception as e:
             logger.error("Ошибка при сохранении изображения: %s", str(e))
-            raise HTTPException(status_code=500, detail=f"Ошибка при сохранении изображения: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Ошибка при сохранении изображения: {str(e)}") from e
 
     try:
         product_data = ProductAddSchema(
@@ -130,10 +129,10 @@ async def add_product(
         await session.rollback()
         error_detail = str(e.orig) if e.orig else str(e)
         logger.error("Ошибка целостности данных: %s", error_detail)
-        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}") from e
     except Exception as e:
         logger.error("Непредвиденная ошибка: %s", str(e))
-        raise HTTPException(status_code=500, detail=f"Ошибка при создании продукта: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при создании продукта: {str(e)}") from e
 
 @router.get('', response_model=PaginatedProductResponse)
 async def get_products(
@@ -318,7 +317,7 @@ async def get_product_id(product_id: int, session: SessionDep):
     # Пробуем получить данные из кэша
     cached_data = await cache_get(cache_key)
     if cached_data:
-        logger.info(f"Данные о продукте ID={product_id} получены из кэша")
+        logger.info("Данные о продукте ID=%s получены из кэша", product_id)
         return cached_data
     
     # Используем оптимизированный метод для получения продукта с его связанными данными
@@ -476,16 +475,16 @@ async def update_product_form(
     except ValueError as e:
         await session.rollback()
         logger.error("Ошибка конвертации типов: %s", str(e))
-        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}")
+        raise HTTPException(status_code=422, detail=f"Некорректный формат данных: {str(e)}") from e
     except IntegrityError as e:
         await session.rollback()
         error_detail = str(e.orig) if e.orig else str(e)
         logger.error("Ошибка целостности данных: %s", error_detail)
-        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}") from e
     except Exception as e:
         await session.rollback()
         logger.error("Непредвиденная ошибка при обновлении продукта: %s", str(e))
-        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении продукта: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении продукта: {str(e)}") from e
 
 @router.delete("/{product_id}", status_code=204,dependencies=[Depends(require_admin)])
 async def delete_product(
@@ -514,7 +513,7 @@ async def delete_product(
     except IntegrityError as e:
         await session.rollback()
         error_detail = str(e.orig) if e.orig else str(e)
-        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}")
+        raise HTTPException(status_code=400, detail=f"Integrity error: {error_detail}") from e
     
     # Возвращаем None для статуса 204 No Content
     return None

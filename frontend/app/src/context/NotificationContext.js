@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from "react";
 import axios from "axios";
 import { useAuth } from "./AuthContext";
+import { API_URLS } from "../utils/constants";
 
 const NotificationContext = createContext();
 
@@ -10,7 +11,7 @@ export const NotificationProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const baseURL = process.env.REACT_APP_NOTIFICATION_SERVICE_URL || "http://localhost:8005";
+  const baseURL = API_URLS.NOTIFICATION || "http://localhost:8088/api";
 
   const fetchInProgress = useRef(false);
   

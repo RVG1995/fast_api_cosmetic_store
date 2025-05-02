@@ -763,10 +763,9 @@ async def get_all_admins(
     return admins_list
 
 
-@router.get("/all/users", summary="Получение списка всех пользователей")
+@router.get("/all/users", summary="Получение списка всех пользователей", dependencies=[Depends(get_admin_user)])
 async def get_all_users(
     session: SessionDep,
-    _: bool = Depends(get_admin_user)
 ) -> List[Dict[str, Any]]:
     """
     Получает список всех пользователей.
@@ -786,6 +785,8 @@ async def get_all_users(
             "last_name": user.last_name,
             "email": user.email,
             "is_active": user.is_active,
+            "is_admin": user.is_admin,
+            "is_super_admin": user.is_super_admin
         }
         for user in users
     ]

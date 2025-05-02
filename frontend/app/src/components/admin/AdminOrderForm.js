@@ -427,11 +427,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
 
   return (
     <Container className="my-4">
-      <Card>
-        <Card.Header>
-          <h4>Создание заказа</h4>
-        </Card.Header>
-        <Card.Body>
+
           {error && <Alert variant="danger">{error}</Alert>}
           {success && <Alert variant="success">Заказ успешно создан!</Alert>}
           
@@ -834,8 +830,6 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
               </Button>
             </div>
           </Form>
-        </Card.Body>
-      </Card>
     </Container>
   );
 };

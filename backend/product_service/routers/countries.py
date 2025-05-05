@@ -91,7 +91,7 @@ async def add_country(
 
 @router.put("/{country_id}", response_model=CountrySchema,dependencies=[Depends(require_admin)])
 async def update_country(
-    country_id: int, 
+    country_id: int,
     country_data: CountryUpdateSchema,
     session: SessionDep,
 ):
@@ -195,7 +195,7 @@ async def delete_country(
         await invalidate_cache(f"{CACHE_KEYS['products']}*")
         
         return None
-    except IntegrityError:
+    except IntegrityError as e:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -203,7 +203,7 @@ async def delete_country(
         ) from e
     except Exception as e:
         await session.rollback()
-        logger.error(f"Неизвестная ошибка при удалении страны: {str(e)}")
+        logger.error("Неизвестная ошибка при удалении страны: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при удалении страны"

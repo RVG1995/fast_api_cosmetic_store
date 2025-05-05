@@ -118,6 +118,78 @@ class OrderCreate(BaseModel):
         if not all(c.isdigit() for c in v.replace('+', '')):
             raise ValueError('Телефон должен содержать только цифры')
         return v
+    
+    @field_validator('full_name', 'region', 'city', 'street', 'comment', 'promo_code')
+    def validate_text_fields(cls, v, info):
+        """Валидирует текстовые поля для защиты от SQL-инъекций и XSS-атак.
+        
+        Args:
+            v (str): Значение для валидации
+            info: Информация о поле
+            
+        Returns:
+            str: Очищенное значение
+            
+        Raises:
+            ValueError: Если значение содержит потенциально опасные символы
+        """
+        if v is None:
+            return v
+            
+        # Список опасных символов и паттернов для SQL-инъекций
+        sql_patterns = [
+            "'", "--", "/*", "*/", "@@", "@", 
+            "EXEC", "EXECUTE", "INSERT", "SELECT", "DELETE", "UPDATE", 
+            "DROP", "ALTER", "CREATE", "TRUNCATE", "UNION", 
+            "1=1", "OR 1=1"
+        ]
+        
+        # Список опасных паттернов для XSS-атак
+        xss_patterns = [
+            "<script", "</script>", "javascript:", "onload=", "onerror=",
+            "<img", "<iframe", "<svg", "<embed", "<object", 
+            "eval(", "document.", "window."
+        ]
+        
+        # Проверка на SQL-инъекции
+        for pattern in sql_patterns:
+            if pattern.upper() in v.upper():
+                raise ValueError(f"Недопустимое значение в поле {info.field_name}: обнаружен паттерн SQL-инъекции")
+                
+        # Проверка на XSS-атаки
+        for pattern in xss_patterns:
+            if pattern.lower() in v.lower():
+                raise ValueError(f"Недопустимое значение в поле {info.field_name}: обнаружен паттерн XSS-атаки")
+                
+        return v
+    
+    @model_validator(mode='after')
+    def validate_all_fields(self):
+        """Дополнительная валидация всех полей заказа.
+        
+        Returns:
+            OrderCreate: Валидный объект заказа
+        """
+        # Дополнительные проверки для всех полей
+        text_fields = {
+            'full_name': self.full_name,
+            'region': self.region,
+            'city': self.city,
+            'street': self.street
+        }
+        
+        if self.comment:
+            text_fields['comment'] = self.comment
+            
+        if self.promo_code:
+            text_fields['promo_code'] = self.promo_code
+        
+        # Проверка на максимальную длину для предотвращения атак на переполнение буфера
+        for field_name, value in text_fields.items():
+            if len(value) > 1000:  # Дополнительное ограничение длины
+                raise ValueError(f"Поле {field_name} слишком длинное")
+        
+        return self
 
 class OrderStatusCreate(BaseModel):
     """Модель для создания статуса заказа."""

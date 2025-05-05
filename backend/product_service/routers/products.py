@@ -5,7 +5,7 @@ import os
 import logging
 from typing import List, Optional, Annotated, Dict
 
-from fastapi import Depends, HTTPException, UploadFile, File, Form, Query, Body,APIRouter
+from fastapi import Depends, HTTPException, UploadFile, File, Form, Query, Body,APIRouter, status
 from database import get_session
 from models import ProductModel
 from auth import require_admin, get_current_user

@@ -236,7 +236,7 @@ class ProductModel(Base):
             # В тестах, если session.execute - это корутина без .scalars().all()
             # Просто вернем пустой список для безопасности
             return []
-        except Exception as e:
+        except (AttributeError, RuntimeError) as e:
             # Для других ошибок также возвращаем пустой список
             print(f"Ошибка при получении продуктов: {str(e)}")
             return []
@@ -264,7 +264,7 @@ class ProductModel(Base):
             # В тестах, если session.execute - это корутина без .scalars().all()
             # Просто вернем пустой список для безопасности
             return []
-        except Exception as e:
+        except (AttributeError, RuntimeError) as e:
             # Для других ошибок также возвращаем пустой список
             print(f"Ошибка при получении продуктов для админки: {str(e)}")
             return []

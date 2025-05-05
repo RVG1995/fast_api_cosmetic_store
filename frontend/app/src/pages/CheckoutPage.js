@@ -161,7 +161,14 @@ const CheckoutPage = () => {
   // Обработчик применения промокода
   const handlePromoCodeApplied = (promoData) => {
     if (promoData) {
-      const calculatedDiscount = promoData.discount;
+      // Рассчитываем скидку
+      let calculatedDiscount = 0;
+      if (promoData.discount_percent) {
+        calculatedDiscount = Math.floor(cartTotal * promoData.discount_percent / 100);
+      } else if (promoData.discount_amount) {
+        calculatedDiscount = Math.min(promoData.discount_amount, cartTotal);
+      }
+      
       setDiscountAmount(calculatedDiscount);
       console.log('Промокод применен:', promoData, 'Скидка:', calculatedDiscount);
     } else {

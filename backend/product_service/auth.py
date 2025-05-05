@@ -95,8 +95,8 @@ async def get_current_user(
         logger.info("Токен декодирован успешно: user_id=%s, is_admin=%s, is_super_admin=%s", user_id, is_admin, is_super_admin)
         
         return User(
-            id=int(user_id), 
-            is_admin=is_admin, 
+            id=int(user_id),
+            is_admin=is_admin,
             is_super_admin=is_super_admin,
             is_active=is_active
         )

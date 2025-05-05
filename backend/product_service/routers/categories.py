@@ -175,6 +175,7 @@ async def delete_category(
     category_id: int,
     session: SessionDep,
 ):
+    """Удалить категорию по ID."""
     # Находим категорию по ID
     query = select(CategoryModel).where(CategoryModel.id == category_id)
     result = await session.execute(query)

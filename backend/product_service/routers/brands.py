@@ -205,7 +205,7 @@ async def delete_brand(
         ) from e
     except Exception as e:
         await session.rollback()
-        logger.error(f"Неизвестная ошибка при удалении бренда: {str(e)}")
+        logger.error("Неизвестная ошибка при удалении бренда: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при удалении бренда"

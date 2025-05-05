@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from models import Base
 
 from dotenv import load_dotenv
+from collections.abc import AsyncGenerator
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -65,7 +66,7 @@ async def setup_database():
         logger.error("Ошибка при создании таблиц: %s", str(e))
         raise
 
-async def get_session() -> AsyncSession:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Предоставляет асинхронную сессию базы данных"""
     async with AsyncSessionLocal() as session:
         try:

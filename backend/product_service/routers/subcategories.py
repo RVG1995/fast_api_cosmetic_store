@@ -31,6 +31,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 @router.get('', response_model=List[SubCategorySchema])
 async def get_subcategories(session: SessionDep):
+    """Получить список всех подкатегорий."""
     # Формируем ключ кэша
     cache_key = f"{CACHE_KEYS['subcategories']}all"
     
@@ -223,7 +224,7 @@ async def delete_subcategory(
         await invalidate_cache(f"{CACHE_KEYS['products']}*")
         
         return None
-    except IntegrityError:
+    except IntegrityError as e:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -231,7 +232,7 @@ async def delete_subcategory(
         ) from e
     except Exception as e:
         await session.rollback()
-        logger.error(f"Неизвестная ошибка при удалении подкатегории: {str(e)}")
+        logger.error("Неизвестная ошибка при удалении подкатегории: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при удалении подкатегории"

@@ -3,11 +3,10 @@ import logging
 import random
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, text
-import os
+from sqlalchemy import select
 from dotenv import load_dotenv
 
-from models import CategoryModel, SubCategoryModel, BrandModel, CountryModel, ProductModel, Base
+from models import CategoryModel, SubCategoryModel, BrandModel, CountryModel, ProductModel
 from database import DATABASE_URL
 
 # Настройка логирования

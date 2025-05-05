@@ -304,7 +304,41 @@ export const OrderProvider = ({ children }) => {
       
       if (error.response) {
         console.error("Детали ошибки:", error.response.data);
-        setError(error.response.data.detail || "Ошибка при создании заказа. Попробуйте еще раз.");
+        
+        // Проверяем формат ошибки
+        if (error.response.data.detail && Array.isArray(error.response.data.detail)) {
+          const errorMessages = error.response.data.detail.map(err => {
+            // Извлекаем понятное сообщение из ошибки
+            if (typeof err.msg === 'string') {
+              // Удаляем префикс "Value error, " если он есть
+              const cleanMsg = err.msg.replace('Value error, ', '');
+              
+              // Добавляем название поля, если оно есть
+              const fieldName = err.loc && err.loc.length > 1 ? err.loc[1] : '';
+              const fieldLabels = {
+                'full_name': 'ФИО',
+                'email': 'Email',
+                'phone': 'Телефон',
+                'region': 'Регион',
+                'city': 'Город',
+                'street': 'Улица',
+                'comment': 'Комментарий',
+                'promo_code': 'Промокод'
+              };
+              
+              const fieldLabel = fieldLabels[fieldName] || fieldName;
+              
+              return fieldLabel ? `${fieldLabel}: ${cleanMsg}` : cleanMsg;
+            }
+            return typeof err === 'object' ? JSON.stringify(err) : String(err);
+          }).join('. ');
+          
+          setError(errorMessages);
+        } else if (error.response.data.detail && typeof error.response.data.detail === 'string') {
+          setError(error.response.data.detail);
+        } else {
+          setError("Ошибка при создании заказа. Попробуйте еще раз.");
+        }
       } else {
         setError("Ошибка соединения с сервером. Проверьте подключение к интернету.");
       }

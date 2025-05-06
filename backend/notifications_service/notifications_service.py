@@ -136,7 +136,7 @@ def create_order_email_content(order_data, new_status_name=None, stock=None):
 
 
 async def send_email_message(
-    order_data, token=None
+    user_id, email, order_id, token=None
 ):
     """
     Отправляет сообщение с данными для email в очередь
@@ -157,7 +157,11 @@ async def send_email_message(
         queue = await declare_queue(channel, "email_message")
 
         # Всегда используем переданный dict как тело сообщения
-        message_body = order_data
+        message_body = {
+            "user_id": user_id,
+            "email": email,
+            "order_id": order_id
+        }
         
         # Отправляем сообщение
         await channel.default_exchange.publish(

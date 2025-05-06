@@ -145,11 +145,11 @@ async def check_settings(
 @router.post("/settings/events", dependencies=[Depends(verify_service_jwt)])
 async def receive_notification(event: schemas.NotificationEvent, db: AsyncSession = Depends(get_db)):
     """Обработка входящих событий уведомлений."""
-    logger.info("[POST /settings/events] event_type=%s, user_id=%s, payload=%s", event.event_type, event.user_id, event.payload)
+    logger.info("[POST /settings/events] event_type=%s, user_id=%s", event.event_type, event.user_id)
     flags = await check_settings(event.user_id, event.event_type, db)
     if flags['email_enabled'] == True and event.event_type == 'order.created':
-        if event.payload.get('email') and event.payload.get('user_id'):
-            await send_email_message(event.payload)
+        if event.user_id and event.email:
+            await send_email_message(event.user_id, event.email, event.order_id)
     elif flags['email_enabled'] == True and event.event_type == 'order.status_changed':
         if event.payload.get('email') and event.payload.get('user_id'):
             await update_order_status(

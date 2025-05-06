@@ -247,7 +247,7 @@ async def close_redis() -> None:
 
 # Специализированные функции для кэширования заказов
 
-async def cache_order(order_id: int, order_data: Dict[str, Any], admin: bool = False) -> None:
+async def cache_order(order_id: int, order_data: Dict[str, Any], admin: bool = False, cache_key: Optional[str] = None) -> None:
     """
     Кэширование данных заказа
     
@@ -255,36 +255,24 @@ async def cache_order(order_id: int, order_data: Dict[str, Any], admin: bool = F
         order_id: ID заказа
         order_data: Данные заказа для кэширования
         admin: Флаг, указывающий, что кэширование выполняется для админской панели
+        cache_key: Пользовательский ключ кэша (если None, будет использован стандартный ключ)
     """
     try:
-        key = f"{CacheKeys.ORDER_PREFIX}{order_id}"
+        # Если ключ не указан, используем стандартный формат
+        key = cache_key if cache_key else f"{CacheKeys.ORDER_PREFIX}{order_id}"
         await cache_service.set(key, order_data, DEFAULT_CACHE_TTL)
-        logger.info("Заказ %s успешно кэширован%s", order_id, ' (админ)' if admin else '')
+        logger.info("Заказ %s успешно кэширован по ключу %s%s", order_id, key, ' (админ)' if admin else '')
     except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
         logger.error("Ошибка при кэшировании заказа %s: %s", order_id, str(e))
 
-async def get_cached_order(order_id: int, admin: bool = False) -> Optional[Dict[str, Any]]:
-    """
-    Получение данных заказа из кэша
-    
-    Args:
-        order_id: ID заказа
-        admin: Флаг, указывающий, что получение выполняется для админской панели
+async def get_cached_order(order_id, user_id=None, admin=False):
+    cache_key = f"order_{order_id}"
+    if user_id:
+        cache_key = f"order_{order_id}_user_{user_id}"
+    elif admin:
+        cache_key = f"order_{order_id}_admin"
         
-    Returns:
-        Данные заказа или None, если нет в кэше
-    """
-    try:
-        key = f"{CacheKeys.ORDER_PREFIX}{order_id}"
-        data = await cache_service.get(key)
-        if data:
-            logger.info("Найден кэш для заказа %s%s", order_id, ' (админ)' if admin else '')
-            return data
-        logger.info("Кэш для заказа %s не найден%s", order_id, ' (админ)' if admin else '')
-        return None
-    except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
-        logger.error("Ошибка при получении заказа %s из кэша: %s", order_id, str(e))
-        return None
+    return await get_cached_data(cache_key)
 
 async def invalidate_order_cache(order_id: int) -> None:
     """Инвалидация кэша конкретного заказа"""

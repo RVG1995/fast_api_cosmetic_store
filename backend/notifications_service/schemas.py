@@ -38,8 +38,9 @@ class NotificationSettingResponse(NotificationSettingBase):
 class NotificationEvent(BaseModel):
     """Схема события уведомления."""
     event_type: str
-    user_id: int
-    payload: dict
+    user_id: Optional[int] = None
+    email: str
+    order_id: int
 
 class UserNotificationActivation(BaseModel):
     """Схема для активации уведомлений пользователя через сервисный API."""

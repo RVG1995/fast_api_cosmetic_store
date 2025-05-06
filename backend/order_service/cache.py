@@ -255,10 +255,10 @@ async def cache_order(order_id: int, order_data: Dict[str, Any], admin: bool = F
         order_id: ID заказа
         order_data: Данные заказа для кэширования
         admin: Флаг, указывающий, что кэширование выполняется для админской панели
-        cache_key: Пользовательский ключ кэша (если None, будет использован стандартный ключ)
+        cache_key: Кастомный ключ кэша (если указан)
     """
     try:
-        # Если ключ не указан, используем стандартный формат
+        # Если передан кастомный ключ, используем его
         key = cache_key if cache_key else f"{CacheKeys.ORDER_PREFIX}{order_id}"
         await cache_service.set(key, order_data, DEFAULT_CACHE_TTL)
         logger.info("Заказ %s успешно кэширован по ключу %s%s", order_id, key, ' (админ)' if admin else '')
@@ -266,11 +266,24 @@ async def cache_order(order_id: int, order_data: Dict[str, Any], admin: bool = F
         logger.error("Ошибка при кэшировании заказа %s: %s", order_id, str(e))
 
 async def get_cached_order(order_id, user_id=None, admin=False):
-    cache_key = f"order_{order_id}"
+    """
+    Получение кэшированных данных заказа
+    
+    Args:
+        order_id: ID заказа
+        user_id: ID пользователя (опционально)
+        admin: Флаг, указывающий, что запрос от админа
+        
+    Returns:
+        Optional[Any]: Данные заказа из кэша или None
+    """
+    # Используем тот же формат ключа, что и при сохранении (с двоеточием)
+    cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}"
+    
     if user_id:
-        cache_key = f"order_{order_id}_user_{user_id}"
+        cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}:user:{user_id}"
     elif admin:
-        cache_key = f"order_{order_id}_admin"
+        cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}:admin"
         
     return await get_cached_data(cache_key)
 

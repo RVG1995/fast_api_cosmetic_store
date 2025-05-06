@@ -15,7 +15,7 @@ load_dotenv()
 
 logger = logging.getLogger("order_service.notification_api")
 
-async def check_notification_settings(user_id: str, event_type: str, email: str, order_id: int) -> Dict[str, bool]:
+async def check_notification_settings(user_id: int, event_type: str, email: str, order_id: int) -> Dict[str, bool]:
     """
     Проверяет настройки уведомлений пользователя для указанного типа события
     
@@ -49,16 +49,15 @@ async def check_notification_settings(user_id: str, event_type: str, email: str,
         
         # now response contains result
         if response.status_code == 200:
-            settings = response.json()
-            logger.info("Получены настройки уведомлений для пользователя %s, тип события %s: %s", user_id, event_type, settings)
-            return settings
+            logger.info("Получены настройки уведомлений для пользователя %s", user_id)
+            return {"ok": True}  # По умолчанию уведомления включены
         elif response.status_code == 404:
             # Настройки не найдены, используем значения по умолчанию
             logger.info("Настройки уведомлений для пользователя %s, тип события %s не найдены", user_id, event_type)
-            return {"email_enabled": True, "push_enabled": True}
+            return {"404": False}
         else:
             logger.warning("Ошибка при получении настроек уведомлений: %s, %s", response.status_code, response.text)
-            return {"email_enabled": True, "push_enabled": True}  # По умолчанию уведомления включены
+            return {"warning": False}
                 
     except (httpx.HTTPError, httpx.TimeoutException, httpx.RequestError) as e:
         logger.error("Ошибка при запросе настроек уведомлений: %s", str(e))

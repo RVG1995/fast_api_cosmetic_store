@@ -38,7 +38,7 @@ class NotificationSettingResponse(NotificationSettingBase):
 class NotificationEvent(BaseModel):
     """Схема события уведомления."""
     event_type: str
-    user_id: Optional[int] = None
+    user_id: int
     email: str
     order_id: int
 

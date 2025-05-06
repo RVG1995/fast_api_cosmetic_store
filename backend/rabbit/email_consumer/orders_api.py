@@ -15,7 +15,7 @@ load_dotenv()
 
 logger = logging.getLogger("order_service.notification_api")
 
-async def check_order_info(user_id: str, order_id: int) -> Dict[str, bool]:
+async def check_order_info(order_id: int) -> Dict[str, bool]:
     """
     Проверяет информацию о заказе
     
@@ -37,7 +37,6 @@ async def check_order_info(user_id: str, order_id: int) -> Dict[str, bool]:
                 response = await client.get(
                     f"{ORDER_SERVICE_URL}/orders/{order_id}/service",
                     headers=headers, timeout=5.0,
-                    params={"user_id": user_id}
                 )
                 if response.status_code == 401:
                     # token expired - clear cache and retry
@@ -49,11 +48,11 @@ async def check_order_info(user_id: str, order_id: int) -> Dict[str, bool]:
         # now response contains result
         if response.status_code == 200:
             order_data = response.json()
-            logger.info("Получена информация о заказе %s для пользователя %s", order_id, user_id)
+            logger.info("Получена информация о заказе %s", order_id)
             return order_data
         elif response.status_code == 404:
             # Настройки не найдены, используем значения по умолчанию
-            logger.info("Заказ %s для пользователя %s не найден", order_id, user_id)
+            logger.info("Заказ %s не найден", order_id)
             return None
         else:
             logger.warning("Ошибка при получении информации о заказе: %s, %s", response.status_code, response.text)

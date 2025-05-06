@@ -41,14 +41,12 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
             logger.info("Получено сообщение email_message: %s", message_body)
         
         # Извлекаем необходимые данные
-        email = message_body["email"]
-        user_id = message_body["user_id"]
         order_number = message_body["order_id"]
 
         # Получаем информацию о заказе
-        order_info = await check_order_info(user_id, order_number)
+        order_info = await check_order_info(order_number)
         if not order_info:
-            logger.warning("Не удалось получить информацию о заказе %s для пользователя %s", order_number, user_id)
+            logger.warning("Не удалось получить информацию о заказе %s", order_number)
             await message.reject(requeue=False)
             return
 
@@ -59,7 +57,7 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
         html_content = create_order_email_content(order_info)
         
         # Отправляем письмо
-        await send_email(email, subject, html_content)
+        await send_email(order_info.get('email'), subject, html_content)
         
         logger.info("Сообщение для заказа %s успешно обработано", order_number)
         

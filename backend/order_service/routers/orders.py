@@ -34,7 +34,9 @@ from cache import (
     get_cached_order, cache_order, invalidate_order_cache,
     get_cached_user_orders, cache_user_orders,
     get_cached_order_statistics, cache_order_statistics, invalidate_statistics_cache,
-    get_cached_orders_list, cache_orders_list)
+    get_cached_orders_list, cache_orders_list, CacheKeys, get_cached_data, set_cached_data,
+    DEFAULT_CACHE_TTL
+)
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -130,7 +132,7 @@ async def create_new_order(
             if order_data.email and user_id != None:
                 logger.info("Отправка подтверждения заказа на email: %s", order_data.email)
                 # CONVERT loaded_order to plain dict for JSON payload
-                await check_notification_settings(loaded_order.user_id, "order.created", loaded_order.email, loaded_order.id)
+                await check_notification_settings(loaded_order.user_id,"order.created", loaded_order.email, loaded_order.id)
         except (ConnectionError, TimeoutError, ValueError) as e:
             logger.error("Ошибка при отправке email о заказе: %s", str(e))
         
@@ -155,10 +157,10 @@ async def create_new_order(
                 logger.warning("Не удалось загрузить промокод %s для заказа %s: %s", loaded_order.promo_code_id, loaded_order.id, str(e))
         
         # Кэшируем результат в любом случае, но с разными ключами
-        cache_key = f"order_{order.id}"
+        cache_key = f"{CacheKeys.ORDER_PREFIX}{order.id}"
         if user_id:
             # Для авторизованных пользователей - отдельный кэш
-            cache_key = f"order_{order.id}_user_{user_id}"
+            cache_key = f"{CacheKeys.ORDER_PREFIX}{order.id}:user:{user_id}"
         
         await cache_order(order.id, response_with_promo, cache_key=cache_key)
         logger.info("Данные о заказе %s добавлены в кэш с ключом %s", order.id, cache_key)
@@ -339,35 +341,19 @@ async def get_order(
             )
         
         # Определяем пользователя
-        user_id = None
+        user_id = current_user["user_id"]
         
-        # Если запрос от внутреннего сервиса, разрешаем получение заказа без проверки user_id
-        if current_user.get("is_service"):
-            logger.info("Внутренний запрос от сервиса %s для заказа %s", current_user.get('service_name'), order_id)
-            user_id = None  # None означает получение заказа без проверки принадлежности конкретному пользователю
-        else:
-            # Получаем ID пользователя из токена для обычных пользователей
-            user_id = current_user["user_id"]
-        
-        # Пытаемся получить данные из кэша, если запрос не от сервиса
-        # Для запросов от сервисов всегда получаем свежие данные
-        if not current_user.get("is_service"):
-            cached_order = await get_cached_order(order_id)
-            if cached_order:
-                # Проверка доступа пользователя к заказу
-                if user_id and cached_order.user_id != user_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"У вас нет доступа к заказу с ID {order_id}",
-                    )
-                logger.info("Данные о заказе %s получены из кэша", order_id)
-                return cached_order
+        # Пытаемся получить данные из кэша
+        cached_order = await get_cached_order(order_id, user_id)
+        if cached_order:
+            logger.info("Данные о заказе %s получены из кэша для пользователя %s", order_id, user_id)
+            return cached_order
             
         # Получаем заказ
         order = await get_order_by_id(
             session=session,
             order_id=order_id,
-            user_id=user_id  # Если user_id=None и запрос от сервиса, то заказ будет получен без проверки пользователя
+            user_id=user_id
         )
         
         if not order:
@@ -392,12 +378,11 @@ async def get_order(
             except (ValueError, AttributeError, KeyError) as e:
                 logger.warning("Не удалось загрузить промокод %s для заказа %s: %s", order.promo_code_id, order.id, str(e))
         
-        # Кэшируем результат в любом случае, но с разными ключами
-        cache_key = f"order_{order_id}"
+        # Кэшируем результат
+        cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}"
         if user_id:
-            # Для авторизованных пользователей - отдельный кэш
-            cache_key = f"order_{order_id}_user_{user_id}"
-        
+            cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}:user:{user_id}"
+            
         await cache_order(order_id, response_with_promo, cache_key=cache_key)
         logger.info("Данные о заказе %s добавлены в кэш с ключом %s", order_id, cache_key)
         
@@ -754,8 +739,9 @@ async def get_order_admin(
             except (ValueError, AttributeError, KeyError) as e:
                 logger.warning("Не удалось загрузить промокод %s для заказа %s: %s", order.promo_code_id, order.id, str(e))
         
-        # Кэшируем результат
-        await cache_order(order_id, response_with_promo, admin=True)
+        # Кэшируем результат с админским ключом
+        cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}:admin"
+        await cache_order(order_id, response_with_promo, admin=True, cache_key=cache_key)
         logger.info("Данные о заказе %s добавлены в кэш (админ)", order_id)
         
         return response_with_promo
@@ -1372,31 +1358,26 @@ async def create_order_admin(
 @router.get("/{order_id}/service", response_model=OrderDetailResponseWithPromo, dependencies=[Depends(verify_service_jwt)])
 async def get_order_service(
     order_id: int = Path(..., ge=1),
-    user_id: Optional[int] = None,
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Получение информации о заказе пользователя по ID.
+    Получение информации о заказе для сервисных нужд.
     
     - **order_id**: ID заказа
     """
     try:
-        cached_order = await get_cached_order(order_id)
+        # Для сервисного запроса используем простой ключ без user_id
+        cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}:service"
+        cached_order = await get_cached_data(cache_key)
         if cached_order:
-            # Проверка доступа пользователя к заказу
-            if user_id and cached_order.user_id != user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"У вас нет доступа к заказу с ID {order_id}",
-                )
-            logger.info("Данные о заказе %s получены из кэша", order_id)
+            logger.info("Данные о заказе %s получены из кэша (сервисный запрос)", order_id)
             return cached_order
             
-        # Получаем заказ
+        # Получаем заказ без проверки на принадлежность пользователю
         order = await get_order_by_id(
             session=session,
             order_id=order_id,
-            user_id=user_id  # Если user_id=None и запрос от сервиса, то заказ будет получен без проверки пользователя
+            user_id=None  # Для сервисных запросов получаем заказ без проверки пользователя
         )
         
         if not order:
@@ -1421,14 +1402,9 @@ async def get_order_service(
             except (ValueError, AttributeError, KeyError) as e:
                 logger.warning("Не удалось загрузить промокод %s для заказа %s: %s", order.promo_code_id, order.id, str(e))
         
-        # Кэшируем результат в любом случае, но с разными ключами
-        cache_key = f"order_{order_id}"
-        if user_id:
-            # Для авторизованных пользователей - отдельный кэш
-            cache_key = f"order_{order_id}_user_{user_id}"
-        
-        await cache_order(order_id, response_with_promo, cache_key=cache_key)
-        logger.info("Данные о заказе %s добавлены в кэш с ключом %s", order_id, cache_key)
+        # Кэшируем результат со специальным ключом для сервисных запросов
+        await set_cached_data(cache_key, response_with_promo, DEFAULT_CACHE_TTL)
+        logger.info("Данные о заказе %s добавлены в кэш для сервисных запросов", order_id)
         
         return response_with_promo
     except HTTPException:

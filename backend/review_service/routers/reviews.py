@@ -16,10 +16,7 @@ from services import (
     add_review_reaction, get_product_review_stats, get_store_review_stats,
     get_review_by_id, invalidate_review_cache, get_batch_product_review_stats
 )
-import logging
-
-# Настройка логирования
-logger = logging.getLogger("review_service.routers.reviews")
+from config import logger, DEFAULT_PAGE, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 
 # Создание роутера
 router = APIRouter(
@@ -128,8 +125,8 @@ async def get_review(
 @router.get("/products/{product_id}", response_model=PaginatedResponse)
 async def get_reviews_for_product(
     product_id: int = Path(..., description="ID товара"),
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    limit: int = Query(10, ge=1, le=50, description="Количество записей на странице"),
+    page: int = Query(DEFAULT_PAGE, ge=1, description="Номер страницы"),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Количество записей на странице"),
     session: AsyncSession = Depends(get_session),
     current_user: Optional[User] = Depends(get_current_user)
 ):
@@ -145,8 +142,8 @@ async def get_reviews_for_product(
 
 @router.get("/store/all", response_model=PaginatedResponse)
 async def get_store_all_reviews(
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    limit: int = Query(10, ge=1, le=50, description="Количество записей на странице"),
+    page: int = Query(DEFAULT_PAGE, ge=1, description="Номер страницы"),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Количество записей на странице"),
     session: AsyncSession = Depends(get_session),
     current_user: Optional[User] = Depends(get_current_user)
 ):

@@ -1,30 +1,22 @@
-import os
-import requests
-import logging
+import httpx
 import jwt
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any, Union
 from fastapi import HTTPException, Depends, Cookie, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from dotenv import load_dotenv
 import json
 
-# Загружаем переменные окружения
-load_dotenv()
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("review_service.auth")
+from config import settings, logger
 
 # URL сервиса аутентификации
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
+AUTH_SERVICE_URL = settings.AUTH_SERVICE_URL
 
 # Схема OAuth2 для получения токена из заголовка Authorization
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 # Секретный ключ для проверки токенов
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
-ALGORITHM = "HS256"
+SECRET_KEY = settings.JWT_SECRET_KEY
+ALGORITHM = settings.JWT_ALGORITHM
 
 class User:
     """Класс представления пользователя в системе"""
@@ -94,7 +86,8 @@ async def get_current_user(
         headers = {"Authorization": f"Bearer {token}"}
         logger.info(f"Запрашиваем данные пользователя из сервиса auth: {AUTH_SERVICE_URL}/auth/users/me/profile")
         try:
-            response = requests.get(f"{AUTH_SERVICE_URL}/auth/users/me/profile", headers=headers, timeout=10)
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{AUTH_SERVICE_URL}/auth/users/me/profile", headers=headers, timeout=10.0)
             
             if response.status_code != 200:
                 logger.warning(f"Не удалось получить профиль пользователя: код {response.status_code}")
@@ -113,7 +106,7 @@ async def get_current_user(
             except Exception as e:
                 logger.error(f"Ошибка при обработке ответа сервиса аутентификации: {str(e)}")
                 return User({"id": int(user_id), "email": "", "first_name": "Пользователь", "last_name": str(user_id)})
-        except requests.exceptions.RequestException as e:
+        except httpx.RequestError as e:
             logger.error(f"Ошибка соединения с сервисом аутентификации: {str(e)}")
             # Создаем минимальный объект пользователя, чтобы процесс мог продолжаться
             return User({"id": int(user_id), "email": "", "first_name": "Пользователь", "last_name": str(user_id)})

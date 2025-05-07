@@ -1,51 +1,15 @@
-import os
 import json
-import logging
+import hashlib
 from typing import Any, Dict, List, Optional, Union, Callable
 import redis.asyncio as redis
-import hashlib
-from dotenv import load_dotenv
 from functools import wraps
 
-# Загружаем переменные окружения
-load_dotenv()
+from config import settings, get_redis_url, get_cache_ttl, get_cache_keys, logger
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("review_service.cache")
-
-# Получаем параметры подключения к Redis из переменных окружения
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = 4  # Review service использует DB 4
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
-
-# Настройки кэширования
-CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
-
-# Время жизни кэша в секундах
-CACHE_TTL = {
-    "review": 3600,  # 1 час для отдельного отзыва
-    "reviews": 1800,  # 30 минут для списков отзывов
-    "statistics": 3600,  # 1 час для статистики
-    "permissions": 300,  # 5 минут для проверки разрешений пользователя
-}
-
-# Префиксы ключей кэша
-CACHE_KEYS = {
-    "review": "review_service:review:",
-    "product_reviews": "review_service:product_reviews:",
-    "store_reviews": "review_service:store_reviews:",
-    "user_reviews": "review_service:user_reviews:",
-    "permissions": "review_service:permissions:",
-    "product_statistics": "review_service:product_statistics:",
-    "store_statistics": "review_service:store_statistics:",
-    "product_review_stats": "review_service:product_review_stats:",
-    "store_review_stats": "review_service:store_review_stats:",
-    "test": "review_service:test:",
-    "product_batch_statistics": "product_batch_stats:",
-    "review_detail": "review_detail:"
-}
+# Настройки кэширования из конфигурации
+CACHE_ENABLED = settings.CACHE_ENABLED
+CACHE_TTL = get_cache_ttl()
+CACHE_KEYS = get_cache_keys()
 
 class CacheService:
     """Сервис кэширования данных с использованием Redis"""
@@ -67,23 +31,20 @@ class CacheService:
             return
             
         try:
-            # Создаем строку подключения Redis
-            redis_url = "redis://"
-            if REDIS_PASSWORD:
-                redis_url += f":{REDIS_PASSWORD}@"
-            redis_url += f"{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+            # Получаем URL подключения к Redis из конфигурации
+            redis_url = get_redis_url()
             
             # Создаем асинхронное подключение к Redis с использованием нового API
             self.redis = await redis.Redis(
-                host=REDIS_HOST,
-                port=REDIS_PORT,
-                db=REDIS_DB,
-                password=REDIS_PASSWORD,
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                db=settings.REDIS_DB,
+                password=settings.REDIS_PASSWORD,
                 decode_responses=True,  # Декодируем ответы в строки
                 socket_timeout=5,
             )
             
-            logger.info(f"Подключение к Redis для кэширования успешно: {REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+            logger.info(f"Подключение к Redis для кэширования успешно: {settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}")
         except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
             logger.error(f"Ошибка подключения к Redis для кэширования: {str(e)}")
             self.redis = None
@@ -200,7 +161,7 @@ class CacheService:
             logger.debug(f"Удалено {deleted_count} ключей по шаблону: {pattern}")
             return deleted_count
         except Exception as e:
-            logger.error(f"Ошибка при удалении данных из кэша по шаблону: {str(e)}")
+            logger.error(f"Ошибка при удалении ключей по шаблону: {str(e)}")
             return 0
     
     def get_key_for_function(self, prefix: str, *args, **kwargs) -> str:

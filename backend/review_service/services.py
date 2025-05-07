@@ -1,23 +1,21 @@
 import os
 import httpx
 import logging
-import json
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
-from models import ReviewModel, AdminCommentModel, ReviewReactionModel, ReviewTypeEnum, ReactionTypeEnum
-from schema import ProductReviewCreate, StoreReviewCreate, AdminCommentCreate, ReactionCreate, ReviewRead, ReviewStats, PaginatedResponse
+from models import ReviewModel, AdminCommentModel, ReviewReactionModel, ReviewTypeEnum
+from schema import ProductReviewCreate, StoreReviewCreate, AdminCommentCreate, ReactionCreate, ReviewRead, ReviewStats
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, bindparam
 from auth import User
 from math import ceil
-import asyncio
 from cache import (
-    cache_get, cache_set, cache_delete, invalidate_review_cache,
+    cache_get, cache_set, invalidate_review_cache,
     invalidate_product_reviews_cache, invalidate_store_reviews_cache,
     invalidate_user_reviews_cache, CACHE_KEYS, CACHE_TTL
 )
 from sqlalchemy.sql import select, func
-from fastapi import HTTPException, status
+from config import settings, logger
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -27,8 +25,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("review_service.services")
 
 # URL других сервисов
-ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://localhost:8003")
-PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
+ORDER_SERVICE_URL = settings.ORDER_SERVICE_URL
+PRODUCT_SERVICE_URL = settings.PRODUCT_SERVICE_URL
 
 
 class ProductApi:

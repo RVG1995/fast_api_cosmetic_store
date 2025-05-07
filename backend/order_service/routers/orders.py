@@ -132,7 +132,7 @@ async def create_new_order(
             if order_data.email and user_id != None:
                 logger.info("Отправка подтверждения заказа на email: %s", order_data.email)
                 # CONVERT loaded_order to plain dict for JSON payload
-                await check_notification_settings(loaded_order.user_id,"order.created", loaded_order.email, loaded_order.id)
+                await check_notification_settings(loaded_order.user_id,"order.created", loaded_order.id)
         except (ConnectionError, TimeoutError, ValueError) as e:
             logger.error("Ошибка при отправке email о заказе: %s", str(e))
         
@@ -918,16 +918,8 @@ async def update_order_status(
         
         # Отправляем уведомление об изменении статуса через Notifications Service
         try:
-            # Подготавливаем payload: убираем историю статусов и обновляем статус
-            payload = jsonable_encoder(updated_order, exclude={'status_history'})
-            payload.pop('status', None)
-            payload['status'] = new_status_name
             if updated_order.email:
-                await check_notification_settings(
-                    updated_order.user_id,
-                    "order.status_changed",
-                    payload
-                )
+                await check_notification_settings(updated_order.user_id, "order.status_changed", updated_order.id)
             logger.info("Отправлено событие 'order.status_changed' для заказа %s", order_id)
         except (ConnectionError, TimeoutError, ValueError) as e:
             logger.error("Ошибка при отправке события изменения статуса: %s", e)
@@ -1316,7 +1308,7 @@ async def create_order_admin(
         try:
             if order_data.email and user_id != None:
                 logger.info("Отправка подтверждения заказа на email: %s", order_data.email)
-                await check_notification_settings(loaded_order.user_id, "order.created", loaded_order.email, loaded_order.id)
+                await check_notification_settings(loaded_order.user_id, "order.created", loaded_order.id)
         except (ConnectionError, TimeoutError, ValueError) as e:
             logger.error("Ошибка при отправке email о заказе: %s", str(e))
         
@@ -1391,6 +1383,16 @@ async def get_order_service(
         
         # Создаем расширенный ответ с возможностью добавления промокода
         response_with_promo = OrderDetailResponseWithPromo(**order_response.model_dump())
+        
+        # Получаем только последний статус, если история статусов существует
+        if hasattr(response_with_promo, "status_history") and response_with_promo.status_history:
+            # Сортируем историю статусов по дате изменения (вместо created_at используем changed_at)
+            sorted_history = sorted(
+                response_with_promo.status_history,
+                key=lambda x: x.changed_at,
+                reverse=True
+            )
+            response_with_promo.status_history = [sorted_history[0]] if sorted_history else []
         
         # Вручную обрабатываем промокод
         if order.promo_code_id:

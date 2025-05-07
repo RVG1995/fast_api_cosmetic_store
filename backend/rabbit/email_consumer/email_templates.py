@@ -87,12 +87,12 @@ def create_order_email_content(order_data):
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Подтверждение заказа #{order_data.get('id')}</title>
+        <title>Подтверждение заказа #{order_data.get('order_number')}</title>
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 650px; margin: 0 auto;">
         <div style="background-color: #f8f9fa; padding: 20px; text-align: center; margin-bottom: 20px;">
             <h1 style="color: #4a5568; margin: 0;">Ваш заказ подтвержден</h1>
-            <p style="font-size: 18px; margin-top: 10px;">Заказ #{order_data.get('id')}</p>
+            <p style="font-size: 18px; margin-top: 10px;">Заказ #{order_data.get('order_number')}</p>
         </div>
         
         <div style="padding: 0 20px;">
@@ -103,7 +103,7 @@ def create_order_email_content(order_data):
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                 <tr>
                     <td style="padding: 5px 0; width: 150px;"><strong>Номер заказа:</strong></td>
-                    <td>{order_data.get('id')}</td>
+                    <td>{order_data.get('order_number')}</td>
                 </tr>
                 <tr>
                     <td style="padding: 5px 0;"><strong>Дата:</strong></td>
@@ -275,12 +275,12 @@ def create_status_update_email_content(order_data):
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Изменение статуса заказа #{order_data.get('id')}</title>
+        <title>Изменение статуса заказа #{order_data.get('order_number')}</title>
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 650px; margin: 0 auto;">
         <div style="background-color: #f8f9fa; padding: 20px; text-align: center; margin-bottom: 20px;">
             <h1 style="color: #4a5568; margin: 0;">Статус заказа изменен</h1>
-            <p style="font-size: 18px; margin-top: 10px;">Заказ #{order_data.get('id')}</p>
+            <p style="font-size: 18px; margin-top: 10px;">Заказ #{order_data.get('order_number')}</p>
         </div>
         
         <div style="padding: 0 20px;">
@@ -291,7 +291,7 @@ def create_status_update_email_content(order_data):
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                 <tr>
                     <td style="padding: 5px 0; width: 150px;"><strong>Номер заказа:</strong></td>
-                    <td>{order_data.get('id')}</td>
+                    <td>{order_data.get('order_number')}</td>
                 </tr>
                 <tr>
                     <td style="padding: 5px 0;"><strong>Дата:</strong></td>

@@ -53,7 +53,7 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
 
         
         # Формируем содержимое письма
-        subject = f"Подтверждение заказа #{order_number}"
+        subject = f"Подтверждение заказа {order_info.get('order_number')}"
         html_content = create_order_email_content(order_info)
         
         # Отправляем письмо
@@ -280,25 +280,22 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
         else:
             logger.info("Получено сообщение update_message: %s", message_body)
         
-        # Добавляем отладочное логирование для промокода
-        if 'promo_code' in message_body:
-            logger.info("Промокод в update_message: %s", message_body['promo_code'])
-        else:
-            logger.warning("Промокод отсутствует в update_message для заказа %s", message_body.get('order_number'))
-            
-        if 'discount_amount' in message_body:
-            logger.info("Сумма скидки в update_message: %s", message_body['discount_amount'])
-            
         # Извлекаем необходимые данные
-        email = message_body["email"]
-        order_number = message_body["id"]
+        order_number = message_body["order_id"]
+
+        # Получаем информацию о заказе
+        order_info = await check_order_info(order_number)
+        if not order_info:
+            logger.warning("Не удалось получить информацию о заказе %s", order_number)
+            await message.reject(requeue=False)
+            return
         
         # Формируем содержимое письма
-        subject = f"Обновление статуса заказа #{order_number}"
-        html_content = create_status_update_email_content(message_body)
+        subject = f"Обновление статуса заказа {order_info.get('order_number')}"
+        html_content = create_status_update_email_content(order_info)
         
         # Отправляем письмо
-        await send_email(email, subject, html_content)
+        await send_email(order_info.get('email'), subject, html_content)
         
         logger.info("Сообщение для заказа %s успешно обработано", order_number)
         

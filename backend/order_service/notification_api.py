@@ -15,7 +15,7 @@ load_dotenv()
 
 logger = logging.getLogger("order_service.notification_api")
 
-async def check_notification_settings(user_id: int, event_type: str, email: str, order_id: int) -> Dict[str, bool]:
+async def check_notification_settings(user_id: int, event_type: str, order_id: int) -> Dict[str, bool]:
     """
     Проверяет настройки уведомлений пользователя для указанного типа события
     
@@ -38,7 +38,7 @@ async def check_notification_settings(user_id: int, event_type: str, email: str,
                 response = await client.post(
                     f"{NOTIFICATION_SERVICE_URL}/notifications/settings/events",
                     headers=headers, timeout=5.0,
-                    json={"event_type":event_type, "user_id":user_id, "email":email, "order_id":order_id}
+                    json={"event_type":event_type, "user_id":user_id, "order_id":order_id}
                 )
                 if response.status_code == 401:
                     # token expired - clear cache and retry

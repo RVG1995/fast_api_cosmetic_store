@@ -289,7 +289,12 @@ async def get_cached_order(order_id, user_id=None, admin=False):
 
 async def invalidate_order_cache(order_id: int) -> None:
     """Инвалидация кэша конкретного заказа"""
-    await invalidate_cache(f"{CacheKeys.ORDER_PREFIX}{order_id}")
+    # Инвалидируем все ключи, связанные с этим заказом
+    await invalidate_cache(
+        f"{CacheKeys.ORDER_PREFIX}{order_id}*",  # Все ключи с этим префиксом
+        f"{CacheKeys.ORDER_PREFIX}{order_id}:service",  # Сервисный ключ
+        f"{CacheKeys.ORDER_PREFIX}{order_id}:admin"     # Админский ключ
+    )
     # Инвалидируем также связанные ключи
     await invalidate_cache(f"{CacheKeys.USER_ORDERS_PREFIX}*")
     await invalidate_cache(f"{CacheKeys.ADMIN_ORDERS_PREFIX}*")

@@ -39,7 +39,6 @@ class NotificationEvent(BaseModel):
     """Схема события уведомления."""
     event_type: str
     user_id: int
-    email: str
     order_id: int
 
 class UserNotificationActivation(BaseModel):

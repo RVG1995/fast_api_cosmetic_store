@@ -2,7 +2,6 @@
 Модуль кэширования для product_service. Использует Redis для хранения кэша, поддерживает асинхронные операции, TTL, инвалидацию и декоратор для кэширования функций.
 """
 
-import os
 import logging
 import hashlib
 from typing import Any, Optional, Callable
@@ -12,27 +11,17 @@ import pickle
 import redis.asyncio as redis
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError, ResponseError as RedisResponseError
 
+from config import settings, get_redis_url, get_cache_ttl, get_cache_keys
+
 # Настройка логирования
 logger = logging.getLogger("product_service")
 
-# Настройки Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = 1  # Product service использует DB 1
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
-
-# Настройки кэширования
-DEFAULT_CACHE_TTL = int(os.getenv("CACHE_TTL", "600"))  # TTL кэша в секундах (по умолчанию 10 минут)
-CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+# Настройки кэширования из конфигурации
+DEFAULT_CACHE_TTL = settings.CACHE_TTL
+CACHE_ENABLED = settings.CACHE_ENABLED
 
 # Ключи для кэширования различных типов данных
-CACHE_KEYS = {
-    "products": "products:",
-    "categories": "categories:",
-    "subcategories": "subcategories:",
-    "brands": "brands:",
-    "countries": "countries:",
-}
+CACHE_KEYS = get_cache_keys()
 
 class CacheService:
     """Сервис кэширования данных с использованием Redis"""
@@ -56,9 +45,9 @@ class CacheService:
         try:
             # Создаем строку подключения Redis
             redis_url = "redis://"
-            if REDIS_PASSWORD:
-                redis_url += f":{REDIS_PASSWORD}@"
-            redis_url += f"{REDIS_HOST}:{REDIS_PORT}"  # Убираем REDIS_DB из URL
+            if settings.REDIS_PASSWORD:
+                redis_url += f":{settings.REDIS_PASSWORD}@"
+            redis_url += f"{settings.REDIS_HOST}:{settings.REDIS_PORT}"  # Убираем REDIS_DB из URL
             
             # Создаем асинхронное подключение к Redis с использованием нового API
             self.redis = await redis.Redis.from_url(
@@ -68,9 +57,9 @@ class CacheService:
             )
             
             # Явно выбираем базу данных после создания соединения
-            await self.redis.select(REDIS_DB)
+            await self.redis.select(settings.REDIS_DB)
             
-            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", REDIS_HOST, REDIS_PORT, REDIS_DB)
+            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB)
         except (RedisConnectionError, RedisTimeoutError, RedisResponseError) as e:
             logger.error("Ошибка подключения к Redis для кэширования: %s", str(e))
             self.redis = None

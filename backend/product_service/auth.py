@@ -1,39 +1,20 @@
 """Модуль для авторизации и проверки JWT токенов в product_service."""
 import logging
-import pathlib
-import os
 from typing import Optional, Annotated
 
 from fastapi import Depends, HTTPException, status, Cookie, Request, Header
 from fastapi.security import OAuth2PasswordBearer
 import jwt
-from dotenv import load_dotenv
+
+from config import settings
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("product_auth")
 
-# Определяем пути к .env файлам
-current_dir = pathlib.Path(__file__).parent.absolute()
-env_file = current_dir / ".env"
-parent_env_file = current_dir.parent / ".env"
-
-# Проверяем и загружаем .env файлы
-if env_file.exists():
-    logger.info("Загружаем .env из %s", env_file)
-    load_dotenv(dotenv_path=env_file)
-    logger.info("Содержимое JWT_SECRET_KEY в .env: %s", os.getenv('JWT_SECRET_KEY', 'не найден'))
-elif parent_env_file.exists():
-    logger.info("Загружаем .env из %s", parent_env_file)
-    load_dotenv(dotenv_path=parent_env_file)
-    logger.info("Содержимое JWT_SECRET_KEY в родительском .env: %s", os.getenv('JWT_SECRET_KEY', 'не найден'))
-else:
-    logger.warning("Файл .env не найден!")
-
-# Константы для JWT
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
-# SECRET_KEY = "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke"  # Жестко закодированное значение для тестирования
-ALGORITHM = "HS256"
+# Константы для JWT из настроек
+SECRET_KEY = settings.JWT_SECRET_KEY
+ALGORITHM = settings.JWT_ALGORITHM
 
 logger.info("Загружена конфигурация JWT. SECRET_KEY: %s...", SECRET_KEY[:5])
 

@@ -1,15 +1,15 @@
-import os
 import logging
 from typing import Annotated
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends
-from database import setup_database, get_session, engine
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-# Импортируем функции для работы с кэшем
-from cache import cache_service,close_redis_connection
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from database import setup_database, get_session, engine
+from cache import cache_service, close_redis_connection
+from config import settings, get_cors_origins
 from routers import (
     product_router,
     category_router,
@@ -41,16 +41,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-UPLOAD_DIR = "static/images"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Создаем директорию для загрузки файлов
+import os
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Подключаем статические файлы
+app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
+
 # Настройка CORS
-origins = [
-    "http://localhost:3000",  # адрес вашего фронтенда
-    "http://127.0.0.1:3000",  # дополнительный адрес для тестирования
-    # можно добавить другие источники, если нужно
-]
+origins = get_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,7 +59,7 @@ app.add_middleware(
     allow_headers=["*"],        # Разрешенные заголовки
 )
 
-SessionDep = Annotated[AsyncSession,Depends(get_session)]
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 # Подключение всех роутеров
 app.include_router(product_router)

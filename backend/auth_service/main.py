@@ -14,6 +14,7 @@ from app.services import (
     cache_service,
     bruteforce_protection
 )
+from config import settings, get_origins
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -46,21 +47,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-UPLOAD_DIR = "static/images"
+UPLOAD_DIR = settings.UPLOAD_DIR
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Расширяем список разрешенных источников
-origins = [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "http://localhost",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:3001",
-    "http://127.0.0.1",
-    # Добавляем и другие источники, которые могут быть использованы в разработке
-]
+# Получаем список разрешенных источников из конфигурации
+origins = get_origins()
 
 logger.info("Настройка CORS с разрешенными источниками: %s", origins)
 

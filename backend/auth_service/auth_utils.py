@@ -1,6 +1,5 @@
 """Модуль для аутентификации и авторизации пользователей."""
 
-import os
 import logging
 from typing import Annotated
 
@@ -9,6 +8,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_session
 from models import UserModel
+from config import settings
 from app.services import (
     TokenService,
     user_service,
@@ -18,9 +18,9 @@ from app.services import (
 # Настройка логгера
 logger = logging.getLogger(__name__)
 
-# Загружаем переменные окружения
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
-ALGORITHM = "HS256"
+# Загружаем настройки из конфигурации
+SECRET_KEY = settings.JWT_SECRET_KEY
+ALGORITHM = settings.JWT_ALGORITHM
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)

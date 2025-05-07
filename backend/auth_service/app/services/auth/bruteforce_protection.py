@@ -2,24 +2,25 @@
 
 import json
 import logging
-import os
 import time
 from typing import Dict, Any
 
 import redis.asyncio as redis
 
+from config import settings
+
 logger = logging.getLogger(__name__)
 
-# Настройки Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+# Настройки Redis из конфигурации
+REDIS_HOST = settings.REDIS_HOST
+REDIS_PORT = settings.REDIS_PORT
 REDIS_DB = 0  # Auth service использует DB 0
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+REDIS_PASSWORD = settings.REDIS_PASSWORD
 
-# Настройки защиты от брутфорса
-MAX_FAILED_ATTEMPTS = int(os.getenv("MAX_FAILED_ATTEMPTS", "5"))  # Макс. кол-во неудачных попыток
-BLOCK_TIME = int(os.getenv("BLOCK_TIME", "300"))  # Время блокировки в секундах (5 минут)
-ATTEMPT_TTL = int(os.getenv("ATTEMPT_TTL", "3600"))  # Срок хранения счетчика попыток (1 час)
+# Настройки защиты от брутфорса из конфигурации
+MAX_FAILED_ATTEMPTS = settings.MAX_FAILED_ATTEMPTS  # Макс. кол-во неудачных попыток
+BLOCK_TIME = settings.BLOCK_TIME  # Время блокировки в секундах (5 минут)
+ATTEMPT_TTL = settings.ATTEMPT_TTL  # Срок хранения счетчика попыток (1 час)
 
 class BruteforceProtection:
     """Сервис защиты от брутфорса с использованием Redis"""

@@ -3,25 +3,26 @@
 import hashlib
 import json
 import logging
-import os
 import pickle
 from functools import wraps
 from typing import Any, Optional, Union, Callable
 
 import redis.asyncio as redis
 
+from config import settings
+
 logger = logging.getLogger(__name__)
 
-# Настройки Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+# Настройки Redis из конфигурации
+REDIS_HOST = settings.REDIS_HOST
+REDIS_PORT = settings.REDIS_PORT
 REDIS_DB = 0  # Auth service использует DB 0
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+REDIS_PASSWORD = settings.REDIS_PASSWORD
 
-# Настройки кэширования
-DEFAULT_CACHE_TTL = int(os.getenv("DEFAULT_CACHE_TTL", "3600"))  # 1 час по умолчанию
-USER_CACHE_TTL = int(os.getenv("USER_CACHE_TTL", "300"))  # 5 минут для пользовательских данных
-CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+# Настройки кэширования из конфигурации
+DEFAULT_CACHE_TTL = settings.DEFAULT_CACHE_TTL  # 1 час по умолчанию
+USER_CACHE_TTL = settings.USER_CACHE_TTL  # 5 минут для пользовательских данных
+CACHE_ENABLED = settings.CACHE_ENABLED
 
 class CacheService:
     """Сервис кэширования данных с использованием Redis"""

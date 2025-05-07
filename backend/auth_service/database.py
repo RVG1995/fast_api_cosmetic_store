@@ -1,23 +1,20 @@
 """Модуль конфигурации и инициализации базы данных для сервиса аутентификации."""
 
 import logging
-import os
 from typing import AsyncGenerator
-from dotenv import load_dotenv
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 from models import Base, UserModel
 from utils import get_password_hash
+from config import settings, get_db_url
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
-# Получение URL базы данных из переменных окружения
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/auth_db")
+# Получение URL базы данных из конфигурации
+DATABASE_URL = get_db_url()
 
 engine = create_async_engine(DATABASE_URL, echo = True)
 
@@ -31,11 +28,11 @@ async def get_session()-> AsyncGenerator[AsyncSession, None]:
 async def create_superadmin() -> None:
     """Создает суперпользователя, если он не существует"""
     try:
-        # Получаем данные из .env
-        admin_email = os.getenv("SUPERADMIN_EMAIL")
-        admin_password = os.getenv("SUPERADMIN_PASSWORD")
-        first_name = os.getenv("SUPERADMIN_FIRST_NAME", "Admin")
-        last_name = os.getenv("SUPERADMIN_LAST_NAME", "User")
+        # Получаем данные из конфигурации
+        admin_email = settings.SUPERADMIN_EMAIL
+        admin_password = settings.SUPERADMIN_PASSWORD
+        first_name = settings.SUPERADMIN_FIRST_NAME
+        last_name = settings.SUPERADMIN_LAST_NAME
         
         if not admin_email or not admin_password:
             logger.warning("SUPERADMIN_EMAIL или SUPERADMIN_PASSWORD не указаны в .env файле")
@@ -74,11 +71,11 @@ async def create_superadmin() -> None:
 async def create_default_user() -> None:
     """Создает обычного пользователя, если он не существует"""
     try:
-        # Получаем данные из .env
-        user_email = os.getenv("DEFAULT_USER_EMAIL")
-        user_password = os.getenv("DEFAULT_USER_PASSWORD")
-        first_name = os.getenv("DEFAULT_USER_FIRST_NAME", "Default")
-        last_name = os.getenv("DEFAULT_USER_LAST_NAME", "User")
+        # Получаем данные из конфигурации
+        user_email = settings.DEFAULT_USER_EMAIL
+        user_password = settings.DEFAULT_USER_PASSWORD
+        first_name = settings.DEFAULT_USER_FIRST_NAME
+        last_name = settings.DEFAULT_USER_LAST_NAME
         
         if not user_email or not user_password:
             logger.warning("DEFAULT_USER_EMAIL или DEFAULT_USER_PASSWORD не указаны в .env файле")

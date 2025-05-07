@@ -1,21 +1,18 @@
 """Утилиты для работы с RabbitMQ в сервисе аутентификации."""
 
-import os
-
 import aio_pika
-from dotenv import load_dotenv
+from config import settings
 
-load_dotenv()
+# Настройки RabbitMQ из конфигурации
+RABBITMQ_HOST = settings.RABBITMQ_HOST
+RABBITMQ_USER = settings.RABBITMQ_USER
+RABBITMQ_PASS = settings.RABBITMQ_PASS
 
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "user")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "password")
-
-# Настройки для Dead Letter Exchange - должны совпадать с настройками в email_consumer
-DLX_NAME = "dead_letter_exchange"
-DLX_QUEUE = "failed_messages"
+# Настройки для Dead Letter Exchange из конфигурации
+DLX_NAME = settings.DLX_NAME
+DLX_QUEUE = settings.DLX_QUEUE
 # Задержка перед повторной попыткой в миллисекундах
-RETRY_DELAY_MS = 5000
+RETRY_DELAY_MS = settings.RETRY_DELAY_MS
 
 
 async def get_connection() -> aio_pika.Connection:

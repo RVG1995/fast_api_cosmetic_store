@@ -1,8 +1,9 @@
 """Модуль с централизованными настройками сервиса аутентификации."""
 
 import os
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from datetime import timedelta
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):

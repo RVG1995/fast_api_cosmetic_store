@@ -3,11 +3,10 @@
 import asyncio
 import json
 import logging
-import os
-import pathlib
 from typing import Optional, Dict, Any, List
 import httpx
-from dotenv import load_dotenv
+
+from config import settings
 from dependencies import _get_service_token
 from cache import cache_service
 
@@ -15,34 +14,18 @@ from cache import cache_service
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("product_api")
 
-# Определяем пути к .env файлам
-current_dir = pathlib.Path(__file__).parent.absolute()
-env_file = current_dir / ".env"
-parent_env_file = current_dir.parent / ".env"
-
-# Загружаем переменные окружения
-if env_file.exists():
-    load_dotenv(dotenv_path=env_file)
-    logger.info("Переменные окружения загружены из %s", env_file)
-elif parent_env_file.exists():
-    load_dotenv(dotenv_path=parent_env_file)
-    logger.info("Переменные окружения загружены из %s", parent_env_file)
-
-# URL сервиса продуктов
-PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
+# URL сервиса продуктов из конфигурации
+PRODUCT_SERVICE_URL = settings.PRODUCT_SERVICE_URL
 logger.info("URL сервиса продуктов: %s", PRODUCT_SERVICE_URL)
 
-# Секретный ключ для доступа к API продуктов
-INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
-logger.info("Ключ сервиса: '%s'", INTERNAL_SERVICE_KEY)
 
 class ProductAPI:
     """Класс для взаимодействия с API сервиса продуктов"""
     
     def __init__(self):
         self.base_url = PRODUCT_SERVICE_URL
-        self.cache_ttl = int(os.getenv("PRODUCT_CACHE_TTL", "300"))  # TTL кэша в секундах (5 минут по умолчанию)
-        self.max_retries = int(os.getenv("API_MAX_RETRIES", "3"))  # Максимальное число повторных попыток
+        self.cache_ttl = settings.PRODUCT_CACHE_TTL  # TTL кэша в секундах
+        self.max_retries = settings.API_MAX_RETRIES  # Максимальное число повторных попыток
         
         logger.info("Инициализирован ProductAPI с base_url: %s, cache_ttl: %dс", self.base_url, self.cache_ttl)
     

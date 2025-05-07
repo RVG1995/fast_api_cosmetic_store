@@ -1,44 +1,33 @@
 """Сервис кэширования для корзины с использованием Redis."""
 
-import os
 import json
 import logging
 from functools import wraps
-import pathlib
 from datetime import datetime
 from typing import Optional, Any, Callable, TypeVar
 import hashlib
 import redis.asyncio as redis
-from dotenv import load_dotenv
+
+from config import settings, get_redis_url, get_cache_ttl, get_cache_keys
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cart_cache")
 
-# Настройки Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = 3  # Cart service использует DB 3
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+# Настройки Redis из конфигурации
+REDIS_HOST = settings.REDIS_HOST
+REDIS_PORT = settings.REDIS_PORT
+REDIS_DB = settings.REDIS_DB  # Cart service использует DB 3
+REDIS_PASSWORD = settings.REDIS_PASSWORD
 
-# Настройки кэширования
-CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+# Настройки кэширования из конфигурации
+CACHE_ENABLED = settings.CACHE_ENABLED
 
 # Время жизни кэша
-CACHE_TTL = {
-    "cart": int(os.getenv("CART_CACHE_TTL", "60")),  # 60 секунд для корзины
-    "cart_summary": int(os.getenv("CART_SUMMARY_CACHE_TTL", "30")),  # 30 секунд для сводки корзины
-    "admin_carts": int(os.getenv("ADMIN_CARTS_CACHE_TTL", "30"))  # 30 секунд для списка корзин в админке
-}
+CACHE_TTL = get_cache_ttl()
 
 # Префиксы ключей кэша
-CACHE_KEYS = {
-    "cart_user": "cart:user:",  # Корзина пользователя - cart:user:{user_id}
-    "cart_session": "cart:session:",  # Корзина сессии - cart:session:{session_id}
-    "cart_summary_user": "cart:summary:user:",  # Сводка корзины пользователя
-    "cart_summary_session": "cart:summary:session:",  # Сводка корзины сессии
-    "admin_carts": "admin:carts:"  # Список корзин для администраторов с параметрами
-}
+CACHE_KEYS = get_cache_keys()
 
 # Собственный JSONEncoder для обработки даты и времени
 class DateTimeEncoder(json.JSONEncoder):
@@ -61,19 +50,6 @@ class CacheService:
             return
             
         logger.info("Кэширование включено, инициализация соединения с Redis")
-        
-        # Определяем пути к .env файлам
-        current_dir = pathlib.Path(__file__).parent.absolute()
-        env_file = current_dir / ".env"
-        parent_env_file = current_dir.parent / ".env"
-
-        # Загружаем переменные окружения
-        if env_file.exists():
-            load_dotenv(dotenv_path=env_file)
-            logger.info("Переменные окружения загружены из %s", env_file)
-        elif parent_env_file.exists():
-            load_dotenv(dotenv_path=parent_env_file)
-            logger.info("Переменные окружения загружены из %s", parent_env_file)
     
     async def initialize(self):
         """Асинхронная инициализация соединения с Redis"""
@@ -81,11 +57,8 @@ class CacheService:
             return
             
         try:
-            # Создаем строку подключения Redis
-            redis_url = "redis://"
-            if REDIS_PASSWORD:
-                redis_url += f":{REDIS_PASSWORD}@"
-            redis_url += f"{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+            # Используем helper-функцию для получения URL Redis
+            redis_url = get_redis_url()
             
             # Создаем асинхронное подключение к Redis с использованием нового API
             self.redis = await redis.Redis(

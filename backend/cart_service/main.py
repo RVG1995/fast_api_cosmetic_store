@@ -34,6 +34,7 @@ from cache import (
     CACHE_KEYS, CACHE_TTL
 )
 from dependencies import _get_service_token
+from config import settings, get_cors_origins
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -42,8 +43,8 @@ logger = logging.getLogger("cart_service")
 # Инициализация ProductAPI
 product_api = ProductAPI()
 
-# Максимальный размер корзины для хранения в куках (в байтах)
-MAX_COOKIE_SIZE = 4000  # ~4KB - безопасный размер для большинства браузеров
+# Максимальный размер корзины для хранения в куках (в байтах) из конфигурации
+MAX_COOKIE_SIZE = settings.MAX_COOKIE_SIZE
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -71,22 +72,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Настройка CORS
-origins = [
-    "http://localhost:3000",  # адрес фронтенда
-    "http://127.0.0.1:3000",  # альтернативный адрес локального фронтенда
-    "http://localhost:3001",
-    "http://127.0.0.1:3001",
-    "http://localhost",
-    "http://127.0.0.1",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "http://localhost:8001",
-    "http://127.0.0.1:8001",
-    "http://localhost:8002",
-    "http://127.0.0.1:8002",
-    # Добавьте здесь другие разрешенные источники, если необходимо
-]
+# Настройка CORS с использованием списка origins из config.py
+origins = get_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,

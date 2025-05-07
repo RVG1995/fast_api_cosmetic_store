@@ -1,6 +1,5 @@
 """Модуль для работы с зависимостями."""
 
-import os
 import logging
 from datetime import datetime, timezone
 
@@ -9,36 +8,33 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
-from dotenv import load_dotenv
-from cache import cache_get, cache_set
 
-# Загрузка переменных окружения
-load_dotenv()
+from config import settings, get_service_clients
+from cache import cache_get, cache_set
 
 # Настройка логирования
 logger = logging.getLogger("order_dependencies")
 
-# Получение настроек JWT из переменных окружения
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+# Получение настроек JWT из конфигурации
+JWT_SECRET_KEY = settings.JWT_SECRET_KEY
+JWT_ALGORITHM = settings.JWT_ALGORITHM
 
-# URL сервисов
-PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
-CART_SERVICE_URL = os.getenv("CART_SERVICE_URL", "http://localhost:8002")
+# URL сервисов из конфигурации
+PRODUCT_SERVICE_URL = settings.PRODUCT_SERVICE_URL
+CART_SERVICE_URL = settings.CART_SERVICE_URL
+AUTH_SERVICE_URL = settings.AUTH_SERVICE_URL
+NOTIFICATION_SERVICE_URL = settings.NOTIFICATION_SERVICE_URL  # Адрес сервиса уведомлений
 
 # Сервисный API-ключ для внутренней авторизации между микросервисами
-INTERNAL_SERVICE_KEY = os.getenv("SERVICE_API_KEY", "test")
 
-NOTIFICATION_SERVICE_URL = "http://localhost:8005"  # Адрес сервиса уведомлений
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")  # Адрес сервиса авторизации
-# Client credentials for service-to-service auth
-SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
-SERVICE_CLIENTS = {kv.split(":")[0]: kv.split(":")[1] for kv in SERVICE_CLIENTS_RAW.split(",") if ":" in kv}
-SERVICE_CLIENT_ID = os.getenv("SERVICE_CLIENT_ID","carts")
+# Клиентские учетные данные для межсервисной авторизации
+SERVICE_CLIENTS_RAW = settings.SERVICE_CLIENTS_RAW
+SERVICE_CLIENTS = get_service_clients()
+SERVICE_CLIENT_ID = settings.SERVICE_CLIENT_ID
 SERVICE_TOKEN_URL = f"{AUTH_SERVICE_URL}/auth/token"
-SERVICE_TOKEN_EXPIRE_MINUTES = int(os.getenv("SERVICE_TOKEN_EXPIRE_MINUTES", "30"))
+SERVICE_TOKEN_EXPIRE_MINUTES = settings.SERVICE_TOKEN_EXPIRE_MINUTES
 
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ALGORITHM = JWT_ALGORITHM
 
 bearer_scheme = HTTPBearer(auto_error=False)
 

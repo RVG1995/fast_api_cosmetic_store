@@ -1,29 +1,16 @@
 """Утилиты для работы с RabbitMQ в сервисе уведомлений."""
 
-import os
-
 import aio_pika
-from dotenv import load_dotenv
 
-load_dotenv()
+from .config import settings
 
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "user")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "password")
-
-# Настройки для Dead Letter Exchange - должны совпадать с настройками в email_consumer
-DLX_NAME = "dead_letter_exchange"
-DLX_QUEUE = "failed_messages"
-# Задержка перед повторной попыткой в миллисекундах
-RETRY_DELAY_MS = 5000
-
-
+# Настройки получаем из settings объекта
 async def get_connection() -> aio_pika.Connection:
     """Создает подключение к RabbitMQ"""
     connection = await aio_pika.connect_robust(
-        host=RABBITMQ_HOST,
-        login=RABBITMQ_USER,
-        password=RABBITMQ_PASS
+        host=settings.RABBITMQ_HOST,
+        login=settings.RABBITMQ_USER,
+        password=settings.RABBITMQ_PASS
     )
     return connection
 
@@ -58,7 +45,7 @@ async def declare_queue(channel: aio_pika.Channel, queue_name: str) -> aio_pika.
             queue_name,
             durable=True,
             arguments={
-                "x-dead-letter-exchange": DLX_NAME,
+                "x-dead-letter-exchange": settings.DLX_NAME,
                 "x-dead-letter-routing-key": queue_name
             }
         )

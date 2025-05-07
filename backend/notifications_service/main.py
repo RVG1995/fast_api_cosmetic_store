@@ -2,7 +2,6 @@
 
 import logging
 from contextlib import asynccontextmanager
-import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,16 +49,4 @@ async def init_db():
 
 if __name__ == "__main__":
     import uvicorn
-    
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8005"))
-    
-    # Запуск с авто‑перезагрузкой только для этого сервиса
-    service_dir = os.path.dirname(__file__)
-    uvicorn.run(
-        "notifications_service.main:app",
-        host=host,
-        port=port,
-        reload=True,
-        reload_dirs=[service_dir]
-    )
+    uvicorn.run("main:app", port=8005, reload=True)

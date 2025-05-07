@@ -1,6 +1,5 @@
 """Сервис кэширования на основе Redis с асинхронной поддержкой для уведомлений."""
 
-import os
 import json
 import logging
 import hashlib
@@ -8,23 +7,13 @@ from functools import wraps
 
 from typing import Any, Optional, List, Dict, Callable
 import redis.asyncio as redis
-from .config import REDIS_URL, SETTINGS_CACHE_TTL
+
+from .config import settings, get_redis_url
 
 logger = logging.getLogger("notifications_cache")
 
-# Настройки Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = 5  # Notifications service использует DB 5
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
-
 # Настройки кэширования
-CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
-
-# Формируем URL для подключения
-REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-if REDIS_PASSWORD:
-    REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+CACHE_ENABLED = True  # По умолчанию включено
 
 class CacheService:
     """Сервис кэширования данных с использованием Redis"""
@@ -48,18 +37,18 @@ class CacheService:
         try:
             # Создаем строку подключения Redis
             redis_url = "redis://"
-            if REDIS_PASSWORD:
-                redis_url += f":{REDIS_PASSWORD}@"
-            redis_url += f"{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+            if settings.REDIS_PASSWORD:
+                redis_url += f":{settings.REDIS_PASSWORD}@"
+            redis_url += f"{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
             
             # Создаем асинхронное подключение к Redis с использованием нового API
             self.redis = await redis.Redis.from_url(
-                REDIS_URL,
+                redis_url,
                 encoding="utf-8",
                 decode_responses=True  # Декодируем ответы для поддержки JSON
             )
             
-            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", REDIS_HOST, REDIS_PORT, REDIS_DB)
+            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB)
         except (redis.ConnectionError, redis.TimeoutError, redis.RedisError) as e:
             logger.error("Ошибка подключения к Redis для кэширования: %s", str(e))
             self.redis = None
@@ -208,93 +197,84 @@ class CacheService:
 # Создаем глобальный экземпляр сервиса кэширования
 cache_service = CacheService()
 
-# Функции-обертки для обратной совместимости
-
-async def get_redis() -> Optional[redis.Redis]:
-    """Get or create a Redis connection"""
+# Функция для получения соединения с Redis
+async def get_redis():
+    """Инициализирует и возвращает клиент Redis."""
     if not cache_service.redis:
         await cache_service.initialize()
     return cache_service.redis
 
-async def close_redis() -> None:
-    """Close Redis connection"""
+# Функция для закрытия соединения
+async def close_redis():
+    """Закрывает соединение с Redis."""
     await cache_service.close()
 
+# Функции для работы с кэшем настроек уведомлений
 async def cache_get_settings(user_id: int) -> Optional[List[Dict]]:
-    """Retrieve cached notification settings for a user"""
+    """Получает настройки уведомлений пользователя из кэша."""
     key = f"notifications:settings:{user_id}"
     return await cache_service.get(key)
 
-async def cache_set_settings(user_id: int, settings: List[Dict]) -> bool:
-    """Cache notification settings for a user"""
+async def cache_set_settings(user_id: int, settings_data: List[Dict]) -> bool:
+    """Сохраняет настройки уведомлений пользователя в кэш."""
     key = f"notifications:settings:{user_id}"
-    success = await cache_service.set(key, settings, SETTINGS_CACHE_TTL)
-    if success:
-        logger.debug("Cached settings for user %s (TTL=%ss)", user_id, SETTINGS_CACHE_TTL)
-    return success
+    return await cache_service.set(key, settings_data, settings.SETTINGS_CACHE_TTL)
 
 async def cache_delete_settings(user_id: int) -> bool:
-    """Delete cached notification settings for a user"""
+    """Удаляет настройки уведомлений пользователя из кэша."""
     key = f"notifications:settings:{user_id}"
-    success = await cache_service.delete(key)
-    if success:
-        logger.debug("Deleted cache for user %s", user_id)
-    return success
+    return await cache_service.delete(key)
 
 async def invalidate_settings_cache(user_id: int) -> bool:
     """
-    Инвалидация кэша настроек уведомлений - удаляет старый кэш
-    и делает его недействительным, чтобы следующий запрос получил
-    актуальные данные из базы данных.
+    Инвалидирует весь кэш настроек уведомлений для пользователя.
+    Используется после изменения настроек.
     """
-    logger.info("Invalidating notification settings cache for user %s", user_id)
-    return await cache_delete_settings(user_id)
+    pattern = f"notifications:settings:{user_id}"
+    deleted = await cache_service.delete_pattern(pattern)
+    return deleted > 0
 
-# Декоратор для кэширования
+# Декоратор для кэширования результатов асинхронных функций
 def cached(ttl: int, prefix: str = None, key_builder: Callable = None):
     """
-    Декоратор для кэширования результатов асинхронных функций
+    Декоратор для кэширования результатов асинхронных функций.
     
     Args:
         ttl: Время жизни кэша в секундах
         prefix: Префикс ключа кэша (по умолчанию имя функции)
-        key_builder: Функция для построения ключа кэша (если нужна особая логика)
-        
-    Returns:
-        Callable: Декорированная функция
+        key_builder: Функция для построения ключа кэша
     """
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
+            # Если кэширование отключено, просто возвращаем результат функции
             if not cache_service.enabled or not cache_service.redis:
-                # Если кэширование отключено, просто выполняем функцию
                 return await func(*args, **kwargs)
-                
-            # Определяем ключ кэша
+            
+            # Формируем ключ кэша
             if key_builder:
-                # Если указан пользовательский построитель ключа
                 cache_key = key_builder(*args, **kwargs)
             else:
-                # По умолчанию используем имя функции как префикс
-                func_prefix = prefix or func.__name__
-                cache_key = cache_service.get_key_for_function(func_prefix, *args, **kwargs)
-                
-            # Пытаемся получить результат из кэша
-            cached_result = await cache_service.get(cache_key)
+                cache_key = cache_service.get_key_for_function(
+                    prefix or func.__name__, 
+                    *args, 
+                    **kwargs
+                )
             
-            if cached_result is not None:
-                logger.debug("Получены данные из кэша для ключа: %s", cache_key)
-                return cached_result
-                
+            # Пытаемся получить результат из кэша
+            cached_data = await cache_service.get(cache_key)
+            if cached_data is not None:
+                logger.debug("Возвращены кэшированные данные для %s", cache_key)
+                return cached_data
+            
             # Если в кэше нет, выполняем функцию
             result = await func(*args, **kwargs)
             
-            # Сохраняем результат в кэш
+            # Сохраняем результат в кэш, только если он не None
             if result is not None:
                 await cache_service.set(cache_key, result, ttl)
-                logger.debug("Сохранены данные в кэш для ключа: %s", cache_key)
-                
-            return result
+                logger.debug("Результат функции %s сохранен в кэш: %s", func.__name__, cache_key)
             
+            return result
         return wrapper
     return decorator

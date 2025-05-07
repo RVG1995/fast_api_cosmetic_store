@@ -8,7 +8,7 @@ import jwt
 from fastapi import HTTPException, Depends, status, Request
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 
-from .config import AUTH_SERVICE_URL, JWT_SECRET_KEY, ALGORITHM
+from .config import settings
 
 # Схема OAuth2 для получения токена из заголовка Authorization
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
@@ -22,7 +22,7 @@ async def verify_service_jwt(
     if not cred or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
-        payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(cred.credentials, settings.JWT_SECRET_KEY, algorithms=[settings.ALGORITHM])
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":
@@ -69,7 +69,7 @@ async def get_current_user(
     
     try:
         # Декодируем JWT
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id = payload.get("sub")
     except (jwt.InvalidTokenError, jwt.ExpiredSignatureError, jwt.DecodeError) as e:
         logger.warning("JWT validation failed: %s", e)
@@ -79,8 +79,8 @@ async def get_current_user(
     headers = {"Authorization": f"Bearer {token}"}
     try:
         async with httpx.AsyncClient() as client:
-            logger.debug("Requesting user profile from %s", AUTH_SERVICE_URL)
-            resp = await client.get(f"{AUTH_SERVICE_URL}/auth/users/me/profile", headers=headers, timeout=5.0)
+            logger.debug("Requesting user profile from %s", settings.AUTH_SERVICE_URL)
+            resp = await client.get(f"{settings.AUTH_SERVICE_URL}/auth/users/me/profile", headers=headers, timeout=5.0)
         if resp.status_code != 200:
             logger.warning("Auth service returned %d: %s", resp.status_code, resp.text)
             # При ошибке получаем None, без создания базового профиля

@@ -1,6 +1,5 @@
 """API для взаимодействия с сервисом продуктов, включая кэширование и управление запасами."""
 
-import os
 import logging
 import asyncio
 from typing import Dict, List, Optional, Tuple
@@ -8,21 +7,18 @@ from typing import Dict, List, Optional, Tuple
 import httpx
 from schema import ProductInfoSchema
 from cache import CacheKeys, cache_service, get_cached_data, set_cached_data, invalidate_cache
+from config import settings, get_cache_ttl
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("order_product_api")
 
-# URL сервиса продуктов
-PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
+# URL сервиса продуктов из настроек
+PRODUCT_SERVICE_URL = settings.PRODUCT_SERVICE_URL
 logger.info("URL сервиса продуктов: %s", PRODUCT_SERVICE_URL)
 
-# Секретный ключ для доступа к API продуктов
-INTERNAL_SERVICE_KEY = "test"  # Жестко задаем значение для тестирования
-logger.info("Ключ сервиса: '%s'", INTERNAL_SERVICE_KEY)
-
 # Для обратной совместимости создаем константы
-CACHE_TTL = int(os.getenv("CACHE_TTL", "300"))  # TTL кэша в секундах (по умолчанию 5 минут)
+CACHE_TTL = get_cache_ttl().get("order", 300)  # TTL кэша в секундах (по умолчанию 5 минут)
 
 class ProductAPI:
     """Класс для взаимодействия с API сервиса продуктов"""

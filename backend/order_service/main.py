@@ -4,9 +4,7 @@
 """
 
 import logging
-import os
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,8 +16,7 @@ from routers.promo_codes import router as promo_codes_router, admin_router as pr
 from routers.dadata import router as dadata_router
 from cache import close_redis, cache_service
 from init_data import init_order_statuses
-# Загрузка переменных окружения
-load_dotenv()
+from config import settings, get_cors_origins
 
 # Настройка логирования
 logging.basicConfig(
@@ -69,23 +66,7 @@ app = FastAPI(
 )
 
 # Настройка CORS
-origins = [
-    "http://localhost",
-    "http://127.0.0.1",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3001",
-    "http://localhost:8000",
-    "http://localhost:8001",
-    "http://localhost:8002",
-    "http://localhost:8003",
-    "http://127.0.0.1:8000",
-    "http://127.0.0.1:8001",
-    "http://127.0.0.1:8002",
-    "http://127.0.0.1:8003",
-    "http://localhost:8080",
-]
+origins = get_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,9 +76,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Type", "Set-Cookie", "Access-Control-Allow-Credentials"],
 )
-
-# Настройка путей к статическим файлам
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "static/uploads")
 
 # Подключение роутеров
 app.include_router(orders_router)
@@ -116,16 +94,6 @@ async def health_check():
     """
     return {"status": "ok", "service": "order_service"}
 
-# Запуск приложения
 if __name__ == "__main__":
     import uvicorn
-    
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8003"))
-    
-    uvicorn.run(
-        "main:app",
-        host=host,
-        port=port,
-        reload=True,
-    )
+    uvicorn.run("main:app", port=8003, reload=True)

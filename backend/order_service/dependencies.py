@@ -1,48 +1,40 @@
 """Зависимости и утилиты для сервиса заказов."""
 
 import logging
-import os
 from datetime import datetime, timezone
 
 from typing import Optional, Dict, Any
-from fastapi import Depends, HTTPException, status, Header,Cookie
+from fastapi import Depends, HTTPException, status, Header, Cookie
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 from jwt.exceptions import PyJWTError
 import httpx
-from dotenv import load_dotenv
 from cache import get_cached_data, set_cached_data
 
 from schemas import OrderFilterParams
 from product_api import get_product_api
-
-# Загрузка переменных окружения
-load_dotenv()
+from config import settings, get_service_clients
 
 # Настройка логирования
 logger = logging.getLogger("order_dependencies")
 
-# Получение настроек JWT из переменных окружения
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+# Получение настроек JWT из конфигурации
+JWT_SECRET_KEY = settings.JWT_SECRET_KEY
+JWT_ALGORITHM = settings.JWT_ALGORITHM
 
-# URL сервисов
-PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
-CART_SERVICE_URL = os.getenv("CART_SERVICE_URL", "http://localhost:8002")
+# URL сервисов из конфигурации
+PRODUCT_SERVICE_URL = settings.PRODUCT_SERVICE_URL
+CART_SERVICE_URL = settings.CART_SERVICE_URL
+AUTH_SERVICE_URL = settings.AUTH_SERVICE_URL
+NOTIFICATION_SERVICE_URL = settings.NOTIFICATION_SERVICE_URL
 
-
-NOTIFICATION_SERVICE_URL = "http://localhost:8005"  # Адрес сервиса уведомлений
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")  # Адрес сервиса авторизации
-INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")  # устаревший, не используется при client_credentials
-
-# Client credentials for service-to-service auth
-SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
-SERVICE_CLIENTS = {kv.split(":")[0]: kv.split(":")[1] for kv in SERVICE_CLIENTS_RAW.split(",") if ":" in kv}
-SERVICE_CLIENT_ID = os.getenv("SERVICE_CLIENT_ID","orders")
+# Client credentials для межсервисной авторизации
+SERVICE_CLIENTS = get_service_clients()
+SERVICE_CLIENT_ID = settings.SERVICE_CLIENT_ID
 SERVICE_TOKEN_URL = f"{AUTH_SERVICE_URL}/auth/token"
-SERVICE_TOKEN_EXPIRE_MINUTES = int(os.getenv("SERVICE_TOKEN_EXPIRE_MINUTES", "30"))
+SERVICE_TOKEN_EXPIRE_MINUTES = settings.SERVICE_TOKEN_EXPIRE_MINUTES
 
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ALGORITHM = settings.JWT_ALGORITHM
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -51,7 +43,7 @@ async def _get_service_token():
     token = await get_cached_data("service_token")
     if token:
         return token
-    # Получаем секрет из общего SERVICE_CLIENTS_RAW
+    # Получаем секрет из SERVICE_CLIENTS
     secret = SERVICE_CLIENTS.get(SERVICE_CLIENT_ID)
     if not secret:
         raise RuntimeError(f"Нет секрета для client_id={SERVICE_CLIENT_ID}")

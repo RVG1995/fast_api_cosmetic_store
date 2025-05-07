@@ -1,6 +1,5 @@
 """Модуль для работы с кэшированием данных в Redis."""
 
-import os
 from typing import Any, Optional, Dict, Union, Callable
 import logging
 import hashlib
@@ -9,17 +8,13 @@ from functools import wraps
 import pickle
 import redis.asyncio as redis
 
+from config import settings, get_redis_url, get_cache_ttl, get_cache_keys
+
 logger = logging.getLogger("order_cache")
 
-# Настройки Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = 2  # Order service использует DB 2
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
-
-# Настройки кэширования
-DEFAULT_CACHE_TTL = int(os.getenv("ORDER_CACHE_TTL", "300"))  # 5 минут по умолчанию
-CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+# Настройки кэширования из конфигурации
+DEFAULT_CACHE_TTL = settings.ORDER_CACHE_TTL
+CACHE_ENABLED = settings.CACHE_ENABLED
 
 class CacheKeys:
     """Константы для ключей кэша"""
@@ -53,11 +48,8 @@ class CacheService:
             return
             
         try:
-            # Создаем строку подключения Redis
-            redis_url = "redis://"
-            if REDIS_PASSWORD:
-                redis_url += f":{REDIS_PASSWORD}@"
-            redis_url += f"{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+            # Получаем URL для Redis из конфигурации
+            redis_url = get_redis_url()
             
             # Создаем асинхронное подключение к Redis с использованием нового API
             self.redis = await redis.Redis.from_url(
@@ -66,7 +58,8 @@ class CacheService:
                 decode_responses=False  # Не декодируем ответы для поддержки pickle
             )
             
-            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", REDIS_HOST, REDIS_PORT, REDIS_DB)
+            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", 
+                       settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB)
         except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
             logger.error("Ошибка подключения к Redis для кэширования: %s", str(e))
             self.redis = None
@@ -198,18 +191,18 @@ class CacheService:
         
         # Добавляем именованные аргументы в отсортированном порядке
         if kwargs:
-            for k in sorted(kwargs.keys()):
-                key_parts.append(f"{k}:{kwargs[k]}")
+            sorted_kwargs = sorted(kwargs.items())
+            for key, value in sorted_kwargs:
+                key_parts.append(f"{key}={value}")
         
-        # Объединяем все части ключа
-        key_str = ":".join(key_parts)
+        # Создаем полный ключ
+        full_key = ":".join(key_parts)
         
-        # Если ключ получился слишком длинным, хешируем его
-        if len(key_str) > 100:
-            key_hash = hashlib.md5(key_str.encode()).hexdigest()
-            return f"{prefix}:hash:{key_hash}"
-            
-        return key_str
+        # Если ключ слишком длинный, создаем хеш
+        if len(full_key) > 250:
+            return f"{prefix}:{hashlib.md5(full_key.encode()).hexdigest()}"
+        
+        return full_key
     
     async def close(self):
         """Закрывает соединение с Redis"""
@@ -217,242 +210,280 @@ class CacheService:
             await self.redis.close()
             logger.info("Соединение с Redis закрыто")
 
-# Создаем глобальный экземпляр сервиса кэширования
+# Создаем экземпляр сервиса кэширования
 cache_service = CacheService()
 
-# Функции-обертки над методами CacheService для совместимости
-
+# Функции-хелперы для работы с кэшем
 async def get_cached_data(key: str) -> Optional[Any]:
+    """Получает данные из кэша"""
     return await cache_service.get(key)
 
 async def set_cached_data(key: str, data: Any, ttl: int = DEFAULT_CACHE_TTL) -> bool:
+    """Сохраняет данные в кэш"""
     return await cache_service.set(key, data, ttl)
 
 async def invalidate_cache(*patterns: str) -> None:
-    try:
-        deleted_count = 0
-        for pattern in patterns:
-            count = await cache_service.delete_pattern(pattern)
-            deleted_count += count
+    """
+    Инвалидирует кэш по указанным шаблонам
+    
+    Args:
+        *patterns: Шаблоны ключей для инвалидации
+    """
+    if not patterns:
+        return
         
-        if deleted_count > 0:
-            logger.info("Всего удалено ключей: %s", deleted_count)
-        else:
-            logger.info("Не найдено ключей для удаления по шаблонам: %s", patterns)
-    except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
-        logger.error("Cache invalidation error: %s", str(e))
+    for pattern in patterns:
+        if not pattern:
+            continue
+        
+        logger.info("Инвалидация кэша по шаблону: %s", pattern)
+        await cache_service.delete_pattern(pattern)
 
+# Закрытие соединения с Redis
 async def close_redis() -> None:
+    """Закрывает соединение с Redis"""
     await cache_service.close()
 
-# Специализированные функции для кэширования заказов
-
+# Функции для кэширования заказов
 async def cache_order(order_id: int, order_data: Dict[str, Any], admin: bool = False, cache_key: Optional[str] = None) -> None:
     """
-    Кэширование данных заказа
+    Кэширует данные заказа
     
     Args:
         order_id: ID заказа
         order_data: Данные заказа для кэширования
-        admin: Флаг, указывающий, что кэширование выполняется для админской панели
-        cache_key: Кастомный ключ кэша (если указан)
+        admin: Флаг для отличия административного и пользовательского кэша
+        cache_key: Произвольный ключ кэша (если None, будет сгенерирован автоматически)
     """
+    if not CACHE_ENABLED:
+        return
+        
     try:
-        # Если передан кастомный ключ, используем его
-        key = cache_key if cache_key else f"{CacheKeys.ORDER_PREFIX}{order_id}"
-        await cache_service.set(key, order_data, DEFAULT_CACHE_TTL)
-        logger.info("Заказ %s успешно кэширован по ключу %s%s", order_id, key, ' (админ)' if admin else '')
-    except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
+        # Определяем ключ кэша
+        key = cache_key or (f"{CacheKeys.ORDER_PREFIX}{order_id}" + ("_admin" if admin else ""))
+        
+        # Получаем TTL для заказа из конфигурации
+        ttl = get_cache_ttl().get("order", DEFAULT_CACHE_TTL)
+        
+        # Кэшируем данные
+        await set_cached_data(key, order_data, ttl)
+    except Exception as e:
         logger.error("Ошибка при кэшировании заказа %s: %s", order_id, str(e))
 
 async def get_cached_order(order_id, user_id=None, admin=False):
     """
-    Получение кэшированных данных заказа
+    Получает данные заказа из кэша
     
     Args:
         order_id: ID заказа
-        user_id: ID пользователя (опционально)
-        admin: Флаг, указывающий, что запрос от админа
+        user_id: ID пользователя (опционально, для логирования)
+        admin: Флаг для отличия административного и пользовательского кэша
         
     Returns:
-        Optional[Any]: Данные заказа из кэша или None
+        Optional[Dict[str, Any]]: Данные заказа или None, если не найдены в кэше
     """
-    # Используем тот же формат ключа, что и при сохранении (с двоеточием)
-    cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}"
-    
-    if user_id:
-        cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}:user:{user_id}"
-    elif admin:
-        cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}:admin"
+    if not CACHE_ENABLED:
+        return None
         
-    return await get_cached_data(cache_key)
+    try:
+        # Определяем ключ кэша
+        key = f"{CacheKeys.ORDER_PREFIX}{order_id}" + ("_admin" if admin else "")
+        
+        # Получаем данные из кэша
+        data = await get_cached_data(key)
+        
+        if data:
+            logger.info("Найдены кэшированные данные заказа %s%s", 
+                      order_id, f" для пользователя {user_id}" if user_id else "")
+        
+        return data
+    except Exception as e:
+        logger.error("Ошибка при получении заказа %s из кэша: %s", order_id, str(e))
+        return None
 
 async def invalidate_order_cache(order_id: int) -> None:
-    """Инвалидация кэша конкретного заказа"""
-    # Инвалидируем все ключи, связанные с этим заказом
-    await invalidate_cache(
-        f"{CacheKeys.ORDER_PREFIX}{order_id}*",  # Все ключи с этим префиксом
-        f"{CacheKeys.ORDER_PREFIX}{order_id}:service",  # Сервисный ключ
-        f"{CacheKeys.ORDER_PREFIX}{order_id}:admin"     # Админский ключ
-    )
-    # Инвалидируем также связанные ключи
-    await invalidate_cache(f"{CacheKeys.USER_ORDERS_PREFIX}*")
-    await invalidate_cache(f"{CacheKeys.ADMIN_ORDERS_PREFIX}*")
-    await invalidate_cache(f"{CacheKeys.ORDER_STATISTICS}*")
-    logger.info("Инвалидирован кэш заказа %s и связанных списков", order_id)
+    """
+    Инвалидирует кэш для заказа по ID
+    
+    Args:
+        order_id: ID заказа
+    """
+    if not CACHE_ENABLED:
+        return
+        
+    try:
+        # Инвалидируем кэш заказа (и админский и пользовательский)
+        await invalidate_cache(
+            f"{CacheKeys.ORDER_PREFIX}{order_id}*",  # Все варианты этого заказа
+            f"{CacheKeys.USER_ORDERS_PREFIX}*",  # Все списки заказов пользователей
+            f"{CacheKeys.ADMIN_ORDERS_PREFIX}*",  # Все списки заказов в админке
+        )
+    except Exception as e:
+        logger.error("Ошибка при инвалидации кэша заказа %s: %s", order_id, str(e))
 
+# Функции для кэширования списков заказов
 async def cache_orders_list(filter_params: str, orders_data: Any) -> bool:
-    """Кэширование списка заказов"""
+    """Кэширует список заказов в административной панели"""
     key = f"{CacheKeys.ADMIN_ORDERS_PREFIX}{filter_params}"
-    return await set_cached_data(key, orders_data)
+    ttl = get_cache_ttl().get("orders_list", DEFAULT_CACHE_TTL)
+    return await set_cached_data(key, orders_data, ttl)
 
 async def get_cached_orders_list(filter_params: str) -> Optional[Any]:
-    """Получение кэшированного списка заказов"""
+    """Получает список заказов из кэша административной панели"""
     key = f"{CacheKeys.ADMIN_ORDERS_PREFIX}{filter_params}"
     return await get_cached_data(key)
 
 async def cache_user_orders(user_id: int, filter_params: str, orders_data: Any) -> bool:
-    """Кэширование списка заказов пользователя"""
+    """Кэширует список заказов пользователя"""
     key = f"{CacheKeys.USER_ORDERS_PREFIX}{user_id}:{filter_params}"
-    return await set_cached_data(key, orders_data)
+    ttl = get_cache_ttl().get("orders_list", DEFAULT_CACHE_TTL)
+    return await set_cached_data(key, orders_data, ttl)
 
 async def get_cached_user_orders(user_id: int, filter_params: str) -> Optional[Any]:
-    """Получение кэшированного списка заказов пользователя"""
+    """Получает список заказов пользователя из кэша"""
     key = f"{CacheKeys.USER_ORDERS_PREFIX}{user_id}:{filter_params}"
     return await get_cached_data(key)
 
 async def cache_order_statistics(statistics_data: Any, user_id: Optional[int] = None) -> bool:
-    """Кэширование статистики заказов"""
-    key = f"{CacheKeys.ORDER_STATISTICS}user_{user_id}" if user_id else f"{CacheKeys.ORDER_STATISTICS}all"
-    return await set_cached_data(key, statistics_data)
+    """Кэширует статистику заказов (общую или для конкретного пользователя)"""
+    key = CacheKeys.ORDER_STATISTICS if user_id is None else f"{CacheKeys.USER_STATISTICS_PREFIX}{user_id}"
+    ttl = get_cache_ttl().get("statistics" if user_id is None else "user_statistics", DEFAULT_CACHE_TTL)
+    return await set_cached_data(key, statistics_data, ttl)
 
 async def get_cached_order_statistics(user_id: Optional[int] = None) -> Optional[Any]:
-    """Получение кэшированной статистики заказов"""
-    key = f"{CacheKeys.ORDER_STATISTICS}user_{user_id}" if user_id else f"{CacheKeys.ORDER_STATISTICS}all"
+    """Получает статистику заказов из кэша (общую или для конкретного пользователя)"""
+    key = CacheKeys.ORDER_STATISTICS if user_id is None else f"{CacheKeys.USER_STATISTICS_PREFIX}{user_id}"
     return await get_cached_data(key)
 
 async def invalidate_statistics_cache() -> None:
-    """Инвалидация кэша статистики"""
-    await invalidate_cache(f"{CacheKeys.ORDER_STATISTICS}*")
+    """Инвалидирует кэш статистики заказов"""
+    await invalidate_cache(CacheKeys.ORDER_STATISTICS, f"{CacheKeys.USER_STATISTICS_PREFIX}*")
 
 async def cache_order_statuses(statuses_data: Any) -> bool:
-    """Кэширование списка статусов заказов"""
-    key = CacheKeys.ORDER_STATUSES
-    return await set_cached_data(key, statuses_data)
+    """Кэширует список статусов заказов"""
+    ttl = get_cache_ttl().get("statistics", DEFAULT_CACHE_TTL)
+    return await set_cached_data(CacheKeys.ORDER_STATUSES, statuses_data, ttl)
 
 async def get_cached_order_statuses() -> Optional[Any]:
-    """Получение кэшированного списка статусов заказов"""
-    key = CacheKeys.ORDER_STATUSES
-    return await get_cached_data(key)
+    """Получает список статусов заказов из кэша"""
+    return await get_cached_data(CacheKeys.ORDER_STATUSES)
 
 async def invalidate_order_statuses_cache() -> None:
-    """Инвалидация кэша статусов заказов"""
-    await invalidate_cache(f"{CacheKeys.ORDER_STATUSES}*")
+    """Инвалидирует кэш списка статусов заказов"""
+    await cache_service.delete(CacheKeys.ORDER_STATUSES)
 
 async def invalidate_user_orders_cache(user_id: int) -> None:
-    """Инвалидация кэша заказов пользователя"""
+    """Инвалидирует кэш списков заказов пользователя"""
     await invalidate_cache(f"{CacheKeys.USER_ORDERS_PREFIX}{user_id}:*")
-    logger.info("Инвалидирован кэш заказов пользователя %s", user_id)
 
 async def invalidate_promo_code_cache(promo_code_id: int) -> None:
     """
-    Инвалидация кэша промокода по ID
+    Инвалидирует кэш для промокода по ID
     
     Args:
         promo_code_id: ID промокода
     """
-    # Формируем ключ для кэша промокода
-    cache_key = f"{CacheKeys.PROMO_CODE_PREFIX}{promo_code_id}"
-    
-    # Удаляем кэш
-    await cache_service.delete(cache_key)
-    
-    # Дополнительно инвалидируем общий кэш промокодов
-    await cache_service.delete(CacheKeys.PROMO_CODES)
-    
-    logger.info("Кэш промокода с ID %s инвалидирован", promo_code_id)
+    if not CACHE_ENABLED:
+        return
+        
+    try:
+        # Инвалидируем кэш промокода и список всех промокодов
+        await invalidate_cache(
+            f"{CacheKeys.PROMO_CODE_PREFIX}{promo_code_id}*",  # Конкретный промокод
+            f"{CacheKeys.PROMO_CODES}*",  # Список всех промокодов
+        )
+        
+        # Инвалидируем также кэш проверок промокодов, содержащий этот ID
+        # Это сложнее сделать по шаблону, поэтому лучше инвалидировать все проверки
+        await invalidate_cache(f"{CacheKeys.PROMO_CODE_PREFIX}check:*")
+    except Exception as e:
+        logger.error("Ошибка при инвалидации кэша промокода %s: %s", promo_code_id, str(e))
 
 async def cache_promo_code_check(email: str, phone: str, promo_code_id: int, result: bool) -> None:
     """
-    Кеширование результата проверки промокода
+    Кэширует результат проверки промокода для пользователя
     
     Args:
         email: Email пользователя
-        phone: Телефон пользователя
+        phone: Телефон пользователя 
         promo_code_id: ID промокода
         result: Результат проверки (True/False)
     """
-    # Формируем ключ для кэша
-    cache_key = f"promo_check:{email}:{phone}:{promo_code_id}"
+    if not email and not phone:
+        return
+        
+    # Создаем хеш для идентификации пользователя
+    user_hash = hashlib.md5((email or '') + (phone or '')).hexdigest()
     
-    # Кешируем результат на 1 час
-    await cache_service.set(cache_key, result, 3600)
+    # Создаем ключ кэша
+    key = f"{CacheKeys.PROMO_CODE_PREFIX}check:{promo_code_id}:{user_hash}"
     
-    logger.info("Результат проверки промокода %s для %s/%s закеширован", promo_code_id, email, phone)
+    # Устанавливаем TTL для проверки промокода (обычно короткий, 5-10 минут)
+    ttl = 600  # 10 минут
+    
+    await set_cached_data(key, result, ttl)
 
 async def get_cached_promo_code_check(email: str, phone: str, promo_code_id: int) -> Optional[bool]:
     """
-    Получение кешированного результата проверки промокода
+    Получает результат проверки промокода для пользователя из кэша
     
     Args:
         email: Email пользователя
         phone: Телефон пользователя
         promo_code_id: ID промокода
-    
+        
     Returns:
-        Optional[bool]: Кешированный результат или None, если кеша нет
+        Optional[bool]: Кэшированный результат проверки или None, если не найден
     """
-    # Формируем ключ для кэша
-    cache_key = f"promo_check:{email}:{phone}:{promo_code_id}"
+    if not email and not phone:
+        return None
+        
+    # Создаем хеш для идентификации пользователя
+    user_hash = hashlib.md5((email or '') + (phone or '')).hexdigest()
     
-    # Получаем результат из кэша
-    return await cache_service.get(cache_key)
+    # Создаем ключ кэша
+    key = f"{CacheKeys.PROMO_CODE_PREFIX}check:{promo_code_id}:{user_hash}"
+    
+    return await get_cached_data(key)
 
-# Декоратор для кэширования
+# Декоратор для кэширования результатов функций
 def cached(ttl: int = DEFAULT_CACHE_TTL, prefix: str = None, key_builder: Callable = None):
     """
     Декоратор для кэширования результатов асинхронных функций
     
     Args:
         ttl: Время жизни кэша в секундах
-        prefix: Префикс ключа кэша (по умолчанию имя функции)
-        key_builder: Функция для построения ключа кэша (если нужна особая логика)
-        
-    Returns:
-        Callable: Декорированная функция
+        prefix: Префикс для ключа кэша
+        key_builder: Функция для построения ключа кэша
     """
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            if not cache_service.enabled or not cache_service.redis:
-                # Если кэширование отключено, просто выполняем функцию
+            if not CACHE_ENABLED:
                 return await func(*args, **kwargs)
                 
             # Определяем ключ кэша
             if key_builder:
-                # Если указан пользовательский построитель ключа
+                # Используем пользовательскую функцию для построения ключа
                 cache_key = key_builder(*args, **kwargs)
             else:
-                # По умолчанию используем имя функции как префикс
-                func_prefix = prefix or func.__name__
-                cache_key = cache_service.get_key_for_function(func_prefix, *args, **kwargs)
+                # Используем стандартный механизм построения ключа
+                nonlocal prefix
+                if prefix is None:
+                    prefix = f"{func.__module__}.{func.__name__}"
                 
-            # Пытаемся получить результат из кэша
-            cached_result = await cache_service.get(cache_key)
+                cache_key = cache_service.get_key_for_function(prefix, *args, **kwargs)
             
+            # Проверяем кэш
+            cached_result = await get_cached_data(cache_key)
             if cached_result is not None:
-                logger.debug("Получены данные из кэша для ключа: %s", cache_key)
+                logger.debug("Возвращаем кэшированный результат для %s", cache_key)
                 return cached_result
-                
-            # Если в кэше нет, выполняем функцию
+            
+            # Выполняем функцию и кэшируем результат
             result = await func(*args, **kwargs)
+            await set_cached_data(cache_key, result, ttl)
             
-            # Сохраняем результат в кэш
-            if result is not None:
-                await cache_service.set(cache_key, result, ttl)
-                logger.debug("Сохранены данные в кэш для ключа: %s", cache_key)
-                
             return result
-            
         return wrapper
     return decorator

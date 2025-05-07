@@ -1,37 +1,20 @@
 """Модуль для работы с базой данных заказов."""
 
-import os
 import logging
-import pathlib
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
 
 from models import Base
+from config import settings, get_db_url
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("order_database")
 
-# Определяем пути к .env файлам
-current_dir = pathlib.Path(__file__).parent.absolute()
-env_file = current_dir / ".env"
-parent_env_file = current_dir.parent / ".env"
-
-# Проверяем и загружаем .env файлы
-if env_file.exists():
-    logger.info("Загружаем .env из %s", env_file)
-    load_dotenv(dotenv_path=env_file)
-elif parent_env_file.exists():
-    logger.info("Загружаем .env из %s", parent_env_file)
-    load_dotenv(dotenv_path=parent_env_file)
-else:
-    logger.warning("Файл .env не найден!")
-
-# Получаем URL подключения к базе данных из переменных окружения
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost/orders_db")
+# Получаем URL подключения к базе данных из конфигурации
+DATABASE_URL = get_db_url()
 logger.info("URL базы данных: %s", DATABASE_URL)
 
 # Создаем движок SQLAlchemy для асинхронной работы с базой данных

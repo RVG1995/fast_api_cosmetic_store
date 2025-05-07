@@ -7,13 +7,14 @@ import asyncio
 
 import httpx
 from cache import cache_service
-from dotenv import load_dotenv
-from dependencies import _get_service_token, NOTIFICATION_SERVICE_URL, AUTH_SERVICE_URL
-
-# Load environment variables from .env
-load_dotenv()
+from config import settings
+from dependencies import _get_service_token
 
 logger = logging.getLogger("order_service.notification_api")
+
+# URL сервисов из конфигурации
+NOTIFICATION_SERVICE_URL = settings.NOTIFICATION_SERVICE_URL
+AUTH_SERVICE_URL = settings.AUTH_SERVICE_URL
 
 async def check_notification_settings(user_id: int, event_type: str, order_id: int) -> Dict[str, bool]:
     """

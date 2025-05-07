@@ -1,17 +1,17 @@
 """API для взаимодействия с сервисом корзины."""
 
-import os
 import logging
 from typing import Dict, Optional, Any
 
 import httpx
+from config import settings
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("order_cart_api")
 
-# URL сервиса корзины
-CART_SERVICE_URL = os.getenv("CART_SERVICE_URL", "http://localhost:8002")
+# URL сервиса корзины из настроек
+CART_SERVICE_URL = settings.CART_SERVICE_URL
 logger.info("URL сервиса корзины: %s", CART_SERVICE_URL)
 
 class CartAPI:

@@ -8,7 +8,7 @@ from email.mime.multipart import MIMEMultipart
 
 import aiosmtplib
 
-from config import SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, TEMPLATES_DIR, logger
+from config import settings, TEMPLATES_DIR, logger
 
 async def send_email(recipient: str, subject: str, html_content: str) -> None:
     """
@@ -21,7 +21,7 @@ async def send_email(recipient: str, subject: str, html_content: str) -> None:
     """
     # Создаем сообщение
     message = MIMEMultipart()
-    message["From"] = SMTP_FROM
+    message["From"] = settings.SMTP_FROM
     message["To"] = recipient
     message["Subject"] = subject
     
@@ -32,10 +32,10 @@ async def send_email(recipient: str, subject: str, html_content: str) -> None:
         # Отправляем письмо
         await aiosmtplib.send(
             message,
-            hostname=SMTP_HOST,
-            port=SMTP_PORT,
-            username=SMTP_USER,
-            password=SMTP_PASSWORD,
+            hostname=settings.SMTP_HOST,
+            port=settings.SMTP_PORT,
+            username=settings.SMTP_USER,
+            password=settings.SMTP_PASSWORD,
             use_tls=True
         )
         logger.info("Письмо успешно отправлено на %s", recipient)

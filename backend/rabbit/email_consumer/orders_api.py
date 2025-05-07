@@ -7,13 +7,8 @@ import asyncio
 
 import httpx
 from cache import cache_service
-from dotenv import load_dotenv
-from dependencies import _get_service_token, ORDER_SERVICE_URL
-
-# Load environment variables from .env
-load_dotenv()
-
-logger = logging.getLogger("order_service.notification_api")
+from config import settings, logger
+from dependencies import _get_service_token
 
 async def check_order_info(order_id: int) -> Dict[str, bool]:
     """
@@ -35,7 +30,7 @@ async def check_order_info(order_id: int) -> Dict[str, bool]:
                 token = await _get_service_token()
                 headers = {"Authorization": f"Bearer {token}"}
                 response = await client.get(
-                    f"{ORDER_SERVICE_URL}/orders/{order_id}/service",
+                    f"{settings.ORDER_SERVICE_URL}/orders/{order_id}/service",
                     headers=headers, timeout=5.0,
                 )
                 if response.status_code == 401:

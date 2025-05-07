@@ -2,25 +2,20 @@
 Модуль для работы с кэшированием данных в Redis.
 """
 
-import os
-from typing import Any, Optional
 import logging
+from typing import Any, Optional
 import pickle
 
 import redis.asyncio as redis
 
+from config import settings, get_redis_url
+
 # Настройка логирования
 logger = logging.getLogger("email_consumer_cache")
 
-# Настройки Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = 6  # Email consumer использует DB 6
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
-
-# Настройки кэширования
-DEFAULT_CACHE_TTL = int(os.getenv("CACHE_TTL", "300"))  # 5 минут по умолчанию
-CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+# Настройки кэширования из конфигурации
+CACHE_ENABLED = settings.CACHE_ENABLED
+DEFAULT_CACHE_TTL = settings.CACHE_TTL
 
 
 class CacheService:
@@ -43,11 +38,8 @@ class CacheService:
             return
             
         try:
-            # Создаем строку подключения Redis
-            redis_url = "redis://"
-            if REDIS_PASSWORD:
-                redis_url += f":{REDIS_PASSWORD}@"
-            redis_url += f"{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+            # Получаем URL подключения к Redis из конфигурации
+            redis_url = get_redis_url()
             
             # Создаем асинхронное подключение к Redis с использованием нового API
             self.redis = await redis.Redis.from_url(
@@ -56,7 +48,8 @@ class CacheService:
                 decode_responses=False  # Не декодируем ответы для поддержки pickle
             )
             
-            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", REDIS_HOST, REDIS_PORT, REDIS_DB)
+            logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", 
+                        settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB)
         except Exception as e:
             logger.error("Ошибка подключения к Redis для кэширования: %s", str(e))
             self.redis = None
@@ -168,7 +161,6 @@ async def set_cached_data(key: str, data: Any, ttl: int = DEFAULT_CACHE_TTL) -> 
     if not cache_service.redis:
         await cache_service.initialize()
     return await cache_service.set(key, data, ttl)
-
 
 
 async def close_redis() -> None:

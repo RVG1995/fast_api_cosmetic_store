@@ -6,9 +6,7 @@ import asyncio
 import aio_pika
 
 from config import (
-    RABBITMQ_HOST, RABBITMQ_USER, RABBITMQ_PASS,
-    MAX_RECONNECT_ATTEMPTS, INITIAL_RECONNECT_DELAY, MAX_RECONNECT_DELAY,
-    logger
+    settings, get_rabbitmq_url, logger
 )
 
 
@@ -32,23 +30,23 @@ async def get_connection_with_retry() -> aio_pika.Connection:
     Returns:
         aio_pika.Connection: Установленное соединение
     """
-    reconnect_delay = INITIAL_RECONNECT_DELAY
+    reconnect_delay = settings.INITIAL_RECONNECT_DELAY
     attempts = 0
     
-    while attempts < MAX_RECONNECT_ATTEMPTS:
+    while attempts < settings.MAX_RECONNECT_ATTEMPTS:
         try:
+            # Используем функцию get_rabbitmq_url для получения URL подключения
+            rabbitmq_url = get_rabbitmq_url()
             connection = await aio_pika.connect_robust(
-                host=RABBITMQ_HOST,
-                login=RABBITMQ_USER,
-                password=RABBITMQ_PASS
+                rabbitmq_url
             )
             logger.info("Соединение с RabbitMQ установлено успешно")
             return connection
         except (aio_pika.exceptions.AMQPException, OSError) as e:
             attempts += 1
-            logger.error("Ошибка подключения к RabbitMQ (%d/%d): %s", attempts, MAX_RECONNECT_ATTEMPTS, e)
+            logger.error("Ошибка подключения к RabbitMQ (%d/%d): %s", attempts, settings.MAX_RECONNECT_ATTEMPTS, e)
             
-            if attempts >= MAX_RECONNECT_ATTEMPTS:
+            if attempts >= settings.MAX_RECONNECT_ATTEMPTS:
                 logger.critical("Превышено максимальное количество попыток подключения")
                 raise
             
@@ -56,4 +54,4 @@ async def get_connection_with_retry() -> aio_pika.Connection:
             await asyncio.sleep(reconnect_delay)
             
             # Экспоненциальное увеличение задержки с ограничением
-            reconnect_delay = min(reconnect_delay * 2, MAX_RECONNECT_DELAY) 
+            reconnect_delay = min(reconnect_delay * 2, settings.MAX_RECONNECT_DELAY) 

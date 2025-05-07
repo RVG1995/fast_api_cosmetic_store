@@ -9,7 +9,7 @@ import httpx
 
 import aio_pika
 
-from config import logger, MAX_RETRY_COUNT
+from config import logger, settings
 from email_utils import send_email
 from email_templates import (
     create_order_email_content,
@@ -36,7 +36,7 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         if retry_count > 0:
-            logger.info("Повторная попытка %d/%d для сообщения email_message: %s", retry_count, MAX_RETRY_COUNT, message_body)
+            logger.info("Повторная попытка %d/%d для сообщения email_message: %s", retry_count, settings.MAX_RETRY_COUNT, message_body)
         else:
             logger.info("Получено сообщение email_message: %s", message_body)
         
@@ -71,7 +71,7 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         
-        if retry_count < MAX_RETRY_COUNT:
+        if retry_count < settings.MAX_RETRY_COUNT:
             # Увеличиваем счетчик попыток
             retry_count += 1
             headers['x-retry-count'] = retry_count
@@ -90,11 +90,11 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
                 routing_key=retry_queue
             )
             await close_connection(retry_connection)
-            logger.info("Сообщение помещено в очередь %s для повторной попытки %d/%d", retry_queue, retry_count, MAX_RETRY_COUNT)
+            logger.info("Сообщение помещено в очередь %s для повторной попытки %d/%d", retry_queue, retry_count, settings.MAX_RETRY_COUNT)
             await message.ack()
         else:
             # Отклоняем сообщение, чтобы оно попало в DLX
-            logger.warning("Превышено количество попыток (%d). Сообщение будет перемещено в DLX.", MAX_RETRY_COUNT)
+            logger.warning("Превышено количество попыток (%d). Сообщение будет перемещено в DLX.", settings.MAX_RETRY_COUNT)
             await message.reject(requeue=False)
 
 
@@ -113,7 +113,7 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         if retry_count > 0:
-            logger.info("Повторная попытка %d/%d для сообщения notification_message", retry_count, MAX_RETRY_COUNT)
+            logger.info("Повторная попытка %d/%d для сообщения notification_message", retry_count, settings.MAX_RETRY_COUNT)
         else:
             logger.info("Получено уведомление о товарах с низким остатком")
         
@@ -122,7 +122,7 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
             low_stock_products = message_body["low_stock_products"]
             
             # Формируем содержимое письма для администратора
-            admin_email = os.getenv("ADMIN_EMAIL", "rvg95@mail.ru")
+            admin_email = settings.ADMIN_EMAIL
             subject = f"Внимание! Товары с низким остатком ({len(low_stock_products)} шт.)"
             
             # Создаем HTML-таблицу с товарами
@@ -188,7 +188,7 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
             stock = message_body["stock"]
             
             # Формируем содержимое письма для администратора
-            admin_email = os.getenv("ADMIN_EMAIL", "rvg95@mail.ru")
+            admin_email = settings.ADMIN_EMAIL
             subject = f"Внимание! Низкий остаток товара: {product_name}"
             
             html_content = f"""
@@ -234,7 +234,7 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         
-        if retry_count < MAX_RETRY_COUNT:
+        if retry_count < settings.MAX_RETRY_COUNT:
             # Увеличиваем счетчик попыток
             retry_count += 1
             headers['x-retry-count'] = retry_count
@@ -253,11 +253,11 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
                 routing_key=retry_queue
             )
             await close_connection(retry_connection)
-            logger.info("Сообщение помещено в очередь %s для повторной попытки %d/%d", retry_queue, retry_count, MAX_RETRY_COUNT)
+            logger.info("Сообщение помещено в очередь %s для повторной попытки %d/%d", retry_queue, retry_count, settings.MAX_RETRY_COUNT)
             await message.ack()
         else:
             # Отклоняем сообщение, чтобы оно попало в DLX
-            logger.warning("Превышено количество попыток (%d). Сообщение будет перемещено в DLX.", MAX_RETRY_COUNT)
+            logger.warning("Превышено количество попыток (%d). Сообщение будет перемещено в DLX.", settings.MAX_RETRY_COUNT)
             await message.reject(requeue=False)
 
 
@@ -276,7 +276,7 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         if retry_count > 0:
-            logger.info("Повторная попытка %d/%d для сообщения update_message: %s", retry_count, MAX_RETRY_COUNT, message_body)
+            logger.info("Повторная попытка %d/%d для сообщения update_message: %s", retry_count, settings.MAX_RETRY_COUNT, message_body)
         else:
             logger.info("Получено сообщение update_message: %s", message_body)
         
@@ -309,7 +309,7 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         
-        if retry_count < MAX_RETRY_COUNT:
+        if retry_count < settings.MAX_RETRY_COUNT:
             # Увеличиваем счетчик попыток
             retry_count += 1
             headers['x-retry-count'] = retry_count
@@ -328,11 +328,11 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
                 routing_key=retry_queue
             )
             await close_connection(retry_connection)
-            logger.info("Сообщение помещено в очередь %s для повторной попытки %d/%d", retry_queue, retry_count, MAX_RETRY_COUNT)
+            logger.info("Сообщение помещено в очередь %s для повторной попытки %d/%d", retry_queue, retry_count, settings.MAX_RETRY_COUNT)
             await message.ack()
         else:
             # Отклоняем сообщение, чтобы оно попало в DLX
-            logger.warning("Превышено количество попыток (%d). Сообщение будет перемещено в DLX.", MAX_RETRY_COUNT)
+            logger.warning("Превышено количество попыток (%d). Сообщение будет перемещено в DLX.", settings.MAX_RETRY_COUNT)
             await message.reject(requeue=False)
 
 
@@ -351,7 +351,7 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         if retry_count > 0:
-            logger.info("Повторная попытка %d/%d для сообщения registration_message", retry_count, MAX_RETRY_COUNT)
+            logger.info("Повторная попытка %d/%d для сообщения registration_message", retry_count, settings.MAX_RETRY_COUNT)
         else:
             logger.info("Получено сообщение registration_message: %s", message_body)
         
@@ -379,7 +379,7 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
         headers = message.headers or {}
         retry_count = headers.get('x-retry-count', 0)
         
-        if retry_count < MAX_RETRY_COUNT:
+        if retry_count < settings.MAX_RETRY_COUNT:
             # Увеличиваем счетчик попыток
             retry_count += 1
             headers['x-retry-count'] = retry_count
@@ -398,11 +398,11 @@ async def registration_message(message: aio_pika.IncomingMessage) -> None:
                 routing_key=retry_queue
             )
             await close_connection(retry_connection)
-            logger.info("Сообщение помещено в очередь %s для повторной попытки %d/%d", retry_queue, retry_count, MAX_RETRY_COUNT)
+            logger.info("Сообщение помещено в очередь %s для повторной попытки %d/%d", retry_queue, retry_count, settings.MAX_RETRY_COUNT)
             await message.ack()
         else:
             # Отклоняем сообщение, чтобы оно попало в DLX
-            logger.warning("Превышено количество попыток (%d). Сообщение будет перемещено в DLX.", MAX_RETRY_COUNT)
+            logger.warning("Превышено количество попыток (%d). Сообщение будет перемещено в DLX.", settings.MAX_RETRY_COUNT)
             await message.reject(requeue=False)
 
 

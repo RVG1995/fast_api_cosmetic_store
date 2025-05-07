@@ -7,8 +7,7 @@ from typing import Dict, Callable, Optional
 import aio_pika
 
 from config import (
-    DLX_NAME, DLX_QUEUE, CONNECTION_CHECK_INTERVAL, RETRY_DELAY_MS,
-    logger
+    settings, logger
 )
 from connection_utils import get_connection_with_retry, close_connection
 
@@ -46,7 +45,7 @@ class RabbitMQConsumer:
                     await self._reconnect()
                 
                 # Ждем перед следующей проверкой
-                await asyncio.sleep(CONNECTION_CHECK_INTERVAL)
+                await asyncio.sleep(settings.CONNECTION_CHECK_INTERVAL)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -72,20 +71,20 @@ class RabbitMQConsumer:
         try:
             # Создаем Dead Letter Exchange
             dlx = await self.channel.declare_exchange(
-                DLX_NAME,
+                settings.DLX_NAME,
                 aio_pika.ExchangeType.DIRECT,
                 durable=True
             )
             
             # Создаем очередь для неудачных сообщений
             failed_queue = await self.channel.declare_queue(
-                DLX_QUEUE,
+                settings.DLX_QUEUE,
                 durable=True
             )
             
             # Привязываем очередь к DLX для всех маршрутов
             await failed_queue.bind(dlx, routing_key="#")
-            logger.info("Настроен Dead Letter Exchange %s и очередь %s", DLX_NAME, DLX_QUEUE)
+            logger.info("Настроен Dead Letter Exchange %s и очередь %s", settings.DLX_NAME, settings.DLX_QUEUE)
             
             # Настраиваем обработчики для основных очередей
             for queue_name, handler in self.queue_handlers.items():
@@ -97,7 +96,7 @@ class RabbitMQConsumer:
                     arguments={
                         "x-dead-letter-exchange": "",  # Используем default exchange
                         "x-dead-letter-routing-key": queue_name,  # Возвращаем в оригинальную очередь
-                        "x-message-ttl": RETRY_DELAY_MS  # Задержка перед повторной попыткой
+                        "x-message-ttl": settings.RETRY_DELAY_MS  # Задержка перед повторной попыткой
                     }
                 )
                 
@@ -106,7 +105,7 @@ class RabbitMQConsumer:
                     queue_name,
                     durable=True,
                     arguments={
-                        "x-dead-letter-exchange": DLX_NAME,
+                        "x-dead-letter-exchange": settings.DLX_NAME,
                         "x-dead-letter-routing-key": queue_name
                     }
                 )

@@ -2,8 +2,9 @@
 
 import os
 import pathlib
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, List, Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):

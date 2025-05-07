@@ -248,7 +248,7 @@ if check_directory "$BACKEND_DIR"; then
     # Запуск сервиса уведомлений
     if [ -d "$BACKEND_DIR/notifications_service" ]; then
         # запускаем как модуль, чтобы относительный импорт заработал
-        start_service "notifications_service" "$BACKEND_DIR" "python -m notifications_service.main"
+        start_service "notifications_service" "$BACKEND_DIR/notifications_service" "python main.py"
         sleep 2
     fi
     

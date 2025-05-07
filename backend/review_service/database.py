@@ -3,7 +3,7 @@
 """
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.orm import sessionmaker
 
 from models import Base
 from config import settings, get_db_url, logger
@@ -15,18 +15,10 @@ logger.info(f"URL базы данных: {DATABASE_URL}")
 # Создаем асинхронный движок SQLAlchemy
 engine = create_async_engine(
     DATABASE_URL,
-    echo=False,  # Для отладки можно установить True, чтобы видеть все SQL-запросы
-    future=True,
-    poolclass=NullPool  # Отключаем пулинг соединений для асинхронной работы
+    echo=True,  # Для отладки можно установить True, чтобы видеть все SQL-запросы
 )
 
-# Создаем фабрику сессий
-SessionLocal = async_sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-    expire_on_commit=False
-)
+AsyncSessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
 async def get_session() -> AsyncSession:
     """
@@ -35,7 +27,7 @@ async def get_session() -> AsyncSession:
     Yields:
         AsyncSession: Сессия базы данных
     """
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:
         try:
             yield session
         except Exception as e:

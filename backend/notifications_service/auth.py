@@ -8,7 +8,7 @@ import jwt
 from fastapi import HTTPException, Depends, status, Request
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 
-from .config import settings
+from config import settings
 
 # Схема OAuth2 для получения токена из заголовка Authorization
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)

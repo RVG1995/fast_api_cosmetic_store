@@ -1,5 +1,6 @@
 import json
 import hashlib
+import datetime
 from typing import Any, Dict, List, Optional, Union, Callable
 import redis.asyncio as redis
 from functools import wraps
@@ -10,6 +11,25 @@ from config import settings, get_redis_url, get_cache_ttl, get_cache_keys, logge
 CACHE_ENABLED = settings.CACHE_ENABLED
 CACHE_TTL = get_cache_ttl()
 CACHE_KEYS = get_cache_keys()
+
+# Добавляем ключ для кэширования прав пользователей, если его нет
+if 'user_permissions' not in CACHE_KEYS:
+    CACHE_KEYS['user_permissions'] = 'user_permissions:'
+
+# Функция для сериализации datetime объектов и других сложных типов в JSON
+def json_serial(obj):
+    """Сериализатор для объектов, которые не поддерживаются стандартным JSON"""
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    # Обработка ORM объектов, у которых есть id
+    if hasattr(obj, 'id') and callable(getattr(obj, '__dict__', None)):
+        # Возвращаем словарь с id объекта
+        return {'id': obj.id}
+    # Для других неизвестных типов просто преобразуем в строку
+    try:
+        return str(obj)
+    except:
+        return None
 
 class CacheService:
     """Сервис кэширования данных с использованием Redis"""
@@ -99,8 +119,8 @@ class CacheService:
             return False
             
         try:
-            # Преобразуем данные в JSON-строку
-            json_data = json.dumps(value)
+            # Преобразуем данные в JSON-строку с поддержкой datetime
+            json_data = json.dumps(value, default=json_serial)
             # Сохраняем данные в кэш
             if ttl:
                 await self.redis.setex(key, ttl, json_data)
@@ -291,36 +311,60 @@ async def invalidate_review_cache(review_id: int) -> bool:
         
         # Удаляем кэш конкретного отзыва
         key = f"{CACHE_KEYS['review']}{review_id}"
+        logger.debug(f"Инвалидация кэша отзыва {review_id}: {key}")
         await cache_service.delete(key)
         
-        # Инвалидируем списки отзывов
-        await cache_service.delete_pattern(f"{CACHE_KEYS['product_reviews']}*")
-        await cache_service.delete_pattern(f"{CACHE_KEYS['store_reviews']}*")
-        await cache_service.delete_pattern(f"{CACHE_KEYS['user_reviews']}*")
-        
-        # Инвалидируем статистику
-        await cache_service.delete_pattern(f"{CACHE_KEYS['product_statistics']}*")
-        await cache_service.delete_pattern(f"{CACHE_KEYS['store_statistics']}*")
-        
-        # Инвалидируем кэш пакетных запросов статистики
-        await cache_service.delete_pattern(f"{CACHE_KEYS['product_batch_statistics']}*")
-        
-        # Если отзыв относится к товару, инвалидируем статистику этого товара
+        # Если отзыв относится к товару, инвалидируем соответствующие кэши для этого товара
         if review and review.product_id:
-            await cache_service.delete(f"{CACHE_KEYS['product_statistics']}{review.product_id}")
+            product_id = review.product_id
             
-            # Инвалидируем все пакетные запросы, которые могут включать этот товар
+            # Инвалидируем кэш статистики товара
+            product_stats_key = f"{CACHE_KEYS['product_statistics']}{product_id}"
+            logger.debug(f"Инвалидация кэша статистики товара {product_id}: {product_stats_key}")
+            await cache_service.delete(product_stats_key)
+            
+            # Инвалидируем кэш отзывов для конкретного товара (все варианты страниц)
+            product_reviews_pattern = f"{CACHE_KEYS['product_reviews']}{product_id}:*"
+            logger.debug(f"Инвалидация кэша списков отзывов для товара {product_id} по шаблону {product_reviews_pattern}")
+            await cache_service.delete_pattern(product_reviews_pattern)
+            
+            # Инвалидируем кэш статистики отзывов для конкретного товара
+            review_stats_key = f"{CACHE_KEYS['product_review_stats']}{product_id}"
+            logger.debug(f"Инвалидация кэша статистики отзывов товара {product_id}: {review_stats_key}")
+            await cache_service.delete(review_stats_key)
+            
+            # Инвалидируем пакетные кэши, которые включают данный товар
             redis = cache_service.redis
             if redis:
                 keys_to_check = await redis.keys(f"{CACHE_KEYS['product_batch_statistics']}*")
+                product_id_str = str(product_id)
+                
                 for key in keys_to_check:
                     # Проверяем, содержит ли ключ ID товара
-                    product_id_str = str(review.product_id)
-                    # Если ключ включает ID товара (например, в списке ID через запятую)
                     if product_id_str in key:
+                        logger.debug(f"Инвалидация кэша пакетной статистики с ключом {key}")
                         await cache_service.delete(key)
-                    
-        logger.info(f"Кэш отзыва {review_id} и связанных списков инвалидирован")
+        
+        # Если это отзыв о магазине, инвалидируем кэш статистики магазина и отзывов
+        if review and review.review_type == 'store':
+            # Инвалидируем статистику магазина
+            store_stats_key = f"{CACHE_KEYS['store_statistics']}stats"
+            logger.debug(f"Инвалидация кэша статистики магазина: {store_stats_key}")
+            await cache_service.delete(store_stats_key)
+            
+            # Инвалидируем кэши отзывов о магазине для конкретных страниц
+            store_reviews_pattern = f"{CACHE_KEYS['store_reviews']}*"
+            logger.debug(f"Инвалидация кэша отзывов магазина по шаблону: {store_reviews_pattern}")
+            await cache_service.delete_pattern(store_reviews_pattern)
+        
+        # Если у отзыва есть автор, инвалидируем кэш отзывов пользователя
+        if review and review.user_id:
+            user_id = review.user_id
+            user_reviews_pattern = f"{CACHE_KEYS['user_reviews']}{user_id}:*"
+            logger.debug(f"Инвалидация кэша отзывов пользователя {user_id} по шаблону: {user_reviews_pattern}")
+            await cache_service.delete_pattern(user_reviews_pattern)
+        
+        logger.info(f"Кэш отзыва {review_id} и связанных данных успешно инвалидирован")
         return True
     except Exception as e:
         logger.error(f"Ошибка при инвалидации кэша отзыва: {str(e)}")
@@ -337,12 +381,19 @@ async def invalidate_product_reviews_cache(product_id: int) -> bool:
         bool: True если кэш успешно инвалидирован, иначе False
     """
     try:
-        # Удаляем кэш списков отзывов для товара
-        await cache_service.delete_pattern(f"{CACHE_KEYS['product_reviews']}{product_id}:*")
+        # Удаляем кэш списков отзывов для товара для всех вариантов запросов
+        pattern = f"{CACHE_KEYS['product_reviews']}{product_id}:*"
+        logger.debug(f"Инвалидация кэша отзывов для товара {product_id} по шаблону {pattern}")
+        deleted_count = await cache_service.delete_pattern(pattern)
         
         # Инвалидируем статистику товара
-        await cache_service.delete(f"{CACHE_KEYS['product_statistics']}{product_id}")
-        await cache_service.delete(f"{CACHE_KEYS['product_review_stats']}{product_id}")
+        stats_key = f"{CACHE_KEYS['product_statistics']}{product_id}"
+        logger.debug(f"Инвалидация кэша статистики товара {product_id}: {stats_key}")
+        await cache_service.delete(stats_key)
+        
+        review_stats_key = f"{CACHE_KEYS['product_review_stats']}{product_id}"
+        logger.debug(f"Инвалидация кэша статистики отзывов товара {product_id}: {review_stats_key}")
+        await cache_service.delete(review_stats_key)
         
         # Инвалидируем все пакетные запросы, которые могут включать этот товар
         redis = cache_service.redis
@@ -353,6 +404,7 @@ async def invalidate_product_reviews_cache(product_id: int) -> bool:
             for key in keys_to_check:
                 # Проверяем, содержит ли ключ ID товара
                 if product_id_str in key:
+                    logger.debug(f"Инвалидация кэша пакетной статистики с ключом {key}")
                     await cache_service.delete(key)
         
         logger.info(f"Кэш отзывов для товара {product_id} и связанных пакетных запросов инвалидирован")
@@ -368,14 +420,22 @@ async def invalidate_store_reviews_cache() -> bool:
     Returns:
         bool: True если кэш успешно инвалидирован, иначе False
     """
-    # Удаляем кэш списков отзывов для магазина
-    await cache_service.delete_pattern(f"{CACHE_KEYS['store_reviews']}*")
-    
-    # Инвалидируем статистику магазина
-    await cache_service.delete(f"{CACHE_KEYS['store_statistics']}stats")
-    
-    logger.info("Кэш отзывов для магазина инвалидирован")
-    return True
+    try:
+        # Удаляем кэш списков отзывов для магазина
+        pattern = f"{CACHE_KEYS['store_reviews']}*"
+        logger.debug(f"Инвалидация кэша отзывов магазина по шаблону: {pattern}")
+        deleted_keys = await cache_service.delete_pattern(pattern)
+        
+        # Инвалидируем статистику магазина
+        stats_key = f"{CACHE_KEYS['store_statistics']}stats"
+        logger.debug(f"Инвалидация кэша статистики магазина: {stats_key}")
+        await cache_service.delete(stats_key)
+        
+        logger.info(f"Кэш отзывов для магазина инвалидирован, удалено шаблонов: {pattern}")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка при инвалидации кэша отзывов для магазина: {str(e)}")
+        return False
 
 async def invalidate_user_reviews_cache(user_id: int) -> bool:
     """

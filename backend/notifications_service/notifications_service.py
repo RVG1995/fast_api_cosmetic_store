@@ -9,7 +9,7 @@ from typing import Optional
 
 import json
 import aio_pika
-from .rabbit_utils import get_connection, close_connection, declare_queue
+from rabbit_utils import get_connection, close_connection, declare_queue
 
 # Путь до директории backend/order_service
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

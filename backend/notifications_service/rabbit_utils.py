@@ -2,7 +2,7 @@
 
 import aio_pika
 
-from .config import settings
+from config import settings
 
 # Настройки получаем из settings объекта
 async def get_connection() -> aio_pika.Connection:

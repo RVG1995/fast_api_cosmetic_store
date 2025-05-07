@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import engine, Base
-from .settings_router import router as settings_router
-from .cache import get_redis, close_redis
+from database import engine, Base
+from settings_router import router as settings_router
+from cache import get_redis, close_redis
 
 logger = logging.getLogger(__name__)
 
@@ -49,4 +49,4 @@ async def init_db():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", port=8005, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8005, reload=True) 

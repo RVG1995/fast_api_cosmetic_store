@@ -8,7 +8,7 @@ from functools import wraps
 from typing import Any, Optional, List, Dict, Callable
 import redis.asyncio as redis
 
-from .config import settings, get_redis_url
+from config import settings, get_redis_url
 
 logger = logging.getLogger("notifications_cache")
 

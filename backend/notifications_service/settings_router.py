@@ -7,12 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from .notifications_service import send_email_message,update_order_status
+from notifications_service import send_email_message,update_order_status
 
-from . import models, schemas
-from .database import get_db
-from .auth import require_user, require_admin, verify_service_jwt, User
-from .cache import (
+from models import NotificationSetting
+from schemas import NotificationSettingCreate, NotificationSettingUpdate, NotificationSettingResponse, NotificationEvent,UserNotificationActivation
+from database import get_db
+from auth import require_user, require_admin, verify_service_jwt, User
+from cache import (
     cache_get_settings, cache_set_settings, 
     invalidate_settings_cache
 )
@@ -43,7 +44,7 @@ USER_EVENT_TYPES = [
     EVENT_TYPE_ORDER_STATUS_CHANGED,
 ]
 
-@router.get("/settings", response_model=List[schemas.NotificationSettingResponse])
+@router.get("/settings", response_model=List[NotificationSettingResponse])
 async def get_settings(user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     """Получение настроек уведомлений пользователя."""
     logger.info("[GET /settings] user_id=%s", user.id)
@@ -63,10 +64,10 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
     logger.debug("Allowed event types for user %s: %s", user_id, allowed_event_types)
         
     result = await db.execute(
-        select(models.NotificationSetting)
+        select(NotificationSetting)
         .where(
-            models.NotificationSetting.user_id == user_id, 
-            models.NotificationSetting.event_type.in_(allowed_event_types)
+            NotificationSetting.user_id == user_id, 
+            NotificationSetting.event_type.in_(allowed_event_types)
         )
     )
     settings = result.scalars().all()
@@ -76,7 +77,7 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
         logger.info("No settings found for user %s, creating default settings", user_id)
         defaults = []
         for event_type in allowed_event_types:
-            new_setting = models.NotificationSetting(
+            new_setting = NotificationSetting(
                 user_id=user_id,
                 event_type=event_type,
                 email=user.email or f"user{user_id}@example.com",
@@ -91,7 +92,7 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
             for setting in defaults:
                 await db.refresh(setting)
             # Кэшируем созданные настройки
-            data = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in defaults]
+            data = [NotificationSettingResponse.model_validate(s).model_dump() for s in defaults]
             await cache_set_settings(user_id, data)
             return data
         except (IntegrityError, SQLAlchemyError) as e:
@@ -101,7 +102,7 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
             return defaults
     
     # Кэшируем существующие настройки
-    data = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in settings]
+    data = [NotificationSettingResponse.model_validate(s).model_dump() for s in settings]
     await cache_set_settings(user_id, data)
     return data
 
@@ -128,12 +129,12 @@ async def check_settings(
         return {"email_enabled": False, "push_enabled": False}
     # Не в кэше, получаем из БД и обновляем полный кэш
     result = await db.execute(
-        select(models.NotificationSetting)
-        .where(models.NotificationSetting.user_id == user_id)
+        select(NotificationSetting)
+        .where(NotificationSetting.user_id == user_id)
     )
     all_settings = result.scalars().all()
     # Формируем кэш
-    data = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+    data = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
     await cache_set_settings(int(user_id), data)
     # Поиск нужного события
     setting = next((s for s in all_settings if s.event_type == event_type), None)
@@ -143,7 +144,7 @@ async def check_settings(
 
 
 @router.post("/settings/events", dependencies=[Depends(verify_service_jwt)])
-async def receive_notification(event: schemas.NotificationEvent, db: AsyncSession = Depends(get_db)):
+async def receive_notification(event: NotificationEvent, db: AsyncSession = Depends(get_db)):
     """Обработка входящих событий уведомлений."""
     logger.info("[POST /settings/events] event_type=%s, user_id=%s", event.event_type, event.user_id)
     flags = await check_settings(event.user_id, event.event_type, db)
@@ -155,8 +156,8 @@ async def receive_notification(event: schemas.NotificationEvent, db: AsyncSessio
             await update_order_status(event.order_id)
 
 
-@router.post("/settings", response_model=schemas.NotificationSettingResponse)
-async def create_setting(setting: schemas.NotificationSettingCreate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+@router.post("/settings", response_model=NotificationSettingResponse)
+async def create_setting(setting: NotificationSettingCreate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     """Создание новой настройки уведомлений."""
     logger.info("[POST /settings] user_id=%s, payload=%s", user.id, setting.model_dump())
     
@@ -167,7 +168,7 @@ async def create_setting(setting: schemas.NotificationSettingCreate, user: User 
     
     data = setting.model_dump()
     data['user_id'] = user.id
-    obj = models.NotificationSetting(**data)
+    obj = NotificationSetting(**data)
     db.add(obj)
     try:
         await db.commit()
@@ -176,18 +177,18 @@ async def create_setting(setting: schemas.NotificationSettingCreate, user: User 
         await invalidate_settings_cache(user.id)
         # Читаем все настройки пользователя и кэшируем их
         result_all = await db.execute(
-            select(models.NotificationSetting).where(models.NotificationSetting.user_id == user.id)
+            select(NotificationSetting).where(NotificationSetting.user_id == user.id)
         )
         all_settings = result_all.scalars().all()
-        data_all = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+        data_all = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
         await cache_set_settings(user.id, data_all)
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(status_code=400, detail="Setting already exists") from exc
     return obj
 
-@router.patch("/settings", response_model=schemas.NotificationSettingResponse)
-async def update_setting(event_type: str, update: schemas.NotificationSettingUpdate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+@router.patch("/settings", response_model=NotificationSettingResponse)
+async def update_setting(event_type: str, update: NotificationSettingUpdate, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     """Обновление существующей настройки уведомлений."""
     logger.info("[PATCH /settings] user_id=%s, event_type=%s, update=%s", user.id, event_type, update.model_dump(exclude_none=True))
     
@@ -197,8 +198,8 @@ async def update_setting(event_type: str, update: schemas.NotificationSettingUpd
     
     user_id = user.id
     result = await db.execute(
-        select(models.NotificationSetting)
-        .where(models.NotificationSetting.user_id == user_id, models.NotificationSetting.event_type == event_type)
+        select(NotificationSetting)
+        .where(NotificationSetting.user_id == user_id, NotificationSetting.event_type == event_type)
     )
     obj = result.scalars().first()
     if not obj:
@@ -210,23 +211,23 @@ async def update_setting(event_type: str, update: schemas.NotificationSettingUpd
     # Инвалидируем и пересоздаем кэш настроек для пользователя
     await invalidate_settings_cache(user.id)
     result_all = await db.execute(
-        select(models.NotificationSetting).where(models.NotificationSetting.user_id == user.id)
+        select(NotificationSetting).where(NotificationSetting.user_id == user.id)
     )
     all_settings = result_all.scalars().all()
-    data_all = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+    data_all = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
     await cache_set_settings(user.id, data_all)
     return obj
 
 # --- Админские эндпоинты ---
 @router.get(
     "/admin/settings",
-    response_model=List[schemas.NotificationSettingResponse],
+    response_model=List[NotificationSettingResponse],
     dependencies=[Depends(require_admin)]
 )
 async def admin_get_all_settings(db: AsyncSession = Depends(get_db)):
     """Получение всех настроек уведомлений (только для администраторов)."""
     logger.info("[GET /admin/settings]")
-    result = await db.execute(select(models.NotificationSetting))
+    result = await db.execute(select(NotificationSetting))
     return result.scalars().all()
 
 @router.delete(
@@ -241,9 +242,9 @@ async def admin_delete_setting(
     """Удаление настройки уведомлений пользователя (только для администраторов)."""
     logger.info("[DELETE /admin/settings/%s/%s] user_id=%s, event_type=%s", user_id, event_type, user_id, event_type)
     result = await db.execute(
-        select(models.NotificationSetting)
-        .where(models.NotificationSetting.user_id == user_id,
-               models.NotificationSetting.event_type == event_type)
+        select(NotificationSetting)
+        .where(NotificationSetting.user_id == user_id,
+               NotificationSetting.event_type == event_type)
     )
     obj = result.scalars().first()
     if not obj:
@@ -253,10 +254,10 @@ async def admin_delete_setting(
     # Инвалидируем и пересоздаем кэш настроек пользователя
     await invalidate_settings_cache(user_id)
     result_all = await db.execute(
-        select(models.NotificationSetting).where(models.NotificationSetting.user_id == user_id)
+        select(NotificationSetting).where(NotificationSetting.user_id == user_id)
     )
     all_settings = result_all.scalars().all()
-    data_all = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+    data_all = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
     await cache_set_settings(user_id, data_all)
     return {"detail": "Deleted"}
 
@@ -265,7 +266,7 @@ async def admin_delete_setting(
     dependencies=[Depends(verify_service_jwt)]
 )
 async def activate_user_notifications(
-    data: schemas.UserNotificationActivation,
+    data: UserNotificationActivation,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -296,8 +297,8 @@ async def activate_user_notifications(
     try:
         # Проверяем существующие настройки
         result = await db.execute(
-            select(models.NotificationSetting)
-            .where(models.NotificationSetting.user_id == user_id)
+            select(NotificationSetting)
+            .where(NotificationSetting.user_id == user_id)
         )
         existing_settings = {setting.event_type: setting for setting in result.scalars().all()}
         logger.debug("Найдено существующих настроек: %d", len(existing_settings))
@@ -314,7 +315,7 @@ async def activate_user_notifications(
                     logger.debug("Обновлена настройка: user_id=%s, event_type=%s", user_id, event_type)
             else:
                 # Создаем новую настройку
-                new_setting = models.NotificationSetting(
+                new_setting = NotificationSetting(
                     user_id=user_id,
                     event_type=event_type,
                     email=data.email,
@@ -334,10 +335,10 @@ async def activate_user_notifications(
         
         # Получаем обновленные настройки для обновления кэша
         result_all = await db.execute(
-            select(models.NotificationSetting).where(models.NotificationSetting.user_id == user_id)
+            select(NotificationSetting).where(NotificationSetting.user_id == user_id)
         )
         all_settings = result_all.scalars().all()
-        data_all = [schemas.NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+        data_all = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
         await cache_set_settings(user_id, data_all)
         logger.info("Кэш обновлен для user_id=%s", user_id)
         

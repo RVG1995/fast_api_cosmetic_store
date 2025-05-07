@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import Integer, String, Boolean, DateTime, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column
-from .database import Base
+from database import Base
 
 class NotificationSetting(Base):
     """Настройки уведомлений для пользователя."""

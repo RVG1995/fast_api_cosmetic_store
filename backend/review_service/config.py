@@ -109,7 +109,12 @@ def get_cache_ttl() -> Dict[str, int]:
     }
 
 def get_cache_keys() -> Dict[str, str]:
-    """Возвращает префиксы ключей кэша."""
+    """
+    Получение ключей для кэширования
+    
+    Returns:
+        Dict[str, str]: Словарь ключей кэша
+    """
     return {
         "review": "review_service:review:",
         "product_reviews": "review_service:product_reviews:",
@@ -121,8 +126,9 @@ def get_cache_keys() -> Dict[str, str]:
         "product_review_stats": "review_service:product_review_stats:",
         "store_review_stats": "review_service:store_review_stats:",
         "test": "review_service:test:",
-        "product_batch_statistics": "product_batch_stats:",
-        "review_detail": "review_detail:"
+        "product_batch_statistics": "review_service:product_batch_stats:",
+        "review_detail": "review_service:review_detail:",
+        "user_permissions": "review_service:user_permissions:"
     }
 
 def get_cors_origins() -> List[str]:

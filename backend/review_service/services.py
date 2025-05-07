@@ -67,6 +67,14 @@ class OrderApi:
         (заказал товар и статус заказа 'delivered')
         """
         try:
+            # Проверяем кэш
+            cache_key = f"{CACHE_KEYS['permissions']}product:{user_id}:{product_id}"
+            cached_result = await cache_get(cache_key)
+            
+            if cached_result is not None:
+                logger.debug(f"Результат проверки возможности оставить отзыв получен из кэша: user_id={user_id}, product_id={product_id}, result={cached_result}")
+                return cached_result
+                
             headers = {}
             if token:
                 headers["Authorization"] = f"Bearer {token}"
@@ -84,6 +92,10 @@ class OrderApi:
                     result = response.json()
                     can_review = result.get("can_review", False)
                     logger.info(f"Проверка возможности оставить отзыв: user_id={user_id}, product_id={product_id}, result={can_review}")
+                    
+                    # Кэшируем результат
+                    await cache_set(cache_key, can_review, CACHE_TTL["permissions"])
+                    
                     return can_review
                 else:
                     logger.warning(f"Ошибка при проверке возможности оставить отзыв. Код: {response.status_code}")
@@ -99,6 +111,14 @@ class OrderApi:
         (имеет хотя бы один заказ со статусом 'delivered')
         """
         try:
+            # Проверяем кэш
+            cache_key = f"{CACHE_KEYS['permissions']}store:{user_id}"
+            cached_result = await cache_get(cache_key)
+            
+            if cached_result is not None:
+                logger.debug(f"Результат проверки возможности оставить отзыв на магазин получен из кэша: user_id={user_id}, result={cached_result}")
+                return cached_result
+                
             headers = {}
             if token:
                 headers["Authorization"] = f"Bearer {token}"
@@ -115,6 +135,10 @@ class OrderApi:
                     result = response.json()
                     can_review = result.get("can_review", False)
                     logger.info(f"Проверка возможности оставить отзыв на магазин: user_id={user_id}, result={can_review}")
+                    
+                    # Кэшируем результат
+                    await cache_set(cache_key, can_review, CACHE_TTL["permissions"])
+                    
                     return can_review
                 else:
                     logger.warning(f"Ошибка при проверке возможности оставить отзыв на магазин. Код: {response.status_code}")
@@ -339,15 +363,16 @@ async def get_product_reviews(
         Dict: Пагинированный результат с отзывами
     """
     try:
-        # Проверяем кэш, если include_hidden=False
-        if not include_hidden:
-            cache_key = f"{CACHE_KEYS['product_reviews']}{product_id}:{page}:{limit}"
-            cached_data = await cache_get(cache_key)
-            if cached_data:
-                logger.info(f"Отзывы для товара {product_id} получены из кэша")
-                return cached_data
+        # Формируем ключ кэша с учетом параметра include_hidden
+        cache_key = f"{CACHE_KEYS['product_reviews']}{product_id}:{page}:{limit}:{include_hidden}"
+        logger.debug(f"Проверяем кэш для отзывов товара {product_id} с ключом {cache_key}")
+        cached_data = await cache_get(cache_key)
         
-        # Логируем процесс получения отзывов из БД
+        if cached_data:
+            logger.info(f"Отзывы для товара {product_id} (страница {page}, лимит {limit}, include_hidden={include_hidden}) получены из кэша")
+            return cached_data
+        
+        # Если данных в кэше нет, получаем из БД
         logger.info(f"Получаем отзывы для товара {product_id} из БД, страница {page}, лимит {limit}, include_hidden={include_hidden}")
         
         # Получаем отзывы из БД
@@ -367,9 +392,11 @@ async def get_product_reviews(
             "pages": ceil(total / limit) if total > 0 else 1
         }
         
-        # Кэшируем результат, если include_hidden=False
-        if not include_hidden:
-            await cache_set(cache_key, result, CACHE_TTL["reviews"])
+        # Кэшируем результат
+        logger.debug(f"Сохраняем отзывы товара {product_id} в кэш с ключом {cache_key}")
+        # Определяем TTL в зависимости от типа запроса
+        ttl = CACHE_TTL["reviews"] if not include_hidden else CACHE_TTL["reviews"] // 2  # Для админов кэш хранится меньше
+        await cache_set(cache_key, result, ttl)
         
         return result
     except Exception as e:
@@ -401,15 +428,16 @@ async def get_store_reviews(
         Dict: Пагинированный результат с отзывами
     """
     try:
-        # Проверяем кэш, если include_hidden=False
-        if not include_hidden:
-            cache_key = f"{CACHE_KEYS['store_reviews']}{page}:{limit}"
-            cached_data = await cache_get(cache_key)
-            if cached_data:
-                logger.info("Отзывы для магазина получены из кэша")
-                return cached_data
-                
-        # Логируем процесс получения отзывов из БД
+        # Формируем ключ кэша с учетом параметра include_hidden
+        cache_key = f"{CACHE_KEYS['store_reviews']}{page}:{limit}:{include_hidden}"
+        logger.debug(f"Проверяем кэш для отзывов магазина с ключом {cache_key}")
+        cached_data = await cache_get(cache_key)
+        
+        if cached_data:
+            logger.info(f"Отзывы для магазина (страница {page}, лимит {limit}, include_hidden={include_hidden}) получены из кэша")
+            return cached_data
+        
+        # Если данных в кэше нет, получаем из БД
         logger.info(f"Получаем отзывы для магазина из БД, страница {page}, лимит {limit}, include_hidden={include_hidden}")
         
         # Получаем отзывы из БД
@@ -429,9 +457,11 @@ async def get_store_reviews(
             "pages": ceil(total / limit) if total > 0 else 1
         }
         
-        # Кэшируем результат, если include_hidden=False
-        if not include_hidden:
-            await cache_set(cache_key, result, CACHE_TTL["reviews"])
+        # Кэшируем результат
+        logger.debug(f"Сохраняем отзывы магазина в кэш с ключом {cache_key}")
+        # Определяем TTL в зависимости от типа запроса
+        ttl = CACHE_TTL["reviews"] if not include_hidden else CACHE_TTL["reviews"] // 2  # Для админов кэш хранится меньше
+        await cache_set(cache_key, result, ttl)
         
         return result
     except Exception as e:

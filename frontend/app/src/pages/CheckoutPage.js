@@ -25,7 +25,8 @@ const CheckoutPage = () => {
     region: '',
     street: '',
     comment: '',
-    personalDataAgreement: false
+    personalDataAgreement: false,
+    receiveNotifications: true // По умолчанию согласие на получение уведомлений для неавторизованных пользователей
   });
   
   const [validated, setValidated] = useState(false);
@@ -241,7 +242,8 @@ const CheckoutPage = () => {
       street: formData.street,
       comment: formData.comment || '',
       personalDataAgreement: formData.personalDataAgreement,
-      promo_code: promoCode ? promoCode.code : undefined
+      promo_code: promoCode ? promoCode.code : undefined,
+      receive_notifications: !user ? formData.receiveNotifications : undefined // Передаем только для неавторизованных пользователей
     };
     
     console.log("Отправляемые данные заказа:", orderData);
@@ -534,6 +536,20 @@ const CheckoutPage = () => {
                     feedbackType="invalid"
                   />
                 </Form.Group>
+                
+                {/* Опция подписки на уведомления для незарегистрированных пользователей */}
+                {!user && (
+                  <Form.Group className="mb-3">
+                    <Form.Check
+                      type="checkbox"
+                      id="receiveNotifications"
+                      name="receiveNotifications"
+                      checked={formData.receiveNotifications}
+                      onChange={handleChange}
+                      label="Я хочу получать уведомления о статусе заказа по email"
+                    />
+                  </Form.Group>
+                )}
                 
                 <Button 
                   variant="primary" 

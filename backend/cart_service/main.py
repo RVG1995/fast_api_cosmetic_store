@@ -1129,11 +1129,10 @@ async def get_user_info(user_id: int) -> Dict[str, Any]:
 
 @app.get("/admin/carts", response_model=PaginatedUserCartsResponse, tags=["Администрирование"],dependencies=[Depends(get_current_admin_user)])
 async def get_user_carts(
-
     page: int = Query(1, description="Номер страницы", ge=1),
     limit: int = Query(10, description="Количество записей на странице", ge=1, le=100),
-    sort_by: str = Query("updated_at", description="Поле для сортировки", regex="^(id|user_id|created_at|updated_at|items_count|total_price)$"),
-    sort_order: str = Query("desc", description="Порядок сортировки", regex="^(asc|desc)$"),
+    sort_by: str = Query("updated_at", description="Поле для сортировки", pattern="^(id|user_id|created_at|updated_at|items_count|total_price)$"),
+    sort_order: str = Query("desc", description="Порядок сортировки", pattern="^(asc|desc)$"),
     user_id: Optional[int] = Query(None, description="Фильтр по ID пользователя"),
     filter: Optional[str] = Query(None, description="Фильтр (with_items/empty)"),
     search: Optional[str] = Query(None, description="Поисковый запрос по ID корзины"),

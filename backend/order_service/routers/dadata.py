@@ -11,16 +11,15 @@ logger = logging.getLogger("dadata_router")
 DADATA_CACHE_TTL = int(os.getenv("DADATA_CACHE_TTL", "86400"))  # TTL сутки
 from cache import get_cached_data, set_cached_data
 from schemas import SuggestRequest
-
+from config import settings
 router = APIRouter(
     prefix="/dadata",
     tags=["dadata"],
     responses={400: {"description": "Bad Request"}, 500: {"description": "Server Error"}}
 )
 
-DADATA_TOKEN = os.getenv("DADATA_TOKEN")
 HEADERS = {
-    "Authorization": f"Token {DADATA_TOKEN}",
+    "Authorization": f"Token {settings.DADATA_TOKEN}",
     "Content-Type": "application/json"
 }
 

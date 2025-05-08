@@ -8,7 +8,6 @@ from datetime import datetime
 import hashlib
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Body
-from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from notification_api import check_notification_settings
@@ -129,10 +128,21 @@ async def create_new_order(
         
         # Отправляем подтверждение заказа на email через Notifications Service
         try:
-            if order_data.email and user_id != None:
-                logger.info("Отправка подтверждения заказа на email: %s", order_data.email)
-                # CONVERT loaded_order to plain dict for JSON payload
-                await check_notification_settings(loaded_order.user_id,"order.created", loaded_order.id)
+            # Проверяем, авторизован ли пользователь
+            if user_id:
+                # Для авторизованных пользователей всегда проверяем настройки уведомлений
+                logger.info("Отправка уведомления о создании заказа для авторизованного пользователя: %s", user_id)
+                await check_notification_settings(loaded_order.user_id, "order.created", loaded_order.id)
+            else:
+                # Для неавторизованных пользователей проверяем согласие на получение уведомлений
+                if loaded_order.receive_notifications and loaded_order.email:
+                    logger.info("Отправка уведомления о создании заказа для неавторизованного пользователя на email: %s", order_data.email)
+                    # Для неавторизованных пользователей отправляем уведомление напрямую, без проверки настроек
+                    # Здесь можно использовать другой метод для отправки, который не проверяет настройки пользователя
+                    # Например, direct_notification_service или аналогичный
+                    await check_notification_settings(None, "order.created", loaded_order.id)
+                else:
+                    logger.info("Уведомление о создании заказа не отправлено: неавторизованный пользователь не дал согласие или не указал email")
         except (ConnectionError, TimeoutError, ValueError) as e:
             logger.error("Ошибка при отправке email о заказе: %s", str(e))
         
@@ -918,8 +928,20 @@ async def update_order_status(
         
         # Отправляем уведомление об изменении статуса через Notifications Service
         try:
-            if updated_order.email:
+            # Проверяем, принадлежит ли заказ авторизованному пользователю
+            if updated_order.user_id:
+                # Для заказов авторизованных пользователей всегда проверяем настройки уведомлений
+                logger.info("Отправка уведомления об изменении статуса для авторизованного пользователя: %s", updated_order.user_id)
                 await check_notification_settings(updated_order.user_id, "order.status_changed", updated_order.id)
+            else:
+                # Для заказов неавторизованных пользователей проверяем флаг согласия на уведомления
+                if updated_order.receive_notifications and updated_order.email:
+                    logger.info("Отправка уведомления об изменении статуса для неавторизованного пользователя на email: %s", updated_order.email)
+                    # Используем специальный метод для неавторизованных пользователей
+                    await check_notification_settings(None, "order.status_changed", updated_order.id)
+                else:
+                    logger.info("Уведомление об изменении статуса не отправлено: неавторизованный пользователь не дал согласие или не указал email")
+            
             logger.info("Отправлено событие 'order.status_changed' для заказа %s", order_id)
         except (ConnectionError, TimeoutError, ValueError) as e:
             logger.error("Ошибка при отправке события изменения статуса: %s", e)
@@ -1416,4 +1438,63 @@ async def get_order_service(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при получении информации о заказе",
+        ) from e
+
+@router.post("/{order_id}/unsubscribe", status_code=status.HTTP_200_OK)
+async def unsubscribe_notifications(
+    order_id: int = Path(..., ge=1),
+    email: str = Body(..., embed=True),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Отменить подписку на уведомления по email для неавторизованного пользователя.
+    
+    - **order_id**: ID заказа
+    - **email**: Email, указанный при создании заказа для подтверждения
+    """
+    try:
+        # Получаем заказ
+        order = await get_order_by_id(session, order_id)
+        
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Заказ с ID {order_id} не найден",
+            )
+        
+        # Проверяем принадлежность к пользователю
+        if order.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Данный метод доступен только для заказов, созданных без регистрации",
+            )
+        
+        # Проверяем email
+        if order.email.lower() != email.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Указанный email не совпадает с email, указанным при создании заказа",
+            )
+        
+        # Обновляем флаг получения уведомлений
+        order.receive_notifications = False
+        session.add(order)
+        await session.commit()
+        
+        # Инвалидируем кэш заказа
+        await invalidate_order_cache(order_id)
+        logger.info("Кэш заказа %s инвалидирован после отмены подписки на уведомления", order_id)
+        
+        return {
+            "success": True,
+            "message": "Вы успешно отписались от уведомлений о заказе"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Ошибка при отмене подписки на уведомления: %s", str(e))
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Произошла ошибка при отмене подписки на уведомления",
         ) from e

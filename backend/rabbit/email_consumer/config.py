@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     
     # Email администратора для уведомлений
     ADMIN_EMAIL: str = "rvg95@mail.ru"
+
+    FRONTEND_URL: str = "http://localhost:3000"
     
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),

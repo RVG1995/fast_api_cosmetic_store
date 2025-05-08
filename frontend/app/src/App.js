@@ -21,6 +21,7 @@ import CartPage from './pages/CartPage'; // Импортируем страни�
 import CheckoutPage from './pages/CheckoutPage'; // Импортируем страницу оформления заказа
 import OrdersPage from './pages/user/OrdersPage'; // Импортируем страницу заказов пользователя
 import OrderDetailPage from './pages/user/OrderDetailPage'; // Импортируем страницу деталей заказа
+import UnsubscribePage from './pages/UnsubscribePage'; // Импортируем страницу отписки от уведомлений
 import ReviewsPage from './pages/reviews/ReviewsPage'; // Импортируем страницу отзывов
 import ReviewPage from './pages/reviews/ReviewPage'; // Импортируем страницу детального просмотра отзыва
 import ScrollToTop from './components/layout/ScrollToTop';
@@ -111,6 +112,9 @@ function App() {
                           <OrderDetailPage />
                         </PrivateRoute>
                       } />
+
+                      {/* Маршрут для отписки от уведомлений для незарегистрированных пользователей */}
+                      <Route path="orders/:orderId/unsubscribe" element={<UnsubscribePage />} />
                       
                       {/* Маршруты для отзывов */}
                       <Route path="reviews" element={<ReviewsPage />} />

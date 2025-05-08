@@ -93,6 +93,9 @@ class OrderCreate(BaseModel):
     
     # Поле для промокода
     promo_code: Optional[str] = Field(None, min_length=3, max_length=50)
+
+    # Согласие на получение уведомлений для неавторизованных пользователей
+    receive_notifications: Optional[bool] = None
     
     # Согласие на обработку персональных данных
     personal_data_agreement: bool = Field(..., description="Согласие на обработку персональных данных")
@@ -401,6 +404,10 @@ class OrderResponse(BaseModel):
     
     is_paid: bool
     personal_data_agreement: Optional[bool] = None
+    
+    # Согласие на получение уведомлений для неавторизованных пользователей
+    receive_notifications: Optional[bool] = None
+    
     items: List[OrderItemResponse] = []
     
     order_number: str

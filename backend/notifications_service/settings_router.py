@@ -147,13 +147,15 @@ async def check_settings(
 async def receive_notification(event: NotificationEvent, db: AsyncSession = Depends(get_db)):
     """Обработка входящих событий уведомлений."""
     logger.info("[POST /settings/events] event_type=%s, user_id=%s", event.event_type, event.user_id)
-    flags = await check_settings(event.user_id, event.event_type, db)
-    if flags['email_enabled'] == True and event.event_type == 'order.created':
-        if event.user_id:
-            await send_email_message(event.order_id)
-    elif flags['email_enabled'] == True and event.event_type == 'order.status_changed':
-        if event.user_id:
-            await update_order_status(event.order_id)
+    if event.user_id is not None:
+        flags = await check_settings(event.user_id, event.event_type, db)
+        if flags['email_enabled'] == True and event.event_type == 'order.created':
+            if event.user_id:
+                await send_email_message(event.order_id)
+        elif flags['email_enabled'] == True and event.event_type == 'order.status_changed':
+            if event.user_id:
+                await update_order_status(event.order_id)
+    await send_email_message(event.order_id)
 
 
 @router.post("/settings", response_model=NotificationSettingResponse)

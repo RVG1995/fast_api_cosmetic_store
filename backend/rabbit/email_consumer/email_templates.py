@@ -4,7 +4,7 @@
 import logging
 from datetime import datetime
 
-from config import logger
+from config import logger, settings
 
 def create_order_email_content(order_data):
     """
@@ -79,6 +79,24 @@ def create_order_email_content(order_data):
             <td colspan="3" style="padding: 10px; text-align: right; font-style: italic;">Скидка:</td>
             <td style="padding: 10px; text-align: right; font-style: italic;">-{discount_amount:.2f} ₽</td>
         </tr>
+        """
+    
+    # Определяем, является ли пользователь незарегистрированным
+    # Если user_id отсутствует, добавляем ссылку для отписки
+    unsubscribe_section = ""
+    email = order_data.get('email', '')
+    order_id = order_data.get('id', '')
+    
+    if not order_data.get('user_id') and email and order_id:
+        # Формируем ссылку для отписки
+        unsubscribe_link = f"{settings.FRONTEND_URL}/orders/{order_id}/unsubscribe?email={email}"
+        unsubscribe_section = f"""
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e2e8f0; color: #718096; font-size: 12px; text-align: center;">
+            <p>
+                Вы получили это письмо, так как дали согласие на получение уведомлений о статусе заказа.<br>
+                Если вы больше не хотите получать уведомления о заказе, <a href="{unsubscribe_link}" style="color: #4a5568;">нажмите здесь для отписки</a>
+            </p>
+        </div>
         """
     
     # Формируем HTML-шаблон
@@ -176,6 +194,8 @@ def create_order_email_content(order_data):
             <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #718096; font-size: 14px;">
                 <p>С уважением,<br>Команда "Косметик-стор"</p>
             </div>
+            
+            {unsubscribe_section}
         </div>
     </body>
     </html>
@@ -268,6 +288,24 @@ def create_status_update_email_content(order_data):
             <td style="padding: 10px; text-align: right; font-style: italic;">-{discount_amount:.2f} ₽</td>
         </tr>
         """
+    
+    # Определяем, является ли пользователь незарегистрированным
+    # Если user_id отсутствует, добавляем ссылку для отписки
+    unsubscribe_section = ""
+    email = order_data.get('email', '')
+    order_id = order_data.get('id', '')
+    
+    if not order_data.get('user_id') and email and order_id:
+        # Формируем ссылку для отписки
+        unsubscribe_link = f"{settings.FRONTEND_URL}/orders/{order_id}/unsubscribe?email={email}"
+        unsubscribe_section = f"""
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e2e8f0; color: #718096; font-size: 12px; text-align: center;">
+            <p>
+                Вы получили это письмо, так как дали согласие на получение уведомлений о статусе заказа.<br>
+                Если вы больше не хотите получать уведомления о заказе, <a href="{unsubscribe_link}" style="color: #4a5568;">нажмите здесь для отписки</a>
+            </p>
+        </div>
+        """
         
     # Формируем HTML-шаблон
     html = f"""
@@ -359,6 +397,8 @@ def create_status_update_email_content(order_data):
             <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #718096; font-size: 14px;">
                 <p>С уважением,<br>Команда "Косметик-стор"</p>
             </div>
+            
+            {unsubscribe_section}
         </div>
     </body>
     </html>

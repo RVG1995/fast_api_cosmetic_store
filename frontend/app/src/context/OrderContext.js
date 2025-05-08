@@ -239,7 +239,8 @@ export const OrderProvider = ({ children }) => {
         city: orderData.shipping_address?.city || orderData.city || "",
         street: orderData.shipping_address?.address_line1 || orderData.street || "",
         comment: orderData.notes || orderData.comment || "",
-        personal_data_agreement: Boolean(orderData.personalDataAgreement)
+        personal_data_agreement: Boolean(orderData.personalDataAgreement),
+        receive_notifications:Boolean(orderData.receive_notifications)
       };
       
       // Добавляем промокод, если он есть

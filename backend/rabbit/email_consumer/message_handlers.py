@@ -50,7 +50,15 @@ async def process_email_message(message: aio_pika.IncomingMessage) -> None:
             await message.reject(requeue=False)
             return
 
-
+        # Проверяем настройки уведомлений для незарегистрированных пользователей
+        user_id = order_info.get('user_id')
+        if user_id is None:
+            # Проверка флага receive_notifications для незарегистрированных пользователей
+            receive_notifications = order_info.get('receive_notifications')
+            if receive_notifications is False:
+                logger.info("Пользователь отказался от получения уведомлений для заказа %s", order_number)
+                await message.ack()
+                return
         
         # Формируем содержимое письма
         subject = f"Подтверждение заказа {order_info.get('order_number')}"
@@ -289,6 +297,16 @@ async def update_status_email_message(message: aio_pika.IncomingMessage) -> None
             logger.warning("Не удалось получить информацию о заказе %s", order_number)
             await message.reject(requeue=False)
             return
+        
+        # Проверяем настройки уведомлений для незарегистрированных пользователей
+        user_id = order_info.get('user_id')
+        if user_id is None:
+            # Проверка флага receive_notifications для незарегистрированных пользователей
+            receive_notifications = order_info.get('receive_notifications')
+            if receive_notifications is False:
+                logger.info("Пользователь отказался от получения уведомлений для заказа %s", order_number)
+                await message.ack()
+                return
         
         # Формируем содержимое письма
         subject = f"Обновление статуса заказа {order_info.get('order_number')}"

@@ -109,6 +109,8 @@ class OrderModel(Base):
     
     # Связь с промокодом
     promo_code = relationship("PromoCodeModel", back_populates="orders")
+
+    receive_notifications: Mapped[bool] = mapped_column(Boolean, nullable=True, default=True)
     
     personal_data_agreement: Mapped[bool] = mapped_column(Boolean, nullable=False)
     

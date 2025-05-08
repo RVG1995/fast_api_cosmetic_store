@@ -41,13 +41,13 @@ class CacheService:
         """Асинхронная инициализация соединения с Redis"""
         if not self.enabled:
             return
-            
+        
         try:
-            # Создаем строку подключения Redis
+            # Создаем строку подключения Redis с указанием DB
             redis_url = "redis://"
             if settings.REDIS_PASSWORD:
                 redis_url += f":{settings.REDIS_PASSWORD}@"
-            redis_url += f"{settings.REDIS_HOST}:{settings.REDIS_PORT}"  # Убираем REDIS_DB из URL
+            redis_url += f"{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
             
             # Создаем асинхронное подключение к Redis с использованием нового API
             self.redis = await redis.Redis.from_url(
@@ -55,9 +55,6 @@ class CacheService:
                 socket_timeout=3,
                 decode_responses=False  # Не декодируем ответы для поддержки pickle
             )
-            
-            # Явно выбираем базу данных после создания соединения
-            await self.redis.select(settings.REDIS_DB)
             
             logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB)
         except (RedisConnectionError, RedisTimeoutError, RedisResponseError) as e:

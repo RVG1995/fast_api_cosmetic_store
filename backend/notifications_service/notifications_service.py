@@ -98,63 +98,25 @@ async def update_order_status(
         # Закрываем соединение в любом случае
         await close_connection(connection)
 
-async def notification_message_about_low_stock(
-    low_stock_products,
-    user_id: Optional[str] = None,
-    token: Optional[str] = None
-):
-    """
-    Отправляет уведомление о товарах с низким остатком в очередь RabbitMQ
-    
-    Args:
-        low_stock_products: Список товаров с низким остатком, каждый товар содержит id, name и stock
-        user_id: ID пользователя для проверки настроек уведомлений (для обратной совместимости)
-        token: JWT токен для авторизации в сервисе уведомлений
-    """
-    # Получение списка администраторов
-    admins = await notification_api.get_admin_users(token)
-    
-    if not admins:
-        logger.warning("Не найдены администраторы для отправки уведомлений о низком остатке товаров")
-        # Если администраторы не найдены, используем старую логику с одним пользователем
-        if user_id:
-            settings = await notification_api.check_notification_settings(user_id, "product.low_stock", token)
-            if settings["email_enabled"]:
-                await _send_low_stock_notification(low_stock_products)
-            else:
-                logger.info("Email уведомления о низком остатке товаров отключены для пользователя %s, email не будет отправлен", user_id)
-        else:
-            # Если не указан ID пользователя и нет администраторов, отправляем уведомление по умолчанию
-            await _send_low_stock_notification(low_stock_products)
-        return
-    
-    # Флаг для отслеживания, было ли отправлено хотя бы одно уведомление
-    notification_sent = False
-    
-    # Отправка уведомлений всем администраторам с включенными уведомлениями
-    for admin in admins:
-        admin_id = str(admin.get("id"))
-        settings = await notification_api.check_notification_settings(admin_id, "product.low_stock", token)
-        
-        if settings["email_enabled"]:
-            # Если ещё не отправили уведомление - отправляем его
-            if not notification_sent:
-                await _send_low_stock_notification(low_stock_products)
-                notification_sent = True
-            logger.info("Отправлено уведомление о низком остатке товаров администратору %s", admin_id)
-        else:
-            logger.info("Email уведомления о низком остатке товаров отключены для администратора %s", admin_id)
-            
-    if not notification_sent:
-        logger.warning("Ни один администратор не имеет включенных уведомлений о низком остатке товаров")
 
-# Вспомогательная функция для фактической отправки уведомления
-async def _send_low_stock_notification(low_stock_products):
+
+# Новая функция для отправки уведомлений в RabbitMQ
+async def send_notification_to_rabbit(data: dict):
     """
-    Вспомогательная функция для отправки уведомления о низком остатке товаров
+    Отправляет данные для уведомления в очередь RabbitMQ
     
     Args:
-        low_stock_products: Список товаров с низким остатком
+        data: Словарь с данными для отправки
+            Для уведомлений о низком остатке товаров:
+            {
+                "low_stock_products": [
+                    {"id": int, "name": str, "stock": int},
+                    ...
+                ]
+            }
+    
+    Returns:
+        str: "message_sent" если успешно отправлено
     """
     connection = await get_connection()
     
@@ -162,21 +124,23 @@ async def _send_low_stock_notification(low_stock_products):
         # Создаем канал
         channel = await connection.channel()
         
-        # Объявляем очередь с использованием общей функции
+        # Объявляем очередь для уведомлений
         queue = await declare_queue(channel, "notification_message")
-        
-        # Создаем сообщение
-        message_body = create_order_email_content(order_data=low_stock_products)  
         
         # Отправляем сообщение
         await channel.default_exchange.publish(
             aio_pika.Message(
-                body=json.dumps(message_body).encode(),
+                body=json.dumps(data).encode(),
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT
             ),
             routing_key=queue.name
         )
-        logger.info("Отправлено уведомление о %d товарах с низким остатком", len(low_stock_products))
+        
+        logger.info("RabbitMQ: %s", json.dumps(data, ensure_ascii=False))
+        return "message_sent"
+    except Exception as e:
+        logger.error("Ошибка при отправке сообщения в RabbitMQ: %s", str(e))
+        raise
     finally:
         # Закрываем соединение в любом случае
         await close_connection(connection)

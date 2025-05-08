@@ -1,7 +1,7 @@
 """Pydantic схемы для сервиса уведомлений."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -39,7 +39,8 @@ class NotificationEvent(BaseModel):
     """Схема события уведомления."""
     event_type: str
     user_id: Optional[int] = None
-    order_id: int
+    order_id: Optional[int] = None
+    low_stock_products: Optional[List[Dict[str, Any]]] = None
 
 class UserNotificationActivation(BaseModel):
     """Схема для активации уведомлений пользователя через сервисный API."""

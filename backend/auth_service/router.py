@@ -731,10 +731,9 @@ async def verify_service_jwt(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
     return True
 # Добавляем новый эндпоинт для получения списка администраторов
-@router.get("/admins", summary="Получение списка всех администраторов и суперадминистраторов")
+@router.get("/admins", summary="Получение списка всех администраторов и суперадминистраторов", dependencies=[Depends(verify_service_jwt)])
 async def get_all_admins(
     session: SessionDep,
-    _: bool = Depends(verify_service_jwt)
 ) -> List[Dict[str, Any]]:
     """
     Получает список всех пользователей с правами администратора и суперадминистратора.
@@ -752,9 +751,7 @@ async def get_all_admins(
     # Формируем список только с нужными полями
     admins_list = [
         {
-            "id": admin.id,
-            "is_admin": admin.is_admin,
-            "is_super_admin": admin.is_super_admin
+            "email": admin.email,
         }
         for admin in admins
     ]

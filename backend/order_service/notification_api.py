@@ -8,7 +8,7 @@ import asyncio
 import httpx
 from cache import cache_service
 from config import settings
-from dependencies import _get_service_token
+from auth_utils import get_service_token
 
 logger = logging.getLogger("order_service.notification_api")
 
@@ -34,7 +34,7 @@ async def check_notification_settings(user_id: int, event_type: str, order_id: i
         backoffs = [0.5, 1, 2]
         async with httpx.AsyncClient() as client:
             for delay in backoffs:
-                token = await _get_service_token()
+                token = await get_service_token()
                 headers = {"Authorization": f"Bearer {token}"}
                 response = await client.post(
                     f"{NOTIFICATION_SERVICE_URL}/notifications/settings/events",
@@ -75,7 +75,7 @@ async def get_admin_users(token: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     try:
         # get token with cache
-        token = await _get_service_token()
+        token = await get_service_token()
         headers = {"Authorization": f"Bearer {token}"}
 
         url = f"{AUTH_SERVICE_URL}/auth/admins"
@@ -94,3 +94,47 @@ async def get_admin_users(token: Optional[str] = None) -> List[Dict[str, Any]]:
     except (httpx.HTTPError, httpx.TimeoutException, httpx.RequestError) as e:
         logger.error("Ошибка при запросе списка администраторов: %s", str(e))
         return []
+
+async def send_low_stock_notification(low_stock_products: List[Dict[str, Any]]) -> bool:
+    """
+    Отправляет уведомление о низком остатке товаров в сервис уведомлений
+    
+    Args:
+        low_stock_products: Список товаров с низким остатком
+            [{"id": int, "name": str, "stock": int}, ...]
+        
+    Returns:
+        bool: True если отправка успешна, False в противном случае
+    """
+    try:
+        logger.info("Отправка уведомления о низком остатке товаров: %d товаров", len(low_stock_products))
+        
+        # Получаем сервисный токен
+        token = await get_service_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # Отправляем запрос в сервис уведомлений
+        async with httpx.AsyncClient() as client:
+            # Используем эндпоинт для отправки уведомлений админам
+            # Не указываем user_id, чтобы отправить всем админам
+            response = await client.post(
+                f"{NOTIFICATION_SERVICE_URL}/notifications/settings/events",
+                headers=headers,
+                json={
+                    "event_type": "product.low_stock",
+                    "user_id": None,  # Отправляем всем админам
+                    "low_stock_products": low_stock_products
+                },
+                timeout=5.0
+            )
+            
+            if response.status_code == 200:
+                logger.info("Уведомление о низком остатке товаров успешно отправлено")
+                return True
+            else:
+                logger.warning("Ошибка при отправке уведомления: %s, %s", response.status_code, response.text)
+                return False
+                
+    except (httpx.HTTPError, httpx.TimeoutException, httpx.RequestError) as e:
+        logger.error("Ошибка при отправке уведомления: %s", str(e))
+        return False

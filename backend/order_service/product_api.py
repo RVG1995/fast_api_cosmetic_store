@@ -190,7 +190,7 @@ class ProductAPI:
             logger.error("Ошибка при обновлении количества товара %s: %s", product_id, str(e))
             return False
     
-    async def get_products_batch(self, product_ids: List[int], token: Optional[str] = None) -> Dict[int, ProductInfoSchema]:
+    async def get_products_batch(self, product_ids: List[int]) -> Dict[int, ProductInfoSchema]:
         """
         Получение информации о нескольких продуктах по ID
         

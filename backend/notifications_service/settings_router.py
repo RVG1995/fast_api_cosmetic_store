@@ -1,16 +1,16 @@
 """Роутер для управления настройками уведомлений и обработки событий уведомлений."""
 
-from typing import List, Dict
+from typing import List, Dict, Any
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from notifications_service import send_email_message,update_order_status
+from notifications_service import send_email_message, update_order_status, send_notification_to_rabbit
 
 from models import NotificationSetting
-from schemas import NotificationSettingCreate, NotificationSettingUpdate, NotificationSettingResponse, NotificationEvent,UserNotificationActivation
+from schemas import NotificationSettingCreate, NotificationSettingUpdate, NotificationSettingResponse, NotificationEvent, UserNotificationActivation
 from database import get_db
 from auth import require_user, require_admin, verify_service_jwt, User
 from cache import (
@@ -113,7 +113,7 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
     dependencies=[Depends(verify_service_jwt)]
 )
 async def check_settings(
-    user_id: str, 
+    user_id: int, 
     event_type: str,
     db: AsyncSession = Depends(get_db)
 ):
@@ -147,17 +147,34 @@ async def check_settings(
 async def receive_notification(event: NotificationEvent, db: AsyncSession = Depends(get_db)):
     """Обработка входящих событий уведомлений."""
     logger.info("[POST /settings/events] event_type=%s, user_id=%s", event.event_type, event.user_id)
+    
+    # Если это событие о низком остатке товаров
+    if event.event_type == EVENT_TYPE_PRODUCT_LOW_STOCK:
+        if event.low_stock_products:
+            logger.info("Получено уведомление о низком остатке товаров: %d товаров", len(event.low_stock_products))
+            # Отправляем событие напрямую в очередь RabbitMQ для обработки
+            await send_notification_to_rabbit({
+                "low_stock_products": event.low_stock_products
+            })
+            return {"status": "success", "message": "Уведомление о низком остатке товаров отправлено в очередь"}
+        else:
+            logger.warning("Получено уведомление о низком остатке товаров без данных о товарах")
+            return {"status": "error", "message": "Не предоставлены данные о товарах"}
+    
+    # Обрабатываем другие типы событий
     if event.user_id is not None:
         flags = await check_settings(event.user_id, event.event_type, db)
-        if flags['email_enabled'] == True and event.event_type == 'order.created':
+        if flags['email_enabled'] == True and event.event_type == 'order.created' and event.order_id:
             await send_email_message(event.order_id)
-        elif flags['email_enabled'] == True and event.event_type == 'order.status_changed':
+        elif flags['email_enabled'] == True and event.event_type == 'order.status_changed' and event.order_id:
             await update_order_status(event.order_id)
-    elif event.user_id is None:
+    elif event.user_id is None and event.order_id:
         if event.event_type == 'order.created':
             await send_email_message(event.order_id)
         elif event.event_type == 'order.status_changed':
             await update_order_status(event.order_id)
+            
+    return {"status": "success", "message": "Уведомление обработано"}
 
 
 @router.post("/settings", response_model=NotificationSettingResponse)

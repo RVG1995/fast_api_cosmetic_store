@@ -82,7 +82,7 @@ async def create_new_order(
         
         # Проверяем наличие товаров
         product_ids = [item.product_id for item in order_data.items]
-        availability = await check_products_availability(product_ids, token)
+        availability = await check_products_availability(product_ids)
         
         # Проверяем, все ли товары доступны
         unavailable_products = [pid for pid, available in availability.items() if not available]
@@ -531,7 +531,7 @@ async def reorder_endpoint(
             product_ids.append(item.product_id)
         
         # Проверяем доступность товаров
-        availability = await check_products_availability(product_ids, token)
+        availability = await check_products_availability(product_ids)
         
         # Проверяем, все ли товары доступны
         unavailable_products = [pid for pid, available in availability.items() if not available]
@@ -1265,7 +1265,7 @@ async def create_order_admin(
         
         # Проверяем наличие товаров
         product_ids = [item.product_id for item in order_data.items]
-        availability = await check_products_availability(product_ids, token)
+        availability = await check_products_availability(product_ids)
         
         # Проверяем, все ли товары доступны
         unavailable_products = [pid for pid, available in availability.items() if not available]

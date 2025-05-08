@@ -19,6 +19,7 @@ from email_templates import (
 )
 from connection_utils import get_connection_with_retry, close_connection
 from orders_api import check_order_info
+from auth_api import get_admins
 
 
 async def process_email_message(message: aio_pika.IncomingMessage) -> None:
@@ -129,9 +130,20 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
         if "low_stock_products" in message_body:
             low_stock_products = message_body["low_stock_products"]
             
-            # Формируем содержимое письма для администратора
-            admin_email = settings.ADMIN_EMAIL
-            subject = f"Внимание! Товары с низким остатком ({len(low_stock_products)} шт.)"
+            # Получаем список администраторов из auth_service
+            admin_emails = []
+            try:
+                admins = await get_admins()
+                if admins:
+                    # Получаем email администраторов
+                    for admin in admins:
+                        admin_email = admin.get("email")
+                        if admin_email:
+                            admin_emails.append(admin_email)
+                        
+                        logger.info("Получено %d администраторов для отправки уведомлений", len(admin_emails))
+            except Exception as e:
+                logger.error("Ошибка при получении списка администраторов: %s", str(e))
             
             # Создаем HTML-таблицу с товарами
             products_table = ""
@@ -147,6 +159,8 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
                 </tr>
                 """
             
+            # Формируем HTML-письмо
+            subject = f"Внимание! Товары с низким остатком ({len(low_stock_products)} шт.)"
             html_content = f"""
             <!DOCTYPE html>
             <html>
@@ -185,10 +199,22 @@ async def notification_message(message: aio_pika.IncomingMessage) -> None:
             </html>
             """
             
-            # Отправляем письмо администратору
-            await send_email(admin_email, subject, html_content)
+            # Отправляем письмо всем администраторам
+            sent_count = 0
+            for admin_email in admin_emails:
+                try:
+                    await send_email(admin_email, subject, html_content)
+                    sent_count += 1
+                    logger.info("Уведомление о %d товарах с низким остатком успешно отправлено на %s", 
+                              len(low_stock_products), admin_email)
+                except Exception as email_error:
+                    logger.error("Ошибка при отправке уведомления на %s: %s", admin_email, str(email_error))
             
-            logger.info("Уведомление о %d товарах с низким остатком успешно отправлено на %s", len(low_stock_products), admin_email)
+            if sent_count > 0:
+                logger.info("Уведомления успешно отправлены %d из %d администраторов", 
+                           sent_count, len(admin_emails))
+            else:
+                logger.error("Не удалось отправить уведомления ни одному администратору")
         
         # Обработка устаревшего формата сообщения (для обратной совместимости)
         elif "product_name" in message_body and "stock" in message_body:

@@ -47,13 +47,13 @@ async def create_order(
     
     # Получаем информацию о товарах
     product_ids = [item.product_id for item in order_data.items]
-    products_info = await get_products_info(product_ids, token)
+    products_info = await get_products_info(product_ids)
     
     # Получаем API для работы с товарами
     product_api = await get_product_api()
     
     # Проверка наличия товаров
-    availability = await check_products_availability(product_ids, token)
+    availability = await check_products_availability(product_ids)
     
     # Проверяем, все ли товары доступны
     unavailable_products = [pid for pid, available in availability.items() if not available]

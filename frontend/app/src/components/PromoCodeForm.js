@@ -14,7 +14,6 @@ const PromoCodeForm = ({ email, phone, cartTotal, onPromoCodeApplied }) => {
       const result = await checkPromoCode(code, email, phone);
       if (result && result.is_valid) {
         onPromoCodeApplied(result);
-        setCode('');
       }
     } catch (err) {
       console.error('Ошибка при проверке промокода:', err);

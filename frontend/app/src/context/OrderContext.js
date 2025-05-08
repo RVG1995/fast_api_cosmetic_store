@@ -924,7 +924,30 @@ export const OrderProvider = ({ children }) => {
     } catch (err) {
       console.error("Ошибка при проверке промокода:", err);
       setPromoCode(null);
-      setError(err.response?.data?.detail || "Не удалось проверить промокод");
+      
+      // Обработка объектов ошибок и преобразование их в строки
+      let errorMessage = "Не удалось проверить промокод";
+      
+      if (err.response?.data?.detail) {
+        if (Array.isArray(err.response.data.detail)) {
+          // Если ошибка представлена массивом объектов (валидация FastAPI)
+          errorMessage = err.response.data.detail
+            .map(item => {
+              if (typeof item === 'string') return item;
+              if (typeof item === 'object') return item.msg || JSON.stringify(item);
+              return String(item);
+            })
+            .join('. ');
+        } else if (typeof err.response.data.detail === 'object') {
+          // Если ошибка - объект
+          errorMessage = err.response.data.detail.msg || JSON.stringify(err.response.data.detail);
+        } else {
+          // Если ошибка - строка или другой тип
+          errorMessage = String(err.response.data.detail);
+        }
+      }
+      
+      setError(errorMessage);
       return null;
     } finally {
       setLoading(false);

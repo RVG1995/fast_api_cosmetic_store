@@ -150,12 +150,14 @@ async def receive_notification(event: NotificationEvent, db: AsyncSession = Depe
     if event.user_id is not None:
         flags = await check_settings(event.user_id, event.event_type, db)
         if flags['email_enabled'] == True and event.event_type == 'order.created':
-            if event.user_id:
-                await send_email_message(event.order_id)
+            await send_email_message(event.order_id)
         elif flags['email_enabled'] == True and event.event_type == 'order.status_changed':
-            if event.user_id:
-                await update_order_status(event.order_id)
-    await send_email_message(event.order_id)
+            await update_order_status(event.order_id)
+    elif event.user_id is None:
+        if event.event_type == 'order.created':
+            await send_email_message(event.order_id)
+        elif event.event_type == 'order.status_changed':
+            await update_order_status(event.order_id)
 
 
 @router.post("/settings", response_model=NotificationSettingResponse)

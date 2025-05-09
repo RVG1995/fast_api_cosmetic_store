@@ -29,12 +29,14 @@ CACHE_TTL = get_cache_ttl()
 # Префиксы ключей кэша
 CACHE_KEYS = get_cache_keys()
 
-# Собственный JSONEncoder для обработки даты и времени
+# Собственный JSONEncoder для обработки даты и времени и байтов
 class DateTimeEncoder(json.JSONEncoder):
-    """Класс для сериализации объектов datetime в JSON"""
+    """Класс для сериализации объектов datetime и bytes в JSON"""
     def default(self, obj):
         if isinstance(obj, datetime):
             return obj.isoformat()
+        elif isinstance(obj, bytes):
+            return obj.decode('utf-8', errors='replace')
         return super().default(obj)
 
 class CacheService:
@@ -131,11 +133,31 @@ class CacheService:
             return False
             
         try:
-            await self.redis.setex(key, ttl, json.dumps(value, cls=DateTimeEncoder))
+            # Рекурсивно проверяем и преобразуем bytes объекты
+            def convert_bytes(obj):
+                if isinstance(obj, bytes):
+                    return obj.decode('utf-8', errors='replace')
+                elif isinstance(obj, dict):
+                    return {k: convert_bytes(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_bytes(item) for item in obj]
+                elif isinstance(obj, tuple):
+                    return tuple(convert_bytes(item) for item in obj)
+                return obj
+            
+            # Преобразуем bytes перед сериализацией
+            value_to_store = convert_bytes(value)
+            
+            await self.redis.setex(key, ttl, json.dumps(value_to_store, cls=DateTimeEncoder))
             logger.debug("Данные сохранены в кэш: %s (TTL: %dс)", key, ttl)
             return True
         except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
             logger.warning("Ошибка при сохранении данных в кэш (%s): %s", key, str(e))
+            return False
+        except (TypeError, ValueError) as e:
+            logger.error("Ошибка при сериализации данных для кэша (%s): %s", key, str(e))
+            # Логируем тип объекта, вызвавшего ошибку
+            logger.error("Тип проблемного объекта: %s", type(value))
             return False
     
     async def delete(self, key: str) -> bool:
@@ -398,12 +420,23 @@ def cached(
             # Сохраняем результат в кэш
             if result is not None:
                 try:
-                    # Пытаемся сериализовать и сохранить в кэш
-                    await cache_service.set(cache_key, result, ttl)
-                    logger.debug("Результат функции %s сохранен в кэш: %s", func.__name__, cache_key)
-                except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
-                    # В случае ошибки сериализации логируем и продолжаем без кеширования
-                    logger.warning("Ошибка при кешировании результата %s: %s", func.__name__, str(e))
+                    # Рекурсивно преобразуем bytes перед сохранением
+                    def convert_bytes(obj):
+                        if isinstance(obj, bytes):
+                            return obj.decode('utf-8', errors='replace')
+                        elif isinstance(obj, dict):
+                            return {k: convert_bytes(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [convert_bytes(item) for item in obj]
+                        elif isinstance(obj, tuple):
+                            return tuple(convert_bytes(item) for item in obj)
+                        return obj
+                    
+                    result_to_cache = convert_bytes(result)
+                    await cache_service.set(cache_key, result_to_cache, ttl)
+                    logger.debug("Данные сохранены в кэш для %s: %s", func.__name__, cache_key)
+                except Exception as e:
+                    logger.error("Ошибка при сохранении в кэш для %s: %s", func.__name__, str(e))
             
             return result
         return wrapper

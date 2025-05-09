@@ -27,8 +27,8 @@
     transition: transform 0.2s;
   }
 
-  /* Принудительно выравниваем карточки по высоте */
-  .row:first-of-type .card {
+  /* Принудительно выравниваем карточки по высоте - только на странице информации о пользователе */
+  .user-info-page .row:first-of-type .card {
     min-height: 450px !important;
     height: 100% !important;
     display: flex;

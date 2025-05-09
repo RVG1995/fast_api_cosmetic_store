@@ -352,241 +352,239 @@ function UserInfoPage() {
   const displayUser = userProfile || user || { first_name: '', last_name: '', email: '' };
 
   return (
-    <div className="py-5 bg-light">
-      <div className="container">
-        <div className="row g-4">
-          {/* Левая колонка - Карточка с личной информацией */}
-          <div className="col-lg-8">
-            <div className="card shadow" style={{ height: '450px' }}>
-              {/* Шапка карточки */}
-              <div className="card-header info-header">
-                <h2 className="fs-4 fw-bold mb-0">Личная информация</h2>
-              </div>
-              
-              {/* Тело карточки */}
-              <div className="card-body bg-white p-4 d-flex flex-column">
-                <div className="row flex-grow-1">
-                  <div className="col-md-6 mb-4">
-                    <div className="bg-light p-4 rounded shadow-sm h-100 border">
-                      <p className="fw-bold text-primary mb-1">Имя</p>
-                      <p className="fs-5 mb-0">{displayUser.first_name}</p>
-                    </div>
-                  </div>
-                  <div className="col-md-6 mb-4">
-                    <div className="bg-light p-4 rounded shadow-sm h-100 border">
-                      <p className="fw-bold text-primary mb-1">Фамилия</p>
-                      <p className="fs-5 mb-0">{displayUser.last_name}</p>
-                    </div>
-                  </div>
-                  <div className="col-12 mb-4">
-                    <div className="bg-light p-4 rounded shadow-sm border">
-                      <p className="fw-bold text-primary mb-1">Email</p>
-                      <p className="fs-5 mb-0">{displayUser.email}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="row mt-auto">
-                  <div className="col-md-6 mb-3">
-                    <Link to="/user/change-password" className="btn btn-primary w-100 py-2 rounded shadow-sm">
-                      Изменить пароль
-                    </Link>
-                  </div>
-                  <div className="col-md-6 mb-3">
-                    <button
-                      onClick={handleEditModalOpen}
-                      className="btn btn-success w-100 py-2 rounded shadow-sm"
-                    >
-                      Редактировать профиль
-                    </button>
-                  </div>
-                  <div className="col-md-12 mb-3">
-                    <Link to="/user/notifications" className="btn btn-light w-100 py-2 rounded shadow-sm">
-                      Настройки уведомлений
-                    </Link>
-                  </div>
-                </div>
-              </div>
+    <div className="container py-5 user-info-page">
+      <div className="row g-4">
+        {/* Левая колонка - Карточка с личной информацией */}
+        <div className="col-lg-8">
+          <div className="card shadow" style={{ height: '450px' }}>
+            {/* Шапка карточки */}
+            <div className="card-header info-header">
+              <h2 className="fs-4 fw-bold mb-0">Личная информация</h2>
             </div>
-          </div>
-
-          {/* Правая колонка - Карточка со статистикой */}
-          <div className="col-lg-4">
-            <div className="card shadow" style={{ height: '450px' }}>
-              {/* Шапка карточки */}
-              <div className="card-header stats-header text-center">
-                <h2 className="fs-4 fw-bold mb-0">Статистика</h2>
+            
+            {/* Тело карточки */}
+            <div className="card-body bg-white p-4 d-flex flex-column">
+              <div className="row flex-grow-1">
+                <div className="col-md-6 mb-4">
+                  <div className="bg-light p-4 rounded shadow-sm h-100 border">
+                    <p className="fw-bold text-primary mb-1">Имя</p>
+                    <p className="fs-5 mb-0">{displayUser.first_name}</p>
+                  </div>
+                </div>
+                <div className="col-md-6 mb-4">
+                  <div className="bg-light p-4 rounded shadow-sm h-100 border">
+                    <p className="fw-bold text-primary mb-1">Фамилия</p>
+                    <p className="fs-5 mb-0">{displayUser.last_name}</p>
+                  </div>
+                </div>
+                <div className="col-12 mb-4">
+                  <div className="bg-light p-4 rounded shadow-sm border">
+                    <p className="fw-bold text-primary mb-1">Email</p>
+                    <p className="fs-5 mb-0">{displayUser.email}</p>
+                  </div>
+                </div>
               </div>
-              
-              {/* Тело карточки */}
-              <div className="card-body bg-white p-4 d-flex flex-column">
-                {orderLoading ? (
-                  <div className="text-center py-4">
-                    <div className="spinner-border text-primary" role="status">
-                      <span className="visually-hidden">Загрузка...</span>
-                    </div>
-                    <p className="mt-2">Загрузка статистики...</p>
-                  </div>
-                ) : error ? (
-                  <div className="alert alert-danger">{error}</div>
-                ) : (
-                  <div className="d-flex flex-column flex-grow-1">
-                    <div className="row g-4 mb-4">
-                      <div className="col-md-4 col-sm-4">
-                        <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
-                          <p className="fs-2 fw-bold text-primary mb-0">{statistics.total_orders}</p>
-                          <p className="text-secondary">Заказов</p>
-                        </div>
-                      </div>
-                      <div className="col-md-4 col-sm-4">
-                        <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
-                          <div className="d-flex flex-column align-items-center">
-                            <p className="fs-2 fw-bold text-success mb-0" style={{fontSize: "1.7rem"}}>
-                              {statistics.total_revenue}
-                            </p>
-                            <p className="fs-4 fw-bold text-success mb-0">₽</p>
-                          </div>
-                          <p className="text-secondary">Покупок</p>
-                        </div>
-                      </div>
-                      <div className="col-md-4 col-sm-4">
-                        <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
-                          <div className="d-flex flex-column align-items-center">
-                            <p className="fs-2 fw-bold text-custom-purple mb-0">
-                              {Math.round(statistics.average_order_value)}
-                            </p>
-                            <p className="fs-4 fw-bold text-custom-purple mb-0">₽</p>
-                          </div>
-                          <p className="text-secondary">Средний чек</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Список последних заказов */}
-                    <div className="mt-4 flex-grow-1">
-                      <h3 className="fs-5 mb-3">Последние заказы</h3>
-                      
-                      <div className="orders-list">
-                        {statistics.total_orders === 0 ? (
-                          <div className="text-center py-4 bg-light rounded border mb-3">
-                            <i className="bi bi-bag text-muted fs-1"></i>
-                            <p className="text-muted mt-2">У вас пока нет заказов</p>
-                          </div>
-                        ) : (
-                          <div className="order-status-summary mb-3">
-                            {Object.entries(statistics.orders_by_status).map(([status, count]) => (
-                              <div key={status} className="d-flex justify-content-between align-items-center mb-2">
-                                <span>{status}</span>
-                                <span className="badge bg-primary">{count}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        
-                        <Link to="/orders" className="btn btn-primary w-100 mt-3">
-                          <i className="bi bi-list-ul me-2"></i>
-                          Все заказы
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
+
+              <div className="row mt-auto">
+                <div className="col-md-6 mb-3">
+                  <Link to="/user/change-password" className="btn btn-primary w-100 py-2 rounded shadow-sm">
+                    Изменить пароль
+                  </Link>
+                </div>
+                <div className="col-md-6 mb-3">
+                  <button
+                    onClick={handleEditModalOpen}
+                    className="btn btn-success w-100 py-2 rounded shadow-sm"
+                  >
+                    Редактировать профиль
+                  </button>
+                </div>
+                <div className="col-md-12 mb-3">
+                  <Link to="/user/notifications" className="btn btn-light w-100 py-2 rounded shadow-sm">
+                    Настройки уведомлений
+                  </Link>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Секция активных сессий */}
-        <div className="row mt-4">
-          <div className="col-12">
-            <div className="card shadow">
-              <div className="card-header sessions-header">
-                <div className="d-flex justify-content-between align-items-center">
-                  <h2 className="fs-4 fw-bold mb-0">Активные сессии</h2>
-                  {sessions.length > 1 && (
-                    <button 
-                      className="btn btn-outline-danger btn-sm" 
-                      onClick={handleRevokeAllSessions}
-                      disabled={sessionsLoading}
-                    >
-                      Отозвать все кроме текущей
-                    </button>
-                  )}
+        {/* Правая колонка - Карточка со статистикой */}
+        <div className="col-lg-4">
+          <div className="card shadow" style={{ height: '450px' }}>
+            {/* Шапка карточки */}
+            <div className="card-header stats-header text-center">
+              <h2 className="fs-4 fw-bold mb-0">Статистика</h2>
+            </div>
+            
+            {/* Тело карточки */}
+            <div className="card-body bg-white p-4 d-flex flex-column">
+              {orderLoading ? (
+                <div className="text-center py-4">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Загрузка...</span>
+                  </div>
+                  <p className="mt-2">Загрузка статистики...</p>
                 </div>
-              </div>
-              <div className="card-body">
-                {sessionsLoading ? (
-                  <div className="text-center py-4">
-                    <div className="spinner-border text-primary" role="status">
-                      <span className="visually-hidden">Загрузка...</span>
+              ) : error ? (
+                <div className="alert alert-danger">{error}</div>
+              ) : (
+                <div className="d-flex flex-column flex-grow-1">
+                  <div className="row g-4 mb-4">
+                    <div className="col-md-4 col-sm-4">
+                      <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
+                        <p className="fs-2 fw-bold text-primary mb-0">{statistics.total_orders}</p>
+                        <p className="text-secondary">Заказов</p>
+                      </div>
                     </div>
-                    <p className="mt-2">Загрузка сессий...</p>
+                    <div className="col-md-4 col-sm-4">
+                      <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
+                        <div className="d-flex flex-column align-items-center">
+                          <p className="fs-2 fw-bold text-success mb-0" style={{fontSize: "1.7rem"}}>
+                            {statistics.total_revenue}
+                          </p>
+                          <p className="fs-4 fw-bold text-success mb-0">₽</p>
+                        </div>
+                        <p className="text-secondary">Покупок</p>
+                      </div>
+                    </div>
+                    <div className="col-md-4 col-sm-4">
+                      <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
+                        <div className="d-flex flex-column align-items-center">
+                          <p className="fs-2 fw-bold text-custom-purple mb-0">
+                            {Math.round(statistics.average_order_value)}
+                          </p>
+                          <p className="fs-4 fw-bold text-custom-purple mb-0">₽</p>
+                        </div>
+                        <p className="text-secondary">Средний чек</p>
+                      </div>
+                    </div>
                   </div>
-                ) : sessionError ? (
-                  <div className="alert alert-danger">{sessionError}</div>
-                ) : sessions.length === 0 ? (
-                  <div className="text-center py-4">
-                    <i className="bi bi-shield-lock text-muted fs-1"></i>
-                    <p className="text-muted mt-2">Нет активных сессий</p>
+                  
+                  {/* Список последних заказов */}
+                  <div className="mt-4 flex-grow-1">
+                    <h3 className="fs-5 mb-3">Последние заказы</h3>
+                    
+                    <div className="orders-list">
+                      {statistics.total_orders === 0 ? (
+                        <div className="text-center py-4 bg-light rounded border mb-3">
+                          <i className="bi bi-bag text-muted fs-1"></i>
+                          <p className="text-muted mt-2">У вас пока нет заказов</p>
+                        </div>
+                      ) : (
+                        <div className="order-status-summary mb-3">
+                          {Object.entries(statistics.orders_by_status).map(([status, count]) => (
+                            <div key={status} className="d-flex justify-content-between align-items-center mb-2">
+                              <span>{status}</span>
+                              <span className="badge bg-primary">{count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <Link to="/orders" className="btn btn-primary w-100 mt-3">
+                        <i className="bi bi-list-ul me-2"></i>
+                        Все заказы
+                      </Link>
+                    </div>
                   </div>
-                ) : (
-                  <div className="table-responsive">
-                    <table className="table table-hover table-striped align-middle mb-0">
-                      <thead className="table-light">
-                        <tr>
-                          <th style={{width: "60%"}}>Устройство</th>
-                          <th>Дата входа</th>
-                          <th style={{width: "15%"}}>Действия</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sessions.map(session => {
-                          // Определяем текущую сессию
-                          const isCurrentSession = session.jti === getCurrentSessionJti();
-                          
-                          // Форматируем дату создания сессии
-                          const createdDate = new Date(session.created_at);
-                          const formattedDate = createdDate.toLocaleDateString() + ' ' + createdDate.toLocaleTimeString();
-                          
-                          // Проверяем, удаляется ли сессия (для анимации)
-                          const isRemoving = removingSessions.includes(session.id);
-                          
-                          return (
-                            <tr 
-                              key={session.id} 
-                              className={`${isCurrentSession ? 'table-primary' : ''} ${isRemoving ? 'session-row-removing' : ''}`}
-                            >
-                              <td>
-                                <div className="d-flex align-items-center">
-                                  <i className="bi bi-laptop fs-4 me-3 text-primary"></i>
-                                  <div>
-                                    <div className="text-truncate" style={{maxWidth: "400px"}}>{session.user_agent || 'Неизвестное устройство'}</div>
-                                    {isCurrentSession && (
-                                      <span className="badge bg-success mt-1">Текущая сессия</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                              <td>{formattedDate}</td>
-                              <td className="text-center">
-                                {!isCurrentSession && (
-                                  <button 
-                                    className="btn btn-danger btn-sm" 
-                                    onClick={() => handleRevokeSession(session.id)}
-                                    disabled={isRemoving}
-                                  >
-                                    {isRemoving ? 'Отзыв...' : 'Отозвать'}
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Секция активных сессий */}
+      <div className="row mt-4">
+        <div className="col-12">
+          <div className="card shadow">
+            <div className="card-header sessions-header">
+              <div className="d-flex justify-content-between align-items-center">
+                <h2 className="fs-4 fw-bold mb-0">Активные сессии</h2>
+                {sessions.length > 1 && (
+                  <button 
+                    className="btn btn-outline-danger btn-sm" 
+                    onClick={handleRevokeAllSessions}
+                    disabled={sessionsLoading}
+                  >
+                    Отозвать все кроме текущей
+                  </button>
                 )}
               </div>
+            </div>
+            <div className="card-body">
+              {sessionsLoading ? (
+                <div className="text-center py-4">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Загрузка...</span>
+                  </div>
+                  <p className="mt-2">Загрузка сессий...</p>
+                </div>
+              ) : sessionError ? (
+                <div className="alert alert-danger">{sessionError}</div>
+              ) : sessions.length === 0 ? (
+                <div className="text-center py-4">
+                  <i className="bi bi-shield-lock text-muted fs-1"></i>
+                  <p className="text-muted mt-2">Нет активных сессий</p>
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table table-hover table-striped align-middle mb-0">
+                    <thead className="table-light">
+                      <tr>
+                        <th style={{width: "60%"}}>Устройство</th>
+                        <th>Дата входа</th>
+                        <th style={{width: "15%"}}>Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessions.map(session => {
+                        // Определяем текущую сессию
+                        const isCurrentSession = session.jti === getCurrentSessionJti();
+                        
+                        // Форматируем дату создания сессии
+                        const createdDate = new Date(session.created_at);
+                        const formattedDate = createdDate.toLocaleDateString() + ' ' + createdDate.toLocaleTimeString();
+                        
+                        // Проверяем, удаляется ли сессия (для анимации)
+                        const isRemoving = removingSessions.includes(session.id);
+                        
+                        return (
+                          <tr 
+                            key={session.id} 
+                            className={`${isCurrentSession ? 'table-primary' : ''} ${isRemoving ? 'session-row-removing' : ''}`}
+                          >
+                            <td>
+                              <div className="d-flex align-items-center">
+                                <i className="bi bi-laptop fs-4 me-3 text-primary"></i>
+                                <div>
+                                  <div className="text-truncate" style={{maxWidth: "400px"}}>{session.user_agent || 'Неизвестное устройство'}</div>
+                                  {isCurrentSession && (
+                                    <span className="badge bg-success mt-1">Текущая сессия</span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td>{formattedDate}</td>
+                            <td className="text-center">
+                              {!isCurrentSession && (
+                                <button 
+                                  className="btn btn-danger btn-sm" 
+                                  onClick={() => handleRevokeSession(session.id)}
+                                  disabled={isRemoving}
+                                >
+                                  {isRemoving ? 'Отзыв...' : 'Отозвать'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -718,18 +718,46 @@ async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
     Returns:
         Статистика по заказам
     """
-    # Общее количество заказов
+    # Получаем ID статуса "Отменен"
+    canceled_status_query = select(OrderStatusModel.id).filter(OrderStatusModel.name == "Отменен")
+    canceled_status_result = await session.execute(canceled_status_query)
+    canceled_status_id = canceled_status_result.scalar()
+    
+    # Создаем базовый фильтр для исключения отмененных заказов
+    exclude_canceled = []
+    canceled_filter = []
+    if canceled_status_id:
+        exclude_canceled = [OrderModel.status_id != canceled_status_id]
+        canceled_filter = [OrderModel.status_id == canceled_status_id]
+    
+    # Общее количество заказов (включая отмененные)
     total_orders_query = select(func.count(OrderModel.id))
     total_orders_result = await session.execute(total_orders_query)
     total_orders = total_orders_result.scalar() or 0
     
-    # Общая выручка
+    # Общая выручка (исключая отмененные заказы)
     total_revenue_query = select(func.sum(OrderModel.total_price))
+    if exclude_canceled:
+        total_revenue_query = total_revenue_query.where(*exclude_canceled)
     total_revenue_result = await session.execute(total_revenue_query)
     total_revenue = total_revenue_result.scalar() or 0
     
-    # Средняя стоимость заказа
-    average_order_value = round(total_revenue / total_orders, 2) if total_orders > 0 else 0
+    # Сумма отмененных заказов
+    canceled_revenue_query = select(func.sum(OrderModel.total_price))
+    if canceled_filter:
+        canceled_revenue_query = canceled_revenue_query.where(*canceled_filter)
+    canceled_revenue_result = await session.execute(canceled_revenue_query)
+    canceled_revenue = canceled_revenue_result.scalar() or 0
+    
+    # Активные заказы (без отмененных) для расчета средней стоимости
+    active_orders_query = select(func.count(OrderModel.id))
+    if exclude_canceled:
+        active_orders_query = active_orders_query.where(*exclude_canceled)
+    active_orders_result = await session.execute(active_orders_query)
+    active_orders_count = active_orders_result.scalar() or 0
+    
+    # Средняя стоимость заказа (исключая отмененные)
+    average_order_value = round(total_revenue / active_orders_count, 2) if active_orders_count > 0 else 0
     
     # Количество заказов по статусам
     orders_by_status_query = select(
@@ -752,7 +780,8 @@ async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
         total_revenue=total_revenue,
         average_order_value=average_order_value,
         orders_by_status=orders_by_status,
-        orders_by_payment_method=orders_by_payment_method
+        orders_by_payment_method=orders_by_payment_method,
+        canceled_orders_revenue=canceled_revenue
     )
 
 async def get_order_statistics_by_date(
@@ -788,22 +817,48 @@ async def get_order_statistics_by_date(
         except ValueError:
             logger.error("Неверный формат date_to: %s", date_to)
     
-    # Общее количество заказов с учетом фильтра
+    # Получаем ID статуса "Отменен"
+    canceled_status_query = select(OrderStatusModel.id).filter(OrderStatusModel.name == "Отменен")
+    canceled_status_result = await session.execute(canceled_status_query)
+    canceled_status_id = canceled_status_result.scalar()
+    
+    # Создаем фильтры для исключения и выбора отмененных заказов
+    exclude_canceled = list(filters)  # копируем базовые фильтры
+    canceled_filter = list(filters)   # копируем базовые фильтры для отмененных
+    if canceled_status_id:
+        exclude_canceled.append(OrderModel.status_id != canceled_status_id)
+        canceled_filter.append(OrderModel.status_id == canceled_status_id)
+    
+    # Общее количество заказов с учетом фильтра (включая отмененные)
     total_orders_query = select(func.count(OrderModel.id))
     if filters:
         total_orders_query = total_orders_query.where(*filters)
     total_orders_result = await session.execute(total_orders_query)
     total_orders = total_orders_result.scalar() or 0
     
-    # Общая выручка с учетом фильтра
+    # Общая выручка с учетом фильтра (исключая отмененные)
     total_revenue_query = select(func.sum(OrderModel.total_price))
-    if filters:
-        total_revenue_query = total_revenue_query.where(*filters)
+    if exclude_canceled:
+        total_revenue_query = total_revenue_query.where(*exclude_canceled)
     total_revenue_result = await session.execute(total_revenue_query)
     total_revenue = total_revenue_result.scalar() or 0
     
+    # Сумма отмененных заказов
+    canceled_revenue_query = select(func.sum(OrderModel.total_price))
+    if canceled_filter:
+        canceled_revenue_query = canceled_revenue_query.where(*canceled_filter)
+    canceled_revenue_result = await session.execute(canceled_revenue_query)
+    canceled_revenue = canceled_revenue_result.scalar() or 0
+    
+    # Активные заказы (без отмененных) для расчета средней стоимости
+    active_orders_query = select(func.count(OrderModel.id))
+    if exclude_canceled:
+        active_orders_query = active_orders_query.where(*exclude_canceled)
+    active_orders_result = await session.execute(active_orders_query)
+    active_orders_count = active_orders_result.scalar() or 0
+    
     # Средняя стоимость заказа
-    average_order_value = round(total_revenue / total_orders, 2) if total_orders > 0 else 0
+    average_order_value = round(total_revenue / active_orders_count, 2) if active_orders_count > 0 else 0
     
     # Количество заказов по статусам с учетом фильтра
     orders_by_status_query = select(
@@ -829,7 +884,8 @@ async def get_order_statistics_by_date(
         total_revenue=total_revenue,
         average_order_value=average_order_value,
         orders_by_status=orders_by_status,
-        orders_by_payment_method=orders_by_payment_method
+        orders_by_payment_method=orders_by_payment_method,
+        canceled_orders_revenue=canceled_revenue
     )
 
 async def get_user_order_statistics(session: AsyncSession, user_id: int) -> OrderStatistics:
@@ -843,18 +899,46 @@ async def get_user_order_statistics(session: AsyncSession, user_id: int) -> Orde
     Returns:
         Статистика по заказам пользователя
     """
-    # Общее количество заказов пользователя
+    # Получаем ID статуса "Отменен"
+    canceled_status_query = select(OrderStatusModel.id).filter(OrderStatusModel.name == "Отменен")
+    canceled_status_result = await session.execute(canceled_status_query)
+    canceled_status_id = canceled_status_result.scalar()
+    
+    # Базовый фильтр по пользователю
+    user_filter = [OrderModel.user_id == user_id]
+    
+    # Создаем фильтры для исключения и выбора отмененных заказов
+    exclude_canceled = list(user_filter)  # копируем базовые фильтры
+    canceled_filter = list(user_filter)   # копируем базовые фильтры для отмененных
+    if canceled_status_id:
+        exclude_canceled.append(OrderModel.status_id != canceled_status_id)
+        canceled_filter.append(OrderModel.status_id == canceled_status_id)
+    
+    # Общее количество заказов пользователя (включая отмененные)
     total_orders_query = select(func.count(OrderModel.id)).where(OrderModel.user_id == user_id)
     total_orders_result = await session.execute(total_orders_query)
     total_orders = total_orders_result.scalar() or 0
     
-    # Общая сумма заказов пользователя
-    total_revenue_query = select(func.sum(OrderModel.total_price)).where(OrderModel.user_id == user_id)
+    # Общая сумма заказов пользователя (исключая отмененные)
+    total_revenue_query = select(func.sum(OrderModel.total_price))
+    total_revenue_query = total_revenue_query.where(*exclude_canceled)
     total_revenue_result = await session.execute(total_revenue_query)
     total_revenue = total_revenue_result.scalar() or 0
     
+    # Сумма отмененных заказов пользователя
+    canceled_revenue_query = select(func.sum(OrderModel.total_price))
+    canceled_revenue_query = canceled_revenue_query.where(*canceled_filter)
+    canceled_revenue_result = await session.execute(canceled_revenue_query)
+    canceled_revenue = canceled_revenue_result.scalar() or 0
+    
+    # Активные заказы (без отмененных) для расчета средней стоимости
+    active_orders_query = select(func.count(OrderModel.id))
+    active_orders_query = active_orders_query.where(*exclude_canceled)
+    active_orders_result = await session.execute(active_orders_query)
+    active_orders_count = active_orders_result.scalar() or 0
+    
     # Средняя стоимость заказа
-    average_order_value = round(total_revenue / total_orders, 2) if total_orders > 0 else 0
+    average_order_value = round(total_revenue / active_orders_count, 2) if active_orders_count > 0 else 0
     
     # Количество заказов по статусам
     orders_by_status_query = select(
@@ -879,7 +963,8 @@ async def get_user_order_statistics(session: AsyncSession, user_id: int) -> Orde
         total_revenue=total_revenue,
         average_order_value=average_order_value,
         orders_by_status=orders_by_status,
-        orders_by_payment_method=orders_by_payment_method
+        orders_by_payment_method=orders_by_payment_method,
+        canceled_orders_revenue=canceled_revenue
     )
 
 async def check_promo_code(

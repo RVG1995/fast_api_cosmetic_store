@@ -1561,11 +1561,12 @@ async def generate_orders_report(
         
         # Создаем датафрейм со статистикой
         stats_data = {
-            "Метрика": ["Всего заказов", "Общая сумма заказов", "Средняя стоимость заказа"],
+            "Метрика": ["Всего заказов", "Общая сумма заказов", "Средняя стоимость заказа", "Сумма отмененных заказов"],
             "Значение": [
                 statistics.total_orders,
                 statistics.total_revenue,
-                round(statistics.average_order_value, 2)
+                round(statistics.average_order_value, 2),
+                statistics.canceled_orders_revenue
             ]
         }
         
@@ -1783,6 +1784,7 @@ async def generate_orders_report(
                 stats_data.append(['Всего заказов', str(statistics.total_orders)])
                 stats_data.append(['Общая сумма заказов', f"{statistics.total_revenue:.2f} руб."])
                 stats_data.append(['Средняя стоимость заказа', f"{statistics.average_order_value:.2f} руб."])
+                stats_data.append(['Сумма отмененных заказов', f"{statistics.canceled_orders_revenue:.2f} руб."])
                 
                 # Добавляем статистику по статусам
                 for status_name, count in statistics.orders_by_status.items():
@@ -1940,6 +1942,10 @@ async def generate_orders_report(
                 row = table.add_row().cells
                 row[0].text = 'Средняя стоимость заказа'
                 row[1].text = f"{statistics.average_order_value:.2f} руб."
+                
+                row = table.add_row().cells
+                row[0].text = 'Сумма отмененных заказов'
+                row[1].text = f"{statistics.canceled_orders_revenue:.2f} руб."
                 
                 # Статистика по статусам
                 for status_name, count in statistics.orders_by_status.items():

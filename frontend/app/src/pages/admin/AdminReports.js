@@ -201,6 +201,13 @@ const AdminReports = () => {
               backgroundColor: 'rgba(255, 99, 132, 0.7)',
               borderColor: 'rgba(255, 99, 132, 1)',
               borderWidth: 1
+            },
+            {
+              label: 'Сумма отмененных (в тыс. руб.)',
+              data: [Math.round(reportData.canceled_orders_revenue / 1000)],
+              backgroundColor: 'rgba(255, 159, 64, 0.7)',
+              borderColor: 'rgba(255, 159, 64, 1)',
+              borderWidth: 1
             }
           ]
         },
@@ -416,6 +423,10 @@ const AdminReports = () => {
                       <tr>
                         <td><strong>Средняя стоимость заказа</strong></td>
                         <td>{formatPrice(reportData.average_order_value)}</td>
+                      </tr>
+                      <tr>
+                        <td><strong>Сумма отмененных заказов</strong></td>
+                        <td>{formatPrice(reportData.canceled_orders_revenue)}</td>
                       </tr>
                     </tbody>
                   </Table>

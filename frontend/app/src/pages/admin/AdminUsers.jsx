@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { adminAPI } from '../../utils/api';
 import { useConfirm } from '../../components/common/ConfirmContext';
 import { useNavigate } from 'react-router-dom';
+import { Modal, Button, Form } from 'react-bootstrap';
 
 const AdminUsers = () => {
   const navigate = useNavigate();
@@ -10,9 +11,27 @@ const AdminUsers = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  
+  // Состояния для модального окна создания пользователя
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createUserForm, setCreateUserForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    password: '',
+    confirm_password: '',
+    personal_data_agreement: true,
+    notification_agreement: true,
+    is_admin: false
+  });
+  const [formErrors, setFormErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const [permissions, setPermissions] = useState({
     canMakeAdmin: false,
-    canDeleteUser: false
+    canDeleteUser: false,
+    canToggleActive: false,
+    canCreateUser: false
   });
   const { checkPermission } = useAuth();
   const permissionsChecked = useRef(false);
@@ -25,10 +44,14 @@ const AdminUsers = () => {
       try {
         const canMakeAdmin = await checkPermission('super_admin_access');
         const canDeleteUser = await checkPermission('super_admin_access');
+        const canToggleActive = await checkPermission('super_admin_access');
+        const canCreateUser = await checkPermission('super_admin_access');
         
         setPermissions({
           canMakeAdmin,
-          canDeleteUser
+          canDeleteUser,
+          canToggleActive,
+          canCreateUser
         });
         
         // Отмечаем, что разрешения проверены
@@ -124,6 +147,137 @@ const AdminUsers = () => {
     }
   };
 
+  const handleToggleActive = async (userId, currentStatus) => {
+    const actionText = currentStatus ? 'деактивировать' : 'активировать';
+    const ok = await confirm({
+      title: `${currentStatus ? 'Деактивировать' : 'Активировать'} пользователя?`,
+      body: `Вы действительно хотите ${actionText} этого пользователя?`
+    });
+    if (!ok) return;
+
+    try {
+      await adminAPI.toggleUserActive(userId);
+      
+      // Обновляем статус пользователя в списке
+      setUsers(users.map(user => 
+        user.id === userId ? { ...user, is_active: !user.is_active } : user
+      ));
+    } catch (err) {
+      setError(`Ошибка при изменении статуса пользователя`);
+      console.error(err);
+    }
+  };
+  
+  // Обработчики для модального окна создания пользователя
+  const handleCreateModalOpen = () => setShowCreateModal(true);
+  const handleCreateModalClose = () => {
+    setShowCreateModal(false);
+    setCreateUserForm({
+      first_name: '',
+      last_name: '',
+      email: '',
+      password: '',
+      confirm_password: '',
+      personal_data_agreement: true,
+      notification_agreement: true,
+      is_admin: false
+    });
+    setFormErrors({});
+  };
+  
+  const handleCreateUserChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    
+    setCreateUserForm(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+    
+    // Сбрасываем ошибки при изменении поля
+    if (formErrors[name]) {
+      setFormErrors(prev => ({ ...prev, [name]: null }));
+    }
+  };
+  
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!createUserForm.first_name.trim()) {
+      errors.first_name = 'Имя обязательно';
+    }
+    
+    if (!createUserForm.last_name.trim()) {
+      errors.last_name = 'Фамилия обязательна';
+    }
+    
+    if (!createUserForm.email.trim()) {
+      errors.email = 'Email обязателен';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createUserForm.email)) {
+      errors.email = 'Некорректный email';
+    }
+    
+    if (!createUserForm.password) {
+      errors.password = 'Пароль обязателен';
+    } else if (createUserForm.password.length < 8) {
+      errors.password = 'Пароль должен содержать минимум 8 символов';
+    }
+    
+    if (createUserForm.password !== createUserForm.confirm_password) {
+      errors.confirm_password = 'Пароли не совпадают';
+    }
+    
+    if (!createUserForm.personal_data_agreement) {
+      errors.personal_data_agreement = 'Необходимо согласие на обработку персональных данных';
+    }
+    
+    return errors;
+  };
+  
+  const handleCreateUserSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Валидация формы
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    try {
+      const response = await adminAPI.createUser(createUserForm);
+      
+      // Добавляем созданного пользователя в список
+      const newUser = response.data;
+      setUsers(prev => [...prev, {
+        ...newUser,
+        is_active: true,
+        is_admin: createUserForm.is_admin,
+        is_super_admin: false
+      }]);
+      
+      // Закрываем модальное окно
+      handleCreateModalClose();
+      
+    } catch (err) {
+      console.error('Ошибка при создании пользователя:', err);
+      
+      if (err.response?.data?.detail) {
+        // Обрабатываем ошибку с сервера
+        if (err.response.data.detail.includes('Email уже зарегистрирован')) {
+          setFormErrors({ email: 'Email уже зарегистрирован' });
+        } else {
+          setError(`Ошибка: ${err.response.data.detail}`);
+        }
+      } else {
+        setError('Ошибка при создании пользователя');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (loading) {
     return <div className="text-center py-5"><div className="spinner-border"></div></div>;
   }
@@ -134,17 +288,18 @@ const AdminUsers = () => {
 
   return (
     <div className="container py-5">
-      <button
-        type="button"
-        className="btn btn-secondary mb-3"
-        onClick={() => navigate(-1)}
-        aria-label="Назад"
-      >
-        ← Назад
-      </button>
       <h2 className="mb-4">Управление пользователями</h2>
       
       {error && <div className="alert alert-danger">{error}</div>}
+      
+      {permissions.canCreateUser && (
+        <button 
+          className="btn btn-primary mb-4"
+          onClick={handleCreateModalOpen}
+        >
+          Создать пользователя
+        </button>
+      )}
       
       <div className="card shadow-sm">
         <div className="card-body">
@@ -182,12 +337,12 @@ const AdminUsers = () => {
                     </td>
                     <td>
                       <div className="btn-group btn-group-sm">
-                        {!user.is_active && (
+                        {permissions.canToggleActive && !user.is_super_admin && (
                           <button 
-                            className="btn btn-outline-success"
-                            onClick={() => handleActivate(user.id)}
+                            className={`btn ${user.is_active ? 'btn-outline-warning' : 'btn-outline-success'}`}
+                            onClick={() => handleToggleActive(user.id, user.is_active)}
                           >
-                            Активировать
+                            {user.is_active ? 'Деактивировать' : 'Активировать'}
                           </button>
                         )}
                         
@@ -226,6 +381,131 @@ const AdminUsers = () => {
           </div>
         </div>
       </div>
+      
+      {/* Модальное окно для создания пользователя */}
+      <Modal show={showCreateModal} onHide={handleCreateModalClose}>
+        <Modal.Header closeButton>
+          <Modal.Title>Создание пользователя</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form onSubmit={handleCreateUserSubmit}>
+            <Form.Group className="mb-3">
+              <Form.Label>Имя</Form.Label>
+              <Form.Control
+                type="text"
+                name="first_name"
+                value={createUserForm.first_name}
+                onChange={handleCreateUserChange}
+                isInvalid={!!formErrors.first_name}
+              />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.first_name}
+              </Form.Control.Feedback>
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Label>Фамилия</Form.Label>
+              <Form.Control
+                type="text"
+                name="last_name"
+                value={createUserForm.last_name}
+                onChange={handleCreateUserChange}
+                isInvalid={!!formErrors.last_name}
+              />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.last_name}
+              </Form.Control.Feedback>
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Label>Email</Form.Label>
+              <Form.Control
+                type="email"
+                name="email"
+                value={createUserForm.email}
+                onChange={handleCreateUserChange}
+                isInvalid={!!formErrors.email}
+              />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.email}
+              </Form.Control.Feedback>
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Label>Пароль</Form.Label>
+              <Form.Control
+                type="password"
+                name="password"
+                value={createUserForm.password}
+                onChange={handleCreateUserChange}
+                isInvalid={!!formErrors.password}
+              />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.password}
+              </Form.Control.Feedback>
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Label>Подтверждение пароля</Form.Label>
+              <Form.Control
+                type="password"
+                name="confirm_password"
+                value={createUserForm.confirm_password}
+                onChange={handleCreateUserChange}
+                isInvalid={!!formErrors.confirm_password}
+              />
+              <Form.Control.Feedback type="invalid">
+                {formErrors.confirm_password}
+              </Form.Control.Feedback>
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="checkbox"
+                name="personal_data_agreement"
+                label="Согласие на обработку персональных данных"
+                checked={createUserForm.personal_data_agreement}
+                onChange={handleCreateUserChange}
+                isInvalid={!!formErrors.personal_data_agreement}
+                feedback={formErrors.personal_data_agreement}
+                feedbackType="invalid"
+              />
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="checkbox"
+                name="notification_agreement"
+                label="Согласие на получение уведомлений"
+                checked={createUserForm.notification_agreement}
+                onChange={handleCreateUserChange}
+              />
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="checkbox"
+                name="is_admin"
+                label="Сделать пользователя администратором"
+                checked={createUserForm.is_admin}
+                onChange={handleCreateUserChange}
+              />
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCreateModalClose}>
+            Отмена
+          </Button>
+          <Button 
+            variant="primary" 
+            onClick={handleCreateUserSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Создание...' : 'Создать пользователя'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 };

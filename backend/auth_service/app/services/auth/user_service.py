@@ -62,6 +62,7 @@ class UserService:
         email: str,
         password: str,
         is_active: bool = False,
+        is_admin: bool = False,
         personal_data_agreement: bool = False,
         notification_agreement: bool = False
     ) -> Tuple[UserModel, str]:
@@ -75,6 +76,9 @@ class UserService:
             email: Email
             password: Пароль (нехешированный)
             is_active: Статус активации
+            is_admin: Статус администратора
+            personal_data_agreement: Согласие на обработку персональных данных
+            notification_agreement: Согласие на получение уведомлений
             
         Returns:
             Tuple[UserModel, str]: Созданный пользователь и токен активации
@@ -92,6 +96,7 @@ class UserService:
             email=email,
             hashed_password=hashed_password,
             is_active=is_active,
+            is_admin=is_admin,
             activation_token=None if is_active else activation_token,
             personal_data_agreement=personal_data_agreement,
             notification_agreement=notification_agreement

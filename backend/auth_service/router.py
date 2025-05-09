@@ -17,7 +17,7 @@ import jwt
 from schema import TokenSchema, UserCreateShema, UserReadSchema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema
 from dotenv import load_dotenv
 from utils import get_password_hash, verify_password  # Импортируем из utils
-from auth_utils import get_current_user, get_admin_user  # Импортируем из auth_utils.py
+from auth_utils import get_current_user, get_admin_user, get_super_admin_user  # Импортируем из auth_utils.py
 
 # Импорты из пакета app
 from app.services.email_service import send_password_reset_email
@@ -823,3 +823,117 @@ async def service_token(
     token_data = {"sub": client_id, "scope": "service"}
     access_token, jti = await TokenService.create_access_token(token_data, expires_delta=expires)
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.patch("/users/{user_id}/toggle-active", summary="Изменение статуса активности пользователя", dependencies=[Depends(get_super_admin_user)])
+async def toggle_user_active_status(
+    user_id: int,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_super_admin_user)
+) -> Dict[str, Any]:
+    """
+    Изменяет статус активности пользователя (активный/неактивный).
+    Только суперадминистраторы могут изменять статус пользователей.
+    
+    Args:
+        user_id: ID пользователя для изменения статуса
+        session: Сессия базы данных
+        current_user: Текущий пользователь
+        
+    Returns:
+        Dict[str, Any]: Статус операции и обновленный статус пользователя
+        
+    Raises:
+        HTTPException: Если пользователь не найден или текущий пользователь не имеет прав суперадминистратора
+    """
+    # Проверяем, что текущий пользователь - суперадминистратор
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Только суперадминистраторы могут изменять статус активности пользователей"
+        )
+    
+    # Получаем пользователя, которого нужно изменить
+    user = await UserModel.get_by_id(session, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+    
+    # Меняем статус активности на противоположный
+    user.is_active = not user.is_active
+    await session.commit()
+    
+    logger.info(
+        "Статус активности пользователя %s (ID: %s) изменен суперадминистратором %s (ID: %s). Новый статус: %s",
+        user.email, user.id, current_user.email, current_user.id, user.is_active
+    )
+    
+    return {
+        "status": "success",
+        "message": f"Статус активности пользователя {user.email} изменен",
+        "is_active": user.is_active
+    }
+
+@router.post("/users", response_model=UserReadSchema, status_code=status.HTTP_201_CREATED, dependencies=[Depends(get_super_admin_user)], summary="Создание пользователя суперадминистратором")
+async def create_user_by_admin(
+    user: UserCreateShema,
+    session: SessionDep,
+    is_admin: bool = False,
+    current_user: UserModel = Depends(get_super_admin_user)
+) -> UserReadSchema:
+    """
+    Создание нового пользователя суперадминистратором без отправки подтверждения.
+    Пользователь будет автоматически активирован.
+    
+    Args:
+        user: Данные нового пользователя
+        session: Сессия базы данных
+        is_admin: Флаг, определяющий, будет ли пользователь администратором
+        current_user: Текущий суперадминистратор
+        
+    Returns:
+        UserReadSchema: Данные созданного пользователя
+        
+    Raises:
+        HTTPException: При ошибке создания пользователя
+    """
+    # Проверяем, не зарегистрирован ли уже email
+    existing_user = await user_service.get_user_by_email(session, user.email)
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
+    
+    try:
+        # Создаем пользователя, сразу активированного
+        new_user, _ = await user_service.create_user(
+            session,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            email=user.email,
+            password=user.password,
+            is_active=True,  # Автоматически активируем пользователя
+            is_admin=is_admin,  # Устанавливаем права администратора если указано
+            personal_data_agreement=bool(user.personal_data_agreement),
+            notification_agreement=bool(user.notification_agreement)
+        )
+        
+        logger.info(
+            "Пользователь %s (ID: %s) создан суперадминистратором %s (ID: %s), is_admin=%s",
+            new_user.email, new_user.id, current_user.email, current_user.id, is_admin
+        )
+        
+        return UserReadSchema(
+            id=new_user.id,
+            first_name=new_user.first_name,
+            last_name=new_user.last_name,
+            email=new_user.email,
+        )
+        
+    except Exception as e:
+        # Если произошла ошибка, откатываем изменения
+        await session.rollback()
+        logger.error("Ошибка при создании пользователя суперадминистратором: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Произошла ошибка при создании пользователя. Пожалуйста, попробуйте позже."
+        ) from e

@@ -168,10 +168,15 @@ export const userAPI = {
 // API для работы с админ-панелью 
 export const adminAPI = {
   getAllUsers: async () => await authApi.get('/auth/all/users'),
+  createUser: async (userData) => {
+    const { is_admin, ...userFields } = userData;
+    return await authApi.post('/auth/users', userFields, { params: { is_admin } });
+  },
   activateUser: async (userId) => await authApi.patch(`/admin/users/${userId}/activate`),
   makeAdmin: async (userId) => await authApi.patch(`/admin/users/${userId}/make-admin`),
   removeAdmin: async (userId) => await authApi.patch(`/admin/users/${userId}/remove-admin`),
   deleteUser: async (userId) => await authApi.delete(`/admin/users/${userId}`),
+  toggleUserActive: async (userId) => await authApi.patch(`/auth/users/${userId}/toggle-active`),
   checkAdminAccess: async () => await authApi.get('/admin/check-access'),
   checkSuperAdminAccess: async () => await authApi.get('/admin/check-super-access'),
   getDashboardStats: async () => {

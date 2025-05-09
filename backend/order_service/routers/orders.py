@@ -1879,7 +1879,7 @@ async def generate_orders_report(
                             ])
                     
                     # Создаем таблицу с чистыми, светлыми цветами
-                    orders_table = Table(orders_data, colWidths=[35, 70, 80, 100, 170, 70, 50])
+                    orders_table = Table(orders_data, colWidths=[35, 70, 120, 100, 150, 70, 50])
                     
                     # Создаем базовые стили таблицы
                     table_styles = [

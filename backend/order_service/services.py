@@ -729,7 +729,7 @@ async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
     total_revenue = total_revenue_result.scalar() or 0
     
     # Средняя стоимость заказа
-    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
+    average_order_value = round(total_revenue / total_orders, 2) if total_orders > 0 else 0
     
     # Количество заказов по статусам
     orders_by_status_query = select(
@@ -803,7 +803,7 @@ async def get_order_statistics_by_date(
     total_revenue = total_revenue_result.scalar() or 0
     
     # Средняя стоимость заказа
-    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
+    average_order_value = round(total_revenue / total_orders, 2) if total_orders > 0 else 0
     
     # Количество заказов по статусам с учетом фильтра
     orders_by_status_query = select(
@@ -854,7 +854,7 @@ async def get_user_order_statistics(session: AsyncSession, user_id: int) -> Orde
     total_revenue = total_revenue_result.scalar() or 0
     
     # Средняя стоимость заказа
-    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
+    average_order_value = round(total_revenue / total_orders, 2) if total_orders > 0 else 0
     
     # Количество заказов по статусам
     orders_by_status_query = select(

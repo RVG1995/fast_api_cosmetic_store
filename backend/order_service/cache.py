@@ -23,6 +23,7 @@ class CacheKeys:
     ADMIN_ORDERS_PREFIX = "admin_orders:"  # Префикс для ключей списков заказов в админке
     ORDER_STATUSES = "order_statuses"  # Ключ для списка статусов заказов
     ORDER_STATISTICS = "order_statistics"  # Ключ для статистики заказов
+    ORDER_REPORTS_PREFIX = "order_statistics:report:"  # Префикс для ключей отчетов заказов
     USER_STATISTICS_PREFIX = "user_statistics:"  # Префикс для ключей статистики пользователя
     PRODUCTS_INFO_PREFIX = "products_info:"  # Префикс для ключей информации о продуктах
     PROMO_CODES = "promo_codes"  # Ключ для списка промокодов
@@ -357,7 +358,11 @@ async def get_cached_order_statistics(user_id: Optional[int] = None) -> Optional
 
 async def invalidate_statistics_cache() -> None:
     """Инвалидирует кэш статистики заказов"""
-    await invalidate_cache(CacheKeys.ORDER_STATISTICS, f"{CacheKeys.USER_STATISTICS_PREFIX}*")
+    await invalidate_cache(
+        CacheKeys.ORDER_STATISTICS, 
+        f"{CacheKeys.USER_STATISTICS_PREFIX}*",
+        f"{CacheKeys.ORDER_REPORTS_PREFIX}*"  # Инвалидация кэша отчетов
+    )
 
 async def cache_order_statuses(statuses_data: Any) -> bool:
     """Кэширует список статусов заказов"""
@@ -445,6 +450,10 @@ async def get_cached_promo_code_check(email: str, phone: str, promo_code_id: int
     key = f"{CacheKeys.PROMO_CODE_PREFIX}check:{promo_code_id}:{user_hash}"
     
     return await get_cached_data(key)
+
+async def invalidate_reports_cache() -> None:
+    """Инвалидирует кэш отчетов заказов"""
+    await invalidate_cache(f"{CacheKeys.ORDER_REPORTS_PREFIX}*")
 
 # Декоратор для кэширования результатов функций
 def cached(ttl: int = DEFAULT_CACHE_TTL, prefix: str = None, key_builder: Callable = None):

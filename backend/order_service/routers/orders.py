@@ -153,6 +153,7 @@ async def create_new_order(
         
         # Явно инвалидируем кэш заказов перед возвратом ответа
         await invalidate_order_cache(order.id)
+        await invalidate_statistics_cache()  # Также инвалидируем кэш статистики и отчетов
         logger.info("Кэш заказа %s и связанных списков инвалидирован перед возвратом ответа", order.id)
         
         # Преобразуем модель в схему без промокода
@@ -726,7 +727,7 @@ async def get_admin_orders_statistics_by_date(
     """
     try:
         # Формируем ключ кэша на основе параметров запроса
-        cache_key = f"order_statistics:report:{date_from or 'all'}:{date_to or 'all'}"
+        cache_key = f"{CacheKeys.ORDER_REPORTS_PREFIX}{date_from or 'all'}:{date_to or 'all'}"
         
         # Пытаемся получить данные из кэша
         cached_statistics = await get_cached_data(cache_key)
@@ -1378,6 +1379,7 @@ async def create_order_admin(
         
         # Явно инвалидируем кэш заказов перед возвратом ответа
         await invalidate_order_cache(order.id)
+        await invalidate_statistics_cache()  # Также инвалидируем кэш статистики и отчетов
         logger.info("Кэш заказа %s и связанных списков инвалидирован перед возвратом ответа", order.id)
         
         # Преобразуем модель в схему без промокода

@@ -1594,19 +1594,33 @@ async def generate_orders_report(
         # Создаем датафрейм с заказами
         orders_data = []
         for order in orders:
-            orders_data.append({
-                "ID": order.id,
-                "Номер заказа": order.order_number,
-                "Дата создания": order.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-                "Статус": order.status.name,
-                "Клиент": order.full_name,
-                "Email": order.email,
-                "Телефон": order.phone,
-                "Адрес": f"{order.region}, {order.city}, {order.street}",
-                "Сумма заказа": order.total_price,
-                "Скидка": order.discount_amount or 0,
-                "Оплачен": "Да" if order.is_paid else "Нет"
-            })
+            try:
+                order_number = order.order_number if hasattr(order, 'order_number') else f"{order.id}-{order.created_at.year}"
+                created_at_str = order.created_at.strftime("%Y-%m-%d %H:%M") if order.created_at else "Н/Д"
+                status_name = order.status.name if order.status else "Неизвестный"
+                is_paid_str = "Да" if order.is_paid else "Нет"
+                
+                orders_data.append([
+                    str(order.id),
+                    order_number,
+                    created_at_str,
+                    status_name,
+                    order.full_name,
+                    f"{order.total_price:.2f} руб.",
+                    is_paid_str
+                ])
+            except Exception as e:
+                logger.error(f"Ошибка при обработке заказа {order.id} для PDF: {str(e)}")
+                # Добавляем строку с минимальной информацией, чтобы не прерывать генерацию отчета
+                orders_data.append([
+                    str(order.id),
+                    f"{order.id}-????",
+                    "Ошибка даты",
+                    "Ошибка статуса",
+                    order.full_name,
+                    f"{order.total_price:.2f} руб.",
+                    "Ошибка"
+                ])
         
         df_orders = pd.DataFrame(orders_data)
         
@@ -1794,17 +1808,15 @@ async def generate_orders_report(
                 
                 # Создаем таблицу с чистыми, светлыми цветами
                 stats_table = Table(stats_data, colWidths=[300, 150])
-                stats_table.setStyle(TableStyle([
+                
+                # Создаем базовые стили таблицы статистики
+                stats_table_styles = [
                     # Светло-голубой фон для заголовка
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E6F3FF')),
                     ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
                     ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), font_name_bold),
                     ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                    # Светло-серый фон для четных строк для улучшения читаемости
-                    ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F5F5F5')),
-                    ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F5F5F5')),
-                    ('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#F5F5F5')),
                     ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
                     ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -1812,7 +1824,21 @@ async def generate_orders_report(
                     ('FONTSIZE', (0, 0), (-1, -1), 10),
                     ('TOPPADDING', (0, 0), (-1, -1), 6),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                ]))
+                ]
+                
+                # Добавляем фон для четных строк только если есть достаточно данных
+                stats_row_count = len(stats_data)
+                if stats_row_count > 2:  # Если есть хотя бы одна строка данных помимо заголовка
+                    # Добавляем светло-серый фон для четных строк
+                    stats_table_styles.append(('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F5F5F5')))
+                    
+                    if stats_row_count > 4:  # Если есть хотя бы две строки данных
+                        stats_table_styles.append(('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F5F5F5')))
+                        
+                        if stats_row_count > 6:  # Если есть хотя бы три строки данных
+                            stats_table_styles.append(('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#F5F5F5')))
+                
+                stats_table.setStyle(TableStyle(stats_table_styles))
                 
                 elements.append(stats_table)
                 elements.append(Spacer(1, 20))
@@ -1828,29 +1854,41 @@ async def generate_orders_report(
                     
                     # Данные заказов
                     for order in orders:
-                        orders_data.append([
-                            str(order.id),
-                            order.order_number,
-                            order.created_at.strftime("%Y-%m-%d %H:%M"),
-                            order.status.name,
-                            order.full_name,
-                            f"{order.total_price:.2f} руб.",
-                            "Да" if order.is_paid else "Нет"
-                        ])
+                        try:
+                            order_number = order.order_number if hasattr(order, 'order_number') else f"{order.id}-{order.created_at.year}"
+                            orders_data.append([
+                                str(order.id),
+                                order_number,
+                                order.created_at.strftime("%Y-%m-%d %H:%M"),
+                                order.status.name if order.status else "Неизвестный",
+                                order.full_name,
+                                f"{order.total_price:.2f} руб.",
+                                "Да" if order.is_paid else "Нет"
+                            ])
+                        except Exception as e:
+                            logger.error(f"Ошибка при обработке заказа {order.id} для PDF: {str(e)}")
+                            # Добавляем строку с минимальной информацией, чтобы не прерывать генерацию отчета
+                            orders_data.append([
+                                str(order.id),
+                                f"{order.id}-????",
+                                "Н/Д",
+                                "Н/Д",
+                                order.full_name if hasattr(order, 'full_name') else "Н/Д",
+                                f"{order.total_price:.2f} руб." if hasattr(order, 'total_price') else "0.00 руб.",
+                                "Н/Д"
+                            ])
                     
                     # Создаем таблицу с чистыми, светлыми цветами
                     orders_table = Table(orders_data, colWidths=[35, 70, 80, 100, 170, 70, 50])
-                    orders_table.setStyle(TableStyle([
+                    
+                    # Создаем базовые стили таблицы
+                    table_styles = [
                         # Светло-голубой фон для заголовка
                         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E6F3FF')),
                         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
                         ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
                         ('FONTNAME', (0, 0), (-1, 0), font_name_bold),
                         ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                        # Светло-серый фон для четных строк
-                        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F5F5F5')),
-                        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F5F5F5')),
-                        ('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#F5F5F5')),
                         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
                         ('ALIGN', (0, 0), (0, -1), 'CENTER'),  # ID по центру
                         ('ALIGN', (5, 1), (5, -1), 'RIGHT'),   # Суммы по правому краю
@@ -1860,7 +1898,21 @@ async def generate_orders_report(
                         ('FONTSIZE', (0, 0), (-1, -1), 9),     # Уменьшенный размер шрифта для большого количества данных
                         ('TOPPADDING', (0, 0), (-1, -1), 6),
                         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                    ]))
+                    ]
+                    
+                    # Добавляем фон для четных строк только если есть достаточно данных
+                    row_count = len(orders_data)
+                    if row_count > 2:  # Если есть хотя бы одна строка данных помимо заголовка
+                        # Добавляем светло-серый фон для четных строк (строка с индексом 2 - это первая четная строка данных)
+                        table_styles.append(('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F5F5F5')))
+                        
+                        if row_count > 4:  # Если есть хотя бы две строки данных
+                            table_styles.append(('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F5F5F5')))
+                            
+                            if row_count > 6:  # Если есть хотя бы три строки данных
+                                table_styles.append(('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#F5F5F5')))
+                    
+                    orders_table.setStyle(TableStyle(table_styles))
                     
                     elements.append(orders_table)
                 else:
@@ -1976,14 +2028,27 @@ async def generate_orders_report(
                     
                     # Данные заказов
                     for order in orders:
-                        row_cells = table.add_row().cells
-                        row_cells[0].text = str(order.id)
-                        row_cells[1].text = order.order_number
-                        row_cells[2].text = order.created_at.strftime("%Y-%m-%d %H:%M")
-                        row_cells[3].text = order.status.name
-                        row_cells[4].text = order.full_name
-                        row_cells[5].text = f"{order.total_price:.2f} руб."
-                        row_cells[6].text = "Да" if order.is_paid else "Нет"
+                        try:
+                            order_number = order.order_number if hasattr(order, 'order_number') else f"{order.id}-{order.created_at.year}"
+                            row_cells = table.add_row().cells
+                            row_cells[0].text = str(order.id)
+                            row_cells[1].text = order_number
+                            row_cells[2].text = order.created_at.strftime("%Y-%m-%d %H:%M")
+                            row_cells[3].text = order.status.name if order.status else "Неизвестный"
+                            row_cells[4].text = order.full_name
+                            row_cells[5].text = f"{order.total_price:.2f} руб."
+                            row_cells[6].text = "Да" if order.is_paid else "Нет"
+                        except Exception as e:
+                            logger.error(f"Ошибка при обработке заказа {order.id} для Word отчета: {str(e)}")
+                            # Добавляем строку с минимальной информацией, чтобы не прерывать генерацию отчета
+                            row_cells = table.add_row().cells
+                            row_cells[0].text = str(order.id) if hasattr(order, 'id') else "Н/Д"
+                            row_cells[1].text = f"{order.id}-????" if hasattr(order, 'id') else "Н/Д"
+                            row_cells[2].text = "Н/Д"
+                            row_cells[3].text = "Н/Д"
+                            row_cells[4].text = order.full_name if hasattr(order, 'full_name') else "Н/Д"
+                            row_cells[5].text = f"{order.total_price:.2f} руб." if hasattr(order, 'total_price') else "0.00 руб."
+                            row_cells[6].text = "Н/Д"
                 else:
                     doc.add_paragraph("Нет заказов за выбранный период")
                 

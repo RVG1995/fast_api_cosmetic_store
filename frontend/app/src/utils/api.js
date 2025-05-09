@@ -276,31 +276,44 @@ export const adminAPI = {
         responseType: 'blob' // Указываем, что ответ ожидается в виде файла
       });
       
-      // Создаем ссылку для скачивания файла
+      // Создаем временную ссылку для скачивания файла
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
       
-      // Устанавливаем имя файла на основе заголовка Content-Disposition или по умолчанию
-      const contentDisposition = response.headers['content-disposition'];
-      let filename = `orders_report_${format}_${new Date().toISOString().split('T')[0]}.${format}`;
+      // Формируем имя файла в зависимости от формата
+      const date = new Date().toISOString().split('T')[0];
+      let filename = `orders_report_${date}`;
       
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
-        if (filenameMatch && filenameMatch[1]) {
-          filename = filenameMatch[1];
-        }
+      // Добавляем правильное расширение файла
+      switch(format.toLowerCase()) {
+        case 'csv':
+          filename += '.csv';
+          break;
+        case 'excel':
+          filename += '.xlsx';
+          break;
+        case 'pdf':
+          filename += '.pdf';
+          break;
+        case 'word':
+          filename += '.docx';
+          break;
+        default:
+          filename += `.${format.toLowerCase()}`;
       }
       
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
-      link.remove();
+      
+      // Удаляем ссылку
+      document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       
       return true;
     } catch (error) {
-      console.error('Ошибка при генерации отчета по заказам:', error);
+      console.error('Ошибка при получении отчета:', error);
       throw error;
     }
   }

@@ -1666,7 +1666,7 @@ async def generate_orders_report(
             # Возвращаем StreamingResponse
             output.seek(0)
             
-            # Форматируем имя файла
+            # Форматируем имя файла с правильным расширением
             filename = f"orders_report{period}.xlsx"
             
             return StreamingResponse(
@@ -1681,22 +1681,86 @@ async def generate_orders_report(
                 from reportlab.lib import colors
                 from reportlab.lib.pagesizes import letter, landscape
                 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-                from reportlab.lib.styles import getSampleStyleSheet
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.lib.enums import TA_CENTER
+                
+                # Добавляем импорт для поддержки кириллицы
+                from reportlab.pdfbase import pdfmetrics
+                from reportlab.pdfbase.ttfonts import TTFont
+                import os
                 
                 buffer = io.BytesIO()
                 
-                # Создаем PDF документ
-                doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
+                # Регистрируем системный шрифт DejaVu для поддержки кириллицы
+                try:
+                    # В Ubuntu/Debian системах DejaVu расположен тут
+                    dejavu_sans_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+                    dejavu_serif_path = "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
+                    dejavu_sans_bold_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+                    
+                    if os.path.exists(dejavu_sans_path) and os.path.exists(dejavu_serif_path):
+                        # Регистрируем шрифты
+                        pdfmetrics.registerFont(TTFont('DejaVuSans', dejavu_sans_path))
+                        pdfmetrics.registerFont(TTFont('DejaVuSerif', dejavu_serif_path))
+                        
+                        # Проверяем наличие жирного шрифта
+                        if os.path.exists(dejavu_sans_bold_path):
+                            pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', dejavu_sans_bold_path))
+                            font_name_bold = 'DejaVuSans-Bold'
+                        else:
+                            font_name_bold = 'DejaVuSans'
+                        
+                        font_name = 'DejaVuSans'
+                        logger.info("Шрифт DejaVu успешно зарегистрирован для PDF отчетов")
+                    else:
+                        # Если шрифтов нет, используем стандартные 
+                        font_name = 'Helvetica'
+                        font_name_bold = 'Helvetica-Bold'
+                        logger.warning("Шрифты DejaVu не найдены, используем стандартные шрифты")
+                except Exception as e:
+                    # В случае ошибки используем стандартные шрифты
+                    logger.error(f"Ошибка при регистрации шрифта: {e}")
+                    font_name = 'Helvetica'
+                    font_name_bold = 'Helvetica-Bold'
+                
+                # Создаем PDF документ с указанием кодировки UTF-8
+                doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), encoding='utf-8')
                 elements = []
                 
-                # Стили
+                # Настраиваем стили с использованием DejaVu шрифтов
                 styles = getSampleStyleSheet()
-                title_style = styles['Heading1']
-                subtitle_style = styles['Heading2']
-                normal_style = styles['Normal']
                 
-                # Заголовок
+                # Создаем собственные стили с кодировкой UTF-8 для поддержки кириллицы
+                title_style = ParagraphStyle(
+                    'CustomTitle',
+                    parent=styles['Heading1'],
+                    alignment=TA_CENTER,
+                    fontName=font_name_bold,
+                    fontSize=16,
+                    spaceAfter=12,
+                    encoding='utf-8'
+                )
+                
+                subtitle_style = ParagraphStyle(
+                    'CustomSubtitle',
+                    parent=styles['Heading2'],
+                    fontName=font_name_bold,
+                    fontSize=14,
+                    spaceAfter=6,
+                    encoding='utf-8'
+                )
+                
+                normal_style = ParagraphStyle(
+                    'CustomNormal',
+                    parent=styles['Normal'],
+                    fontName=font_name,
+                    fontSize=10,
+                    encoding='utf-8'
+                )
+                
+                # Добавляем заголовок
                 elements.append(Paragraph("Отчет по заказам", title_style))
+                elements.append(Spacer(1, 10))
                 
                 # Период отчета
                 if date_from and date_to:
@@ -1708,12 +1772,13 @@ async def generate_orders_report(
                 else:
                     elements.append(Paragraph("Период: все время", subtitle_style))
                 
-                elements.append(Spacer(1, 20))
+                elements.append(Spacer(1, 15))
                 
                 # Общая статистика
                 elements.append(Paragraph("Общая статистика", subtitle_style))
+                elements.append(Spacer(1, 5))
                 
-                # Создаем таблицу со статистикой
+                # Создаем данные для таблицы статистики
                 stats_data = [['Метрика', 'Значение']]
                 stats_data.append(['Всего заказов', str(statistics.total_orders)])
                 stats_data.append(['Общая сумма заказов', f"{statistics.total_revenue:.2f} руб."])
@@ -1723,17 +1788,26 @@ async def generate_orders_report(
                 for status_name, count in statistics.orders_by_status.items():
                     stats_data.append([f"Заказов со статусом '{status_name}'", str(count)])
                 
-                # Создаем таблицу и задаем стиль
+                # Создаем таблицу с чистыми, светлыми цветами
                 stats_table = Table(stats_data, colWidths=[300, 150])
                 stats_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    # Светло-голубой фон для заголовка
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E6F3FF')),
+                    ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
                     ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('FONTNAME', (0, 0), (-1, 0), font_name_bold),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                    # Светло-серый фон для четных строк для улучшения читаемости
+                    ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F5F5F5')),
+                    ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F5F5F5')),
+                    ('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#F5F5F5')),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
                     ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('FONTNAME', (0, 1), (-1, -1), font_name),
+                    ('FONTSIZE', (0, 0), (-1, -1), 10),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
                 ]))
                 
                 elements.append(stats_table)
@@ -1741,6 +1815,7 @@ async def generate_orders_report(
                 
                 # Список заказов
                 elements.append(Paragraph("Список заказов", subtitle_style))
+                elements.append(Spacer(1, 5))
                 
                 # Создаем таблицу со списком заказов
                 if orders:
@@ -1759,23 +1834,37 @@ async def generate_orders_report(
                             "Да" if order.is_paid else "Нет"
                         ])
                     
-                    # Создаем таблицу и задаем стиль
-                    orders_table = Table(orders_data, colWidths=[40, 80, 80, 80, 150, 70, 50])
+                    # Создаем таблицу с чистыми, светлыми цветами
+                    orders_table = Table(orders_data, colWidths=[35, 70, 80, 100, 170, 70, 50])
                     orders_table.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        # Светло-голубой фон для заголовка
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E6F3FF')),
+                        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
                         ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                        ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                        ('ALIGN', (0, 1), (0, -1), 'RIGHT'),
-                        ('ALIGN', (5, 1), (5, -1), 'RIGHT'),
-                        ('ALIGN', (6, 1), (6, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), font_name_bold),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                        # Светло-серый фон для четных строк
+                        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F5F5F5')),
+                        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F5F5F5')),
+                        ('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#F5F5F5')),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                        ('ALIGN', (0, 0), (0, -1), 'CENTER'),  # ID по центру
+                        ('ALIGN', (5, 1), (5, -1), 'RIGHT'),   # Суммы по правому краю
+                        ('ALIGN', (6, 1), (6, -1), 'CENTER'),  # Оплачен по центру
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('FONTNAME', (0, 1), (-1, -1), font_name),
+                        ('FONTSIZE', (0, 0), (-1, -1), 9),     # Уменьшенный размер шрифта для большого количества данных
+                        ('TOPPADDING', (0, 0), (-1, -1), 6),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
                     ]))
                     
                     elements.append(orders_table)
                 else:
                     elements.append(Paragraph("Нет заказов за выбранный период", normal_style))
+                
+                # Информация о дате формирования отчета
+                elements.append(Spacer(1, 20))
+                elements.append(Paragraph(f"Отчет сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
                 
                 # Строим PDF документ
                 doc.build(elements)
@@ -1895,7 +1984,7 @@ async def generate_orders_report(
                 doc.save(buffer)
                 buffer.seek(0)
                 
-                # Имя файла
+                # Имя файла с правильным расширением
                 filename = f"orders_report{period}.docx"
                 
                 return StreamingResponse(

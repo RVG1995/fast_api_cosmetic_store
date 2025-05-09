@@ -157,6 +157,11 @@ export const authAPI = {
   updateProfile: async (profileData) => await authApi.patch('/auth/users/me/profile', profileData),
   requestPasswordReset: async (email) => await authApi.post('/auth/request-password-reset', { email }),
   resetPassword: async ({ token, new_password, confirm_password }) => await authApi.post('/auth/reset-password', { token, new_password, confirm_password }),
+  
+  // Методы для работы с сессиями
+  getUserSessions: async () => await authApi.get('/auth/users/me/sessions'),
+  revokeSession: async (sessionId) => await authApi.post(`/auth/users/me/sessions/${sessionId}/revoke`),
+  revokeAllSessions: async () => await authApi.post('/auth/users/me/sessions/revoke-all'),
 };
 
 // API для работы с пользователями

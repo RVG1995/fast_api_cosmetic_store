@@ -302,7 +302,8 @@ async def get_user_sessions(
                 "user_agent": user_session.user_agent,
                 "ip_address": user_session.ip_address,
                 "created_at": user_session.created_at,
-                "expires_at": user_session.expires_at
+                "expires_at": user_session.expires_at,
+                "is_active": user_session.is_active
             })
         
         return {"sessions": session_data}

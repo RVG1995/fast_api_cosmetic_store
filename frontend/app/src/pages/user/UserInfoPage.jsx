@@ -32,6 +32,14 @@ function UserInfoPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [profileError, setProfileError] = useState(null);
+  
+  // Состояния для управления сессиями
+  const [sessions, setSessions] = useState([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionError, setSessionError] = useState(null);
+
+  // Состояние для анимации удаления сессий
+  const [removingSessions, setRemovingSessions] = useState([]);
 
   // Загрузка профиля пользователя
   useEffect(() => {
@@ -85,6 +93,30 @@ function UserInfoPage() {
 
     fetchStatistics();
   }, [getUserOrderStatistics]);
+  
+  // Загрузка сессий при монтировании компонента
+  useEffect(() => {
+    const fetchSessions = async () => {
+      if (!user || !user.id) return;
+      
+      setSessionsLoading(true);
+      setSessionError(null);
+      
+      try {
+        const response = await authAPI.getUserSessions();
+        if (response && response.data) {
+          setSessions(response.data.sessions || []);
+        }
+      } catch (err) {
+        console.error("Ошибка при загрузке сессий:", err);
+        setSessionError("Не удалось загрузить сессии");
+      } finally {
+        setSessionsLoading(false);
+      }
+    };
+    
+    fetchSessions();
+  }, [user]);
   
   // Обработчики для модального окна редактирования профиля
   const handleEditModalOpen = () => {
@@ -218,6 +250,92 @@ function UserInfoPage() {
     }
   };
 
+  // Обработчик для отзыва одной сессии
+  const handleRevokeSession = async (sessionId) => {
+    // Добавляем анимацию удаления
+    setRemovingSessions(prev => [...prev, sessionId]);
+
+    // Ждем завершения анимации (500мс)
+    setTimeout(async () => {
+      try {
+        await authAPI.revokeSession(sessionId);
+        
+        // Обновляем список сессий после отзыва
+        setSessions(prev => prev.filter(session => session.id !== sessionId));
+        
+      } catch (err) {
+        console.error("Ошибка при отзыве сессии:", err);
+        setSessionError("Не удалось отозвать сессию");
+      } finally {
+        // Удаляем сессию из списка анимируемых
+        setRemovingSessions(prev => prev.filter(id => id !== sessionId));
+      }
+    }, 500);
+  };
+  
+  // Обработчик для отзыва всех сессий
+  const handleRevokeAllSessions = async () => {
+    try {
+      // Получаем JTI текущей сессии
+      const currentJti = getCurrentSessionJti();
+      
+      // Анимируем удаление всех сессий, кроме текущей
+      const sessionsToRemove = sessions
+        .filter(session => session.jti !== currentJti)
+        .map(session => session.id);
+      
+      setRemovingSessions(sessionsToRemove);
+      
+      // Ждем завершения анимации
+      setTimeout(async () => {
+        await authAPI.revokeAllSessions();
+        
+        // Обновляем список сессий, оставляя только текущую
+        setSessions(prev => prev.filter(session => session.jti === currentJti));
+        
+        // Очищаем список анимируемых сессий
+        setRemovingSessions([]);
+      }, 500);
+      
+    } catch (err) {
+      console.error("Ошибка при отзыве всех сессий:", err);
+      setSessionError("Не удалось отозвать все сессии");
+      setRemovingSessions([]);
+    }
+  };
+  
+  // Вспомогательная функция для получения JTI текущей сессии
+  const getCurrentSessionJti = () => {
+    if (sessions.length === 0) return null;
+    
+    // Получаем информацию о текущем браузере
+    const currentUserAgent = navigator.userAgent;
+    
+    // Сначала пытаемся найти сессию с таким же user-agent
+    // и самую свежую по времени
+    const matchingSessions = sessions
+      .filter(session => {
+        // Проверяем, содержит ли user_agent текущий user-agent
+        // Иногда они могут немного отличаться из-за различий в обработке на сервере и клиенте
+        return session.user_agent && 
+               (session.user_agent.includes(currentUserAgent) || 
+                currentUserAgent.includes(session.user_agent));
+      })
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    
+    // Если нашли подходящие сессии, возвращаем JTI самой свежей
+    if (matchingSessions.length > 0) {
+      return matchingSessions[0].jti;
+    }
+    
+    // Если не нашли по user-agent, просто берем самую свежую сессию
+    const sortedSessions = [...sessions].sort(
+      (a, b) => new Date(b.created_at) - new Date(a.created_at)
+    );
+    
+    return sortedSessions[0].jti;
+  };
+
   // Отображаем загрузку, пока данные профиля не получены
   if (loading) {
     return (
@@ -236,18 +354,18 @@ function UserInfoPage() {
   return (
     <div className="py-5 bg-light">
       <div className="container">
-        <div className="row">
+        <div className="row g-4">
           {/* Левая колонка - Карточка с личной информацией */}
-          <div className="col-lg-8 mb-4">
-            <div className="card shadow h-100">
+          <div className="col-lg-8">
+            <div className="card shadow" style={{ height: '450px' }}>
               {/* Шапка карточки */}
               <div className="card-header info-header">
                 <h2 className="fs-4 fw-bold mb-0">Личная информация</h2>
               </div>
               
               {/* Тело карточки */}
-              <div className="card-body bg-white p-4">
-                <div className="row">
+              <div className="card-body bg-white p-4 d-flex flex-column">
+                <div className="row flex-grow-1">
                   <div className="col-md-6 mb-4">
                     <div className="bg-light p-4 rounded shadow-sm h-100 border">
                       <p className="fw-bold text-primary mb-1">Имя</p>
@@ -268,7 +386,7 @@ function UserInfoPage() {
                   </div>
                 </div>
 
-                <div className="row mt-4">
+                <div className="row mt-auto">
                   <div className="col-md-6 mb-3">
                     <Link to="/user/change-password" className="btn btn-primary w-100 py-2 rounded shadow-sm">
                       Изменить пароль
@@ -294,14 +412,14 @@ function UserInfoPage() {
 
           {/* Правая колонка - Карточка со статистикой */}
           <div className="col-lg-4">
-            <div className="card shadow h-100">
+            <div className="card shadow" style={{ height: '450px' }}>
               {/* Шапка карточки */}
               <div className="card-header stats-header text-center">
                 <h2 className="fs-4 fw-bold mb-0">Статистика</h2>
               </div>
               
               {/* Тело карточки */}
-              <div className="card-body bg-white p-4">
+              <div className="card-body bg-white p-4 d-flex flex-column">
                 {orderLoading ? (
                   <div className="text-center py-4">
                     <div className="spinner-border text-primary" role="status">
@@ -312,7 +430,7 @@ function UserInfoPage() {
                 ) : error ? (
                   <div className="alert alert-danger">{error}</div>
                 ) : (
-                  <>
+                  <div className="d-flex flex-column flex-grow-1">
                     <div className="row g-4 mb-4">
                       <div className="col-md-4 col-sm-4">
                         <div className="bg-light p-3 rounded shadow-sm h-100 text-center border">
@@ -345,7 +463,7 @@ function UserInfoPage() {
                     </div>
                     
                     {/* Список последних заказов */}
-                    <div className="mt-4">
+                    <div className="mt-4 flex-grow-1">
                       <h3 className="fs-5 mb-3">Последние заказы</h3>
                       
                       <div className="orders-list">
@@ -371,7 +489,102 @@ function UserInfoPage() {
                         </Link>
                       </div>
                     </div>
-                  </>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Секция активных сессий */}
+        <div className="row mt-4">
+          <div className="col-12">
+            <div className="card shadow">
+              <div className="card-header sessions-header">
+                <div className="d-flex justify-content-between align-items-center">
+                  <h2 className="fs-4 fw-bold mb-0">Активные сессии</h2>
+                  {sessions.length > 1 && (
+                    <button 
+                      className="btn btn-outline-danger btn-sm" 
+                      onClick={handleRevokeAllSessions}
+                      disabled={sessionsLoading}
+                    >
+                      Отозвать все кроме текущей
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="card-body">
+                {sessionsLoading ? (
+                  <div className="text-center py-4">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Загрузка...</span>
+                    </div>
+                    <p className="mt-2">Загрузка сессий...</p>
+                  </div>
+                ) : sessionError ? (
+                  <div className="alert alert-danger">{sessionError}</div>
+                ) : sessions.length === 0 ? (
+                  <div className="text-center py-4">
+                    <i className="bi bi-shield-lock text-muted fs-1"></i>
+                    <p className="text-muted mt-2">Нет активных сессий</p>
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="table table-hover table-striped align-middle mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th style={{width: "60%"}}>Устройство</th>
+                          <th>Дата входа</th>
+                          <th style={{width: "15%"}}>Действия</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessions.map(session => {
+                          // Определяем текущую сессию
+                          const isCurrentSession = session.jti === getCurrentSessionJti();
+                          
+                          // Форматируем дату создания сессии
+                          const createdDate = new Date(session.created_at);
+                          const formattedDate = createdDate.toLocaleDateString() + ' ' + createdDate.toLocaleTimeString();
+                          
+                          // Проверяем, удаляется ли сессия (для анимации)
+                          const isRemoving = removingSessions.includes(session.id);
+                          
+                          return (
+                            <tr 
+                              key={session.id} 
+                              className={`${isCurrentSession ? 'table-primary' : ''} ${isRemoving ? 'session-row-removing' : ''}`}
+                            >
+                              <td>
+                                <div className="d-flex align-items-center">
+                                  <i className="bi bi-laptop fs-4 me-3 text-primary"></i>
+                                  <div>
+                                    <div className="text-truncate" style={{maxWidth: "400px"}}>{session.user_agent || 'Неизвестное устройство'}</div>
+                                    {isCurrentSession && (
+                                      <span className="badge bg-success mt-1">Текущая сессия</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td>{formattedDate}</td>
+                              <td className="text-center">
+                                {!isCurrentSession && (
+                                  <button 
+                                    className="btn btn-danger btn-sm" 
+                                    onClick={() => handleRevokeSession(session.id)}
+                                    disabled={isRemoving}
+                                  >
+                                    {isRemoving ? 'Отзыв...' : 'Отозвать'}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             </div>

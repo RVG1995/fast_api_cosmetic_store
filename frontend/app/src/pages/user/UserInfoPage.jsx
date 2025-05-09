@@ -3,6 +3,8 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useOrders } from "../../context/OrderContext";
 import { Link } from "react-router-dom";
+import { Modal, Button, Form } from "react-bootstrap";
+import { authAPI } from "../../utils/api";
 // Добавим собственные стили
 import "../../styles/UserInfoPage.css";
 
@@ -18,6 +20,18 @@ function UserInfoPage() {
     orders_by_status: {}
   });
   const [error, setError] = useState(null);
+  
+  // Состояния для модального окна редактирования профиля
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: ''
+  });
+  const [formErrors, setFormErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [profileError, setProfileError] = useState(null);
 
   // Загрузка профиля пользователя
   useEffect(() => {
@@ -31,6 +45,19 @@ function UserInfoPage() {
         console.log('Ответ getUserProfile:', profileData);
         if (profileData) {
           setUserProfile(profileData);
+          // Инициализируем форму редактирования профиля
+          setProfileForm({
+            first_name: profileData.first_name || '',
+            last_name: profileData.last_name || '',
+            email: profileData.email || ''
+          });
+        } else {
+          // Если профиль не получен, инициализируем форму из данных пользователя или пустыми строками
+          setProfileForm({
+            first_name: user?.first_name || '',
+            last_name: user?.last_name || '',
+            email: user?.email || ''
+          });
         }
       } catch (err) {
         console.error("Ошибка при загрузке профиля пользователя:", err);
@@ -58,9 +85,141 @@ function UserInfoPage() {
 
     fetchStatistics();
   }, [getUserOrderStatistics]);
+  
+  // Обработчики для модального окна редактирования профиля
+  const handleEditModalOpen = () => {
+    // Сбрасываем состояние успешного обновления при каждом открытии модального окна
+    setUpdateSuccess(false);
+    setProfileError(null);
+    setShowEditModal(true);
+  };
+  
+  const handleEditModalClose = () => {
+    setShowEditModal(false);
+    setFormErrors({});
+    setProfileError(null);
+    
+    // Если профиль был успешно обновлен, обновляем страницу через 1 секунду
+    // после закрытия модального окна
+    if (updateSuccess) {
+      setTimeout(() => {
+        window.location.reload();
+      }, 300);
+    }
+  };
+  
+  const handleProfileFormChange = (e) => {
+    const { name, value } = e.target;
+    
+    setProfileForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    
+    // Сбрасываем ошибки при изменении поля
+    if (formErrors[name]) {
+      setFormErrors(prev => ({ ...prev, [name]: null }));
+    }
+  };
+  
+  const validateProfileForm = () => {
+    const errors = {};
+    
+    // Проверяем имя только если оно не пустое
+    if (profileForm.first_name.trim() !== '' && profileForm.first_name.trim().length < 2) {
+      errors.first_name = 'Имя должно содержать минимум 2 символа';
+    }
+    
+    // Проверяем фамилию только если она не пустая
+    if (profileForm.last_name.trim() !== '' && profileForm.last_name.trim().length < 2) {
+      errors.last_name = 'Фамилия должна содержать минимум 2 символа';
+    }
+    
+    // Проверяем email только если он не пустой
+    if (profileForm.email.trim() !== '') {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileForm.email)) {
+        errors.email = 'Некорректный email';
+      }
+    }
+    
+    return errors;
+  };
+  
+  const handleProfileUpdate = async (e) => {
+    e.preventDefault();
+    
+    // Валидация формы
+    const errors = validateProfileForm();
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    try {
+      // Определяем, какие поля изменились
+      const changedFields = {};
+      
+      // Получаем текущие значения для сравнения (fallback на пустые строки если userProfile отсутствует)
+      const currentFirstName = userProfile?.first_name || '';
+      const currentLastName = userProfile?.last_name || '';
+      const currentEmail = userProfile?.email || '';
+      
+      // Проверяем имя - если оно не пустое и отличается от текущего
+      if (profileForm.first_name.trim() !== '' && profileForm.first_name !== currentFirstName) {
+        changedFields.first_name = profileForm.first_name;
+      }
+      
+      // Проверяем фамилию - если она не пустая и отличается от текущей
+      if (profileForm.last_name.trim() !== '' && profileForm.last_name !== currentLastName) {
+        changedFields.last_name = profileForm.last_name;
+      }
+      
+      // Проверяем email - если он не пустой и отличается от текущего
+      if (profileForm.email.trim() !== '' && profileForm.email !== currentEmail) {
+        changedFields.email = profileForm.email;
+      }
+      
+      // Обновляем профиль только если есть изменения
+      if (Object.keys(changedFields).length > 0) {
+        await authAPI.updateProfile(changedFields);
+        
+        // Обновляем локальное состояние
+        setUserProfile(prev => {
+          // Если предыдущего значения нет, создаем новый объект
+          if (!prev) return { ...changedFields };
+          // Иначе обновляем существующий
+          return { ...prev, ...changedFields };
+        });
+        
+        // Устанавливаем флаг успешного обновления
+        setUpdateSuccess(true);
+      } else {
+        // Если нет изменений, показываем информационное сообщение
+        setProfileError("Нет изменений для сохранения");
+      }
+      
+    } catch (err) {
+      console.error('Ошибка при обновлении профиля:', err);
+      
+      if (err.response?.data?.detail) {
+        // Обрабатываем ошибку с сервера
+        if (err.response.data.detail.includes('Email уже зарегистрирован')) {
+          setFormErrors({ email: 'Email уже зарегистрирован другим пользователем' });
+        } else {
+          setProfileError(err.response.data.detail);
+        }
+      } else {
+        setProfileError('Ошибка при обновлении профиля');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // Отображаем загрузку, пока данные профиля не получены
-  if (loading && !userProfile) {
+  if (loading) {
     return (
       <div className="container py-5 text-center">
         <div className="spinner-border text-primary" role="status">
@@ -72,7 +231,7 @@ function UserInfoPage() {
   }
 
   // Используем данные из профиля, если они доступны, иначе из основного объекта user
-  const displayUser = userProfile || user;
+  const displayUser = userProfile || user || { first_name: '', last_name: '', email: '' };
 
   return (
     <div className="py-5 bg-light">
@@ -116,6 +275,14 @@ function UserInfoPage() {
                     </Link>
                   </div>
                   <div className="col-md-6 mb-3">
+                    <button
+                      onClick={handleEditModalOpen}
+                      className="btn btn-success w-100 py-2 rounded shadow-sm"
+                    >
+                      Редактировать профиль
+                    </button>
+                  </div>
+                  <div className="col-md-12 mb-3">
                     <Link to="/user/notifications" className="btn btn-light w-100 py-2 rounded shadow-sm">
                       Настройки уведомлений
                     </Link>
@@ -211,6 +378,87 @@ function UserInfoPage() {
           </div>
         </div>
       </div>
+      
+      {/* Модальное окно для редактирования профиля */}
+      <Modal show={showEditModal} onHide={handleEditModalClose}>
+        <Modal.Header closeButton>
+          <Modal.Title>Редактирование профиля</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {updateSuccess ? (
+            <div className="alert alert-success">
+              Профиль успешно обновлен! Страница будет перезагружена.
+            </div>
+          ) : (
+            <Form onSubmit={handleProfileUpdate}>
+              {profileError && (
+                <div className="alert alert-danger mb-4">
+                  {profileError}
+                </div>
+              )}
+            
+              <Form.Group className="mb-3">
+                <Form.Label>Имя</Form.Label>
+                <Form.Control
+                  type="text"
+                  name="first_name"
+                  value={profileForm.first_name}
+                  onChange={handleProfileFormChange}
+                  isInvalid={!!formErrors.first_name}
+                />
+                <Form.Control.Feedback type="invalid">
+                  {formErrors.first_name}
+                </Form.Control.Feedback>
+              </Form.Group>
+              
+              <Form.Group className="mb-3">
+                <Form.Label>Фамилия</Form.Label>
+                <Form.Control
+                  type="text"
+                  name="last_name"
+                  value={profileForm.last_name}
+                  onChange={handleProfileFormChange}
+                  isInvalid={!!formErrors.last_name}
+                />
+                <Form.Control.Feedback type="invalid">
+                  {formErrors.last_name}
+                </Form.Control.Feedback>
+              </Form.Group>
+              
+              <Form.Group className="mb-3">
+                <Form.Label>Email</Form.Label>
+                <Form.Control
+                  type="email"
+                  name="email"
+                  value={profileForm.email}
+                  onChange={handleProfileFormChange}
+                  isInvalid={!!formErrors.email}
+                />
+                <Form.Control.Feedback type="invalid">
+                  {formErrors.email}
+                </Form.Control.Feedback>
+                <Form.Text className="text-muted">
+                  При смене email, новый email не должен быть зарегистрирован в системе.
+                </Form.Text>
+              </Form.Group>
+            </Form>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleEditModalClose}>
+            {updateSuccess ? 'Закрыть' : 'Отмена'}
+          </Button>
+          {!updateSuccess && (
+            <Button 
+              variant="primary" 
+              onClick={handleProfileUpdate}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Обновление...' : 'Сохранить изменения'}
+            </Button>
+          )}
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }

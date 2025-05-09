@@ -108,6 +108,12 @@ class UserSessionStatusSchema(BaseModel):
     message: str
     revoked_count: Optional[int] = None
 
+class UserUpdateSchema(BaseModel):
+    """Схема для обновления данных пользователя."""
+    first_name: Optional[str] = Field(None, min_length=2, max_length=50, description="Имя")
+    last_name: Optional[str] = Field(None, min_length=2, max_length=50, description="Фамилия")
+    email: Optional[EmailStr] = None
+
 class PermissionResponseSchema(BaseModel):
     """Схема для ответа с проверкой разрешений."""
     is_authenticated: bool

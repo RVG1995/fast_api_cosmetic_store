@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_session
 from models import UserModel
 import jwt
-from schema import TokenSchema, UserCreateShema, UserReadSchema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema
+from schema import TokenSchema, UserCreateShema, UserReadSchema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema, UserUpdateSchema
 from dotenv import load_dotenv
 from utils import get_password_hash, verify_password  # Импортируем из utils
 from auth_utils import get_current_user, get_admin_user, get_super_admin_user  # Импортируем из auth_utils.py
@@ -26,6 +26,7 @@ from app.services import (
     bruteforce_protection,
     user_service,
     session_service,
+    cache_service,
 )
 
 from aiosmtplib.errors import SMTPException
@@ -936,4 +937,74 @@ async def create_user_by_admin(
         raise HTTPException(
             status_code=500,
             detail="Произошла ошибка при создании пользователя. Пожалуйста, попробуйте позже."
+        ) from e
+
+@router.patch("/users/me/profile", response_model=UserReadSchema, summary="Обновление профиля пользователя",dependencies=[Depends(get_current_user)])
+async def update_user_profile(
+    update_data: UserUpdateSchema,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user)
+) -> UserReadSchema:
+    """
+    Обновление профиля текущего пользователя (имя, фамилия, email).
+    
+    Args:
+        update_data: Данные для обновления
+        session: Сессия базы данных
+        current_user: Текущий пользователь
+        
+    Returns:
+        UserReadSchema: Обновленные данные пользователя
+        
+    Raises:
+        HTTPException: При ошибке обновления профиля
+    """
+    try:
+        # Проверяем, меняется ли email
+        if update_data.email and update_data.email != current_user.email:
+            # Проверяем уникальность email
+            existing_user = await user_service.get_user_by_email(session, update_data.email)
+            if existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email уже зарегистрирован другим пользователем"
+                )
+        
+        # Обновляем данные пользователя
+        if update_data.first_name:
+            current_user.first_name = update_data.first_name
+        
+        if update_data.last_name:
+            current_user.last_name = update_data.last_name
+        
+        if update_data.email:
+            current_user.email = update_data.email
+        
+        # Сохраняем изменения
+        await session.commit()
+        
+        # Инвалидируем кэш для данного пользователя через user_service
+        # Внутренние методы сервиса уже имеют логику для инвалидации кэша
+        # Получаем пользователя заново, чтобы обновить кэш
+        await user_service.get_user_by_id(session, current_user.id)
+        await user_service.get_user_by_email(session, current_user.email)
+        
+        logger.info("Профиль пользователя обновлен: ID=%s, email=%s", current_user.id, current_user.email)
+        
+        return UserReadSchema(
+            id=current_user.id,
+            first_name=current_user.first_name,
+            last_name=current_user.last_name,
+            email=current_user.email
+        )
+        
+    except HTTPException:
+        # Пробрасываем HTTPException дальше
+        raise
+    except Exception as e:
+        # Логируем ошибку и возвращаем 500
+        logger.error("Ошибка при обновлении профиля: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Произошла ошибка при обновлении профиля"
         ) from e

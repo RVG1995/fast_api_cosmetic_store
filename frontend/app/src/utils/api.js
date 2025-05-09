@@ -154,6 +154,7 @@ export const authAPI = {
   },
   activateUser: async (token) => await authApi.get(`/auth/activate/${token}`),
   changePassword: async (passwordData) => await authApi.post('/auth/change-password', passwordData),
+  updateProfile: async (profileData) => await authApi.patch('/auth/users/me/profile', profileData),
   requestPasswordReset: async (email) => await authApi.post('/auth/request-password-reset', { email }),
   resetPassword: async ({ token, new_password, confirm_password }) => await authApi.post('/auth/reset-password', { token, new_password, confirm_password }),
 };

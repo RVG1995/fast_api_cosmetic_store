@@ -755,6 +755,83 @@ async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
         orders_by_payment_method=orders_by_payment_method
     )
 
+async def get_order_statistics_by_date(
+    session: AsyncSession, 
+    date_from: Optional[str] = None, 
+    date_to: Optional[str] = None
+) -> OrderStatistics:
+    """
+    Получение статистики по заказам с фильтрацией по дате
+    
+    Args:
+        session: Сессия базы данных
+        date_from: Дата начала периода в формате YYYY-MM-DD
+        date_to: Дата окончания периода в формате YYYY-MM-DD
+        
+    Returns:
+        Статистика по заказам за указанный период
+    """
+    # Создаем фильтры по датам
+    filters = []
+    
+    if date_from:
+        try:
+            date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+            filters.append(OrderModel.created_at >= date_from_obj)
+        except ValueError:
+            logger.error("Неверный формат date_from: %s", date_from)
+    
+    if date_to:
+        try:
+            date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            filters.append(OrderModel.created_at <= date_to_obj)
+        except ValueError:
+            logger.error("Неверный формат date_to: %s", date_to)
+    
+    # Общее количество заказов с учетом фильтра
+    total_orders_query = select(func.count(OrderModel.id))
+    if filters:
+        total_orders_query = total_orders_query.where(*filters)
+    total_orders_result = await session.execute(total_orders_query)
+    total_orders = total_orders_result.scalar() or 0
+    
+    # Общая выручка с учетом фильтра
+    total_revenue_query = select(func.sum(OrderModel.total_price))
+    if filters:
+        total_revenue_query = total_revenue_query.where(*filters)
+    total_revenue_result = await session.execute(total_revenue_query)
+    total_revenue = total_revenue_result.scalar() or 0
+    
+    # Средняя стоимость заказа
+    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
+    
+    # Количество заказов по статусам с учетом фильтра
+    orders_by_status_query = select(
+        OrderStatusModel.name,
+        func.count(OrderModel.id)
+    ).join(
+        OrderModel,
+        OrderStatusModel.id == OrderModel.status_id
+    )
+    
+    if filters:
+        orders_by_status_query = orders_by_status_query.where(*filters)
+    
+    orders_by_status_query = orders_by_status_query.group_by(OrderStatusModel.name)
+    orders_by_status_result = await session.execute(orders_by_status_query)
+    orders_by_status = {row[0]: row[1] for row in orders_by_status_result}
+    
+    # Так как payment_method удалено, возвращаем пустой словарь
+    orders_by_payment_method = {}
+    
+    return OrderStatistics(
+        total_orders=total_orders,
+        total_revenue=total_revenue,
+        average_order_value=average_order_value,
+        orders_by_status=orders_by_status,
+        orders_by_payment_method=orders_by_payment_method
+    )
+
 async def get_user_order_statistics(session: AsyncSession, user_id: int) -> OrderStatistics:
     """
     Получение статистики по заказам конкретного пользователя

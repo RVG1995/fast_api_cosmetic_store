@@ -14,7 +14,8 @@ import {
   MdAssignment,
   MdPayment,
   MdStar,
-  MdLocalOffer
+  MdLocalOffer,
+  MdBarChart
 } from 'react-icons/md';
 import { useAuth } from '../../context/AuthContext';
 
@@ -129,6 +130,14 @@ const AdminSidebar = () => {
             className={`nav-link ${isActive('/admin/promo-codes') ? 'active' : ''}`}
           >
             <MdLocalOffer className="me-2" /> Промокоды
+          </Link>
+        </Nav.Item>
+        <Nav.Item>
+          <Link 
+            to="/admin/reports" 
+            className={`nav-link ${isActive('/admin/reports') ? 'active' : ''}`}
+          >
+            <MdBarChart className="me-2" /> Отчеты
           </Link>
         </Nav.Item>
         <Nav.Item>

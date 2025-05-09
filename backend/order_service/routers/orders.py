@@ -8,9 +8,14 @@ from datetime import datetime
 import hashlib
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Body
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from notification_api import check_notification_settings
+import pandas as pd
+import io
+import csv
+import openpyxl
 
 from database import get_db
 from models import OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel
@@ -18,12 +23,12 @@ from schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderDetailResponse, 
     OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics, BatchStatusUpdate,
     OrderItemsUpdate, OrderItemsUpdateResponse, PromoCodeResponse, OrderResponseWithPromo, OrderDetailResponseWithPromo,
-    AdminOrderCreate
+    AdminOrderCreate, OrderFilterParams
 )
 from services import (
     create_order, get_order_by_id, get_orders, update_order, 
     change_order_status, cancel_order, get_order_statistics, get_user_order_statistics,
-    update_order_items
+    update_order_items, get_order_statistics_by_date
 )
 from dependencies import (
     get_current_user, get_admin_user, get_order_filter_params,
@@ -705,6 +710,43 @@ async def get_admin_orders_statistics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при получении статистики заказов"
+        ) from e
+
+@admin_router.get("/statistics/report", response_model=OrderStatistics,dependencies=[Depends(get_admin_user)])
+async def get_admin_orders_statistics_by_date(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Получение статистики по заказам за указанный период (только для администраторов)
+    
+    - **date_from**: Дата начала периода в формате YYYY-MM-DD
+    - **date_to**: Дата окончания периода в формате YYYY-MM-DD
+    """
+    try:
+        # Формируем ключ кэша на основе параметров запроса
+        cache_key = f"order_statistics:report:{date_from or 'all'}:{date_to or 'all'}"
+        
+        # Пытаемся получить данные из кэша
+        cached_statistics = await get_cached_data(cache_key)
+        if cached_statistics:
+            logger.info("Статистика заказов за период получена из кэша")
+            return cached_statistics
+        
+        # Если данных нет в кэше, получаем из БД
+        statistics = await get_order_statistics_by_date(session, date_from, date_to)
+        
+        # Кэшируем результат на короткое время (5 минут)
+        await set_cached_data(cache_key, statistics, 300)
+        logger.info("Статистика заказов за период добавлена в кэш")
+        
+        return statistics
+    except Exception as e:
+        logger.error("Ошибка при получении статистики заказов за период: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при получении статистики заказов за период"
         ) from e
 
 @admin_router.get("/{order_id}", response_model=OrderDetailResponseWithPromo,dependencies=[Depends(get_admin_user)])
@@ -1497,4 +1539,387 @@ async def unsubscribe_notifications(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при отмене подписки на уведомления",
+        ) from e
+
+@admin_router.get("/reports/download", dependencies=[Depends(get_admin_user)])
+async def generate_orders_report(
+    format: str = Query(..., description="Формат отчета: csv, excel, pdf, word"),
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Генерация отчета по заказам в различных форматах
+    
+    - **format**: Формат отчета (csv, excel, pdf, word)
+    - **date_from**: Дата начала периода (YYYY-MM-DD)
+    - **date_to**: Дата окончания периода (YYYY-MM-DD)
+    """
+    try:
+        # Получаем статистику за указанный период
+        statistics = await get_order_statistics_by_date(session, date_from, date_to)
+        
+        # Создаем датафрейм со статистикой
+        stats_data = {
+            "Метрика": ["Всего заказов", "Общая сумма заказов", "Средняя стоимость заказа"],
+            "Значение": [
+                statistics.total_orders,
+                statistics.total_revenue,
+                round(statistics.average_order_value, 2)
+            ]
+        }
+        
+        # Добавляем статистику по статусам
+        for status_name, count in statistics.orders_by_status.items():
+            stats_data["Метрика"].append(f"Заказов со статусом '{status_name}'")
+            stats_data["Значение"].append(count)
+        
+        df_stats = pd.DataFrame(stats_data)
+        
+        # Получаем список заказов за указанный период
+        # Создаем фильтры для запроса заказов
+        filters = OrderFilterParams(
+            page=1,
+            size=100,  # Максимально допустимое значение
+            date_from=date_from,
+            date_to=date_to
+        )
+        
+        # Получаем заказы
+        orders, _ = await get_orders(session, filters)
+        
+        # Создаем датафрейм с заказами
+        orders_data = []
+        for order in orders:
+            orders_data.append({
+                "ID": order.id,
+                "Номер заказа": order.order_number,
+                "Дата создания": order.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "Статус": order.status.name,
+                "Клиент": order.full_name,
+                "Email": order.email,
+                "Телефон": order.phone,
+                "Адрес": f"{order.region}, {order.city}, {order.street}",
+                "Сумма заказа": order.total_price,
+                "Скидка": order.discount_amount or 0,
+                "Оплачен": "Да" if order.is_paid else "Нет"
+            })
+        
+        df_orders = pd.DataFrame(orders_data)
+        
+        # Период для имени файла
+        period = ""
+        if date_from and date_to:
+            period = f"_{date_from}_{date_to}"
+        elif date_from:
+            period = f"_{date_from}"
+        elif date_to:
+            period = f"_{date_to}"
+        
+        # Обработка в зависимости от формата
+        if format.lower() == "csv":
+            # Создаем буфер для CSV файла
+            output = io.StringIO()
+            
+            # Записываем заголовок
+            output.write("Отчет по заказам\n")
+            if date_from and date_to:
+                output.write(f"Период: с {date_from} по {date_to}\n\n")
+            elif date_from:
+                output.write(f"Период: с {date_from}\n\n")
+            elif date_to:
+                output.write(f"Период: по {date_to}\n\n")
+            else:
+                output.write("Период: все время\n\n")
+            
+            # Записываем статистику
+            output.write("Общая статистика:\n")
+            df_stats.to_csv(output, index=False, sep=';')
+            
+            output.write("\n\nСписок заказов:\n")
+            df_orders.to_csv(output, index=False, sep=';')
+            
+            # Возвращаем StreamingResponse
+            output.seek(0)
+            
+            # Форматируем имя файла                
+            filename = f"orders_report{period}.csv"
+            
+            return StreamingResponse(
+                iter([output.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+        
+        elif format.lower() == "excel":
+            # Создаем буфер для Excel файла
+            output = io.BytesIO()
+            
+            # Создаем Excel файл
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # Добавляем лист со статистикой
+                df_stats.to_excel(writer, sheet_name='Статистика', index=False)
+                
+                # Добавляем лист с заказами
+                df_orders.to_excel(writer, sheet_name='Заказы', index=False)
+            
+            # Возвращаем StreamingResponse
+            output.seek(0)
+            
+            # Форматируем имя файла
+            filename = f"orders_report{period}.xlsx"
+            
+            return StreamingResponse(
+                io.BytesIO(output.getvalue()),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+        
+        elif format.lower() == "pdf":
+            try:
+                # Импортируем необходимые библиотеки
+                from reportlab.lib import colors
+                from reportlab.lib.pagesizes import letter, landscape
+                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+                from reportlab.lib.styles import getSampleStyleSheet
+                
+                buffer = io.BytesIO()
+                
+                # Создаем PDF документ
+                doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
+                elements = []
+                
+                # Стили
+                styles = getSampleStyleSheet()
+                title_style = styles['Heading1']
+                subtitle_style = styles['Heading2']
+                normal_style = styles['Normal']
+                
+                # Заголовок
+                elements.append(Paragraph("Отчет по заказам", title_style))
+                
+                # Период отчета
+                if date_from and date_to:
+                    elements.append(Paragraph(f"Период: с {date_from} по {date_to}", subtitle_style))
+                elif date_from:
+                    elements.append(Paragraph(f"Период: с {date_from}", subtitle_style))
+                elif date_to:
+                    elements.append(Paragraph(f"Период: по {date_to}", subtitle_style))
+                else:
+                    elements.append(Paragraph("Период: все время", subtitle_style))
+                
+                elements.append(Spacer(1, 20))
+                
+                # Общая статистика
+                elements.append(Paragraph("Общая статистика", subtitle_style))
+                
+                # Создаем таблицу со статистикой
+                stats_data = [['Метрика', 'Значение']]
+                stats_data.append(['Всего заказов', str(statistics.total_orders)])
+                stats_data.append(['Общая сумма заказов', f"{statistics.total_revenue:.2f} руб."])
+                stats_data.append(['Средняя стоимость заказа', f"{statistics.average_order_value:.2f} руб."])
+                
+                # Добавляем статистику по статусам
+                for status_name, count in statistics.orders_by_status.items():
+                    stats_data.append([f"Заказов со статусом '{status_name}'", str(count)])
+                
+                # Создаем таблицу и задаем стиль
+                stats_table = Table(stats_data, colWidths=[300, 150])
+                stats_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+                ]))
+                
+                elements.append(stats_table)
+                elements.append(Spacer(1, 20))
+                
+                # Список заказов
+                elements.append(Paragraph("Список заказов", subtitle_style))
+                
+                # Создаем таблицу со списком заказов
+                if orders:
+                    # Заголовки таблицы
+                    orders_data = [['ID', 'Номер заказа', 'Дата создания', 'Статус', 'Клиент', 'Сумма', 'Оплачен']]
+                    
+                    # Данные заказов
+                    for order in orders:
+                        orders_data.append([
+                            str(order.id),
+                            order.order_number,
+                            order.created_at.strftime("%Y-%m-%d %H:%M"),
+                            order.status.name,
+                            order.full_name,
+                            f"{order.total_price:.2f} руб.",
+                            "Да" if order.is_paid else "Нет"
+                        ])
+                    
+                    # Создаем таблицу и задаем стиль
+                    orders_table = Table(orders_data, colWidths=[40, 80, 80, 80, 150, 70, 50])
+                    orders_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                        ('ALIGN', (0, 1), (0, -1), 'RIGHT'),
+                        ('ALIGN', (5, 1), (5, -1), 'RIGHT'),
+                        ('ALIGN', (6, 1), (6, -1), 'CENTER'),
+                    ]))
+                    
+                    elements.append(orders_table)
+                else:
+                    elements.append(Paragraph("Нет заказов за выбранный период", normal_style))
+                
+                # Строим PDF документ
+                doc.build(elements)
+                
+                # Готовим ответ
+                buffer.seek(0)
+                
+                # Имя файла
+                filename = f"orders_report{period}.pdf"
+                
+                return StreamingResponse(
+                    buffer,
+                    media_type="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"}
+                )
+            except Exception as e:
+                logger.error(f"Ошибка при создании PDF отчета: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Ошибка при создании PDF отчета: {str(e)}"
+                )
+        
+        elif format.lower() == "word":
+            try:
+                # Импортируем необходимые библиотеки
+                from docx import Document
+                from docx.shared import Pt, Cm, RGBColor
+                from docx.enum.text import WD_ALIGN_PARAGRAPH
+                
+                # Создаем документ Word
+                doc = Document()
+                
+                # Заголовок отчета
+                title = doc.add_heading('Отчет по заказам', level=1)
+                title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Период отчета
+                if date_from and date_to:
+                    doc.add_heading(f"Период: с {date_from} по {date_to}", level=2)
+                elif date_from:
+                    doc.add_heading(f"Период: с {date_from}", level=2)
+                elif date_to:
+                    doc.add_heading(f"Период: по {date_to}", level=2)
+                else:
+                    doc.add_heading("Период: все время", level=2)
+                
+                # Добавляем раздел общей статистики
+                doc.add_heading('Общая статистика', level=2)
+                
+                # Таблица со статистикой
+                table = doc.add_table(rows=1, cols=2)
+                table.style = 'Table Grid'
+                
+                # Заголовки таблицы
+                hdr_cells = table.rows[0].cells
+                hdr_cells[0].text = 'Метрика'
+                hdr_cells[1].text = 'Значение'
+                
+                # Форматирование заголовков
+                for cell in table.rows[0].cells:
+                    cell.paragraphs[0].runs[0].bold = True
+                    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Данные статистики
+                row = table.add_row().cells
+                row[0].text = 'Всего заказов'
+                row[1].text = str(statistics.total_orders)
+                
+                row = table.add_row().cells
+                row[0].text = 'Общая сумма заказов'
+                row[1].text = f"{statistics.total_revenue:.2f} руб."
+                
+                row = table.add_row().cells
+                row[0].text = 'Средняя стоимость заказа'
+                row[1].text = f"{statistics.average_order_value:.2f} руб."
+                
+                # Статистика по статусам
+                for status_name, count in statistics.orders_by_status.items():
+                    row = table.add_row().cells
+                    row[0].text = f"Заказов со статусом '{status_name}'"
+                    row[1].text = str(count)
+                
+                # Добавляем раздел списка заказов
+                doc.add_heading('Список заказов', level=2)
+                
+                # Таблица заказов
+                if orders:
+                    table = doc.add_table(rows=1, cols=7)
+                    table.style = 'Table Grid'
+                    
+                    # Заголовки таблицы
+                    hdr_cells = table.rows[0].cells
+                    headers = ['ID', 'Номер заказа', 'Дата создания', 'Статус', 'Клиент', 'Сумма', 'Оплачен']
+                    for i, header in enumerate(headers):
+                        hdr_cells[i].text = header
+                    
+                    # Форматирование заголовков
+                    for cell in table.rows[0].cells:
+                        cell.paragraphs[0].runs[0].bold = True
+                        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    
+                    # Данные заказов
+                    for order in orders:
+                        row_cells = table.add_row().cells
+                        row_cells[0].text = str(order.id)
+                        row_cells[1].text = order.order_number
+                        row_cells[2].text = order.created_at.strftime("%Y-%m-%d %H:%M")
+                        row_cells[3].text = order.status.name
+                        row_cells[4].text = order.full_name
+                        row_cells[5].text = f"{order.total_price:.2f} руб."
+                        row_cells[6].text = "Да" if order.is_paid else "Нет"
+                else:
+                    doc.add_paragraph("Нет заказов за выбранный период")
+                
+                # Сохраняем документ в буфер
+                buffer = io.BytesIO()
+                doc.save(buffer)
+                buffer.seek(0)
+                
+                # Имя файла
+                filename = f"orders_report{period}.docx"
+                
+                return StreamingResponse(
+                    buffer,
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"}
+                )
+            except Exception as e:
+                logger.error(f"Ошибка при создании Word отчета: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Ошибка при создании Word отчета: {str(e)}"
+                )
+        
+        else:
+            # Возвращаем ошибку, если формат не поддерживается
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Неподдерживаемый формат отчета: {format}. Поддерживаемые форматы: csv, excel, pdf, word"
+            )
+    
+    except Exception as e:
+        logger.error("Ошибка при генерации отчета: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Произошла ошибка при генерации отчета"
         ) from e

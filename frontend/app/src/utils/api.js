@@ -185,6 +185,8 @@ export const adminAPI = {
   toggleUserActive: async (userId) => await authApi.patch(`/auth/users/${userId}/toggle-active`),
   checkAdminAccess: async () => await authApi.get('/admin/check-access'),
   checkSuperAdminAccess: async () => await authApi.get('/admin/check-super-access'),
+  
+  // Статистика
   getDashboardStats: async () => {
     try {
       // Получаем количество пользователей
@@ -229,6 +231,77 @@ export const adminAPI = {
         ordersCount: 0,
         totalOrdersRevenue: 0
       };
+    }
+  },
+  
+  // Получение статистики по заказам за указанный период
+  getOrderStatsByDate: async (dateFrom = null, dateTo = null) => {
+    try {
+      const ordersApi = createApiInstance(API_URLS.ORDER_SERVICE);
+      setupInterceptors(ordersApi, 'Orders');
+      
+      // Формируем параметры запроса
+      const params = {};
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      
+      console.log('Запрос статистики заказов по периоду с параметрами:', params);
+      
+      // Получаем статистику заказов за указанный период
+      const response = await ordersApi.get('/admin/orders/statistics/report', { params });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка при получении статистики заказов по периоду:', error);
+      throw error;
+    }
+  },
+  
+  // Генерация отчета по заказам
+  generateOrderReport: async (format, dateFrom = null, dateTo = null) => {
+    try {
+      const ordersApi = createApiInstance(API_URLS.ORDER_SERVICE);
+      setupInterceptors(ordersApi, 'Orders');
+      
+      // Формируем параметры запроса
+      const params = { format };
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      
+      console.log('Запрос генерации отчета по заказам с параметрами:', params);
+      
+      // Запрашиваем отчет в нужном формате
+      const response = await ordersApi.get('/admin/orders/reports/download', { 
+        params,
+        responseType: 'blob' // Указываем, что ответ ожидается в виде файла
+      });
+      
+      // Создаем ссылку для скачивания файла
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Устанавливаем имя файла на основе заголовка Content-Disposition или по умолчанию
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `orders_report_${format}_${new Date().toISOString().split('T')[0]}.${format}`;
+      
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      return true;
+    } catch (error) {
+      console.error('Ошибка при генерации отчета по заказам:', error);
+      throw error;
     }
   }
 };

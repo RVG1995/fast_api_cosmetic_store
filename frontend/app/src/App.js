@@ -52,6 +52,7 @@ const AdminPaymentStatuses = lazy(() => import('./pages/admin/AdminPaymentStatus
 const AdminPromoCodes = lazy(() => import('./pages/admin/AdminPromoCodes'));
 const AdminReviewsPage = lazy(() => import('./pages/admin/reviews/AdminReviewsPage'));
 const AdminReviewDetailPage = lazy(() => import('./pages/admin/reviews/AdminReviewDetailPage'));
+const AdminReports = lazy(() => import('./pages/admin/AdminReports')); // Новый компонент для формирования отчетов
 
 // Удаляем временную замену ProductsPage
 // const ProductsPage = HomePage;
@@ -344,6 +345,16 @@ function App() {
                           <AdminRoute>
                             <Suspense fallback={<Loading />}>
                               <AdminReviewDetailPage />
+                            </Suspense>
+                          </AdminRoute>
+                        } 
+                      />
+                      <Route 
+                        path="admin/reports" 
+                        element={
+                          <AdminRoute>
+                            <Suspense fallback={<Loading />}>
+                              <AdminReports />
                             </Suspense>
                           </AdminRoute>
                         } 

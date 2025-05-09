@@ -89,4 +89,80 @@
   color: #6c757d;
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+
+/* Стили для страницы отчетов */
+.admin-reports {
+  padding: 1rem;
+}
+
+.admin-reports h1 {
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.period-buttons {
+  margin-bottom: 1.5rem;
+}
+
+.chart-container {
+  background-color: white;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  height: 300px;
+  position: relative;
+}
+
+.admin-stat-card {
+  display: flex;
+  align-items: center;
+  padding: 1.5rem;
+  border-radius: 8px;
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  height: 100%;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.admin-stat-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.admin-stat-icon {
+  font-size: 2rem;
+  margin-right: 1rem;
+  color: #5661b3;
+  background-color: rgba(86, 97, 179, 0.1);
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.admin-stat-info {
+  flex-grow: 1;
+}
+
+.admin-stat-info h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+  font-weight: 500;
+}
+
+.admin-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #333;
+  margin: 5px 0 0;
+}
+
+.download-buttons {
+  display: flex;
+  gap: 0.5rem;
 } 

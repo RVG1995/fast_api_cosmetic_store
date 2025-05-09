@@ -8,6 +8,7 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
+from cryptography.fernet import Fernet
 
 from config import settings, get_service_clients
 from cache import cache_get, cache_set
@@ -38,39 +39,51 @@ ALGORITHM = JWT_ALGORITHM
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+
+# Добавим в начало файла или в конфиг
+# В production ключ должен храниться в защищенном месте (переменных окружения, Vault, KMS)
+ENCRYPTION_KEY = Fernet.generate_key()
+cipher_suite = Fernet(ENCRYPTION_KEY)
+
 async def _get_service_token():
+    """Получает JWT токен для межсервисного взаимодействия."""
     # try cache
-    token = await cache_get("service_token_carts")
-    if token:
-        return token
-    # Debug: покажем текущий client_id и доступные сервисы
-    #     # Получаем секрет из SERVICE_CLIENTS
+    encrypted_token = await cache_get("service_token_cart")
+    if encrypted_token:
+        try:
+            # Расшифровываем токен из кэша
+            token = cipher_suite.decrypt(encrypted_token).decode('utf-8')
+            return token
+        except Exception:
+            # Если не удалось расшифровать - логируем и получаем новый
+            logger.warning("Не удалось расшифровать токен из кэша")
+    
+    # Получаем секрет из SERVICE_CLIENTS
     secret = SERVICE_CLIENTS.get(SERVICE_CLIENT_ID)
     if not secret:
         raise RuntimeError(f"Нет секрета для client_id={SERVICE_CLIENT_ID}")
-    # Mask secret for logs (first/last 3 chars)
     data = {"grant_type":"client_credentials","client_id":SERVICE_CLIENT_ID,"client_secret":secret}
     async with httpx.AsyncClient() as client:
-        try:
-            r = await client.post(f"{AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
-            r.raise_for_status()
-        except httpx.HTTPError as e:
-            logger.error("_get_service_token: failed fetch token: %s", e)
-            raise
+        r = await client.post(f"{settings.AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
+        r.raise_for_status()
         new_token = r.json().get("access_token")
-        if not new_token:
-            logger.error("_get_service_token: access_token missing in response body")
-    # cache with TTL from exp claim or default
+    
+    # Определяем TTL
     ttl = SERVICE_TOKEN_EXPIRE_MINUTES*60 - 30
     try:
         payload = jwt.decode(new_token, options={"verify_signature": False})
         exp = payload.get("exp")
         if exp:
             ttl = max(int(exp - datetime.now(timezone.utc).timestamp() - 5), 1)
-    except (jwt.DecodeError, jwt.InvalidTokenError):
+    except (jwt.InvalidTokenError, jwt.DecodeError):
         pass
-    await cache_set("service_token_carts", new_token, ttl)
-    return new_token
+    
+    # Шифруем токен перед сохранением в кэш
+    encrypted_token = cipher_suite.encrypt(new_token.encode('utf-8'))
+    await cache_set("service_token_cart", encrypted_token, ttl)
+        
+    return new_token 
+    
 
 async def verify_service_jwt(
     cred: HTTPAuthorizationCredentials = Depends(bearer_scheme)

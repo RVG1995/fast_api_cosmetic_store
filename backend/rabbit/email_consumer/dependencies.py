@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from fastapi.security import HTTPBearer
 import jwt
 import httpx
+from cryptography.fernet import Fernet
 
 from config import settings, get_service_clients, logger
 from cache import get_cached_data, set_cached_data
@@ -30,32 +31,36 @@ SERVICE_CLIENTS = get_service_clients()
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# Добавим в начало файла или в конфиг
+# В production ключ должен храниться в защищенном месте (переменных окружения, Vault, KMS)
+ENCRYPTION_KEY = Fernet.generate_key()
+cipher_suite = Fernet(ENCRYPTION_KEY)
+
 async def _get_service_token():
-    """Получает токен для межсервисной аутентификации."""
-    # Пытаемся получить токен из кэша
-    token = await get_cached_data("rabbit_service_token")
-    if token:
-        return token
-        
-    # Получаем секрет из настроек
+    """Получает JWT токен для межсервисного взаимодействия."""
+    # try cache
+    encrypted_token = await get_cached_data("service_token_rabbit")
+    if encrypted_token:
+        try:
+            # Расшифровываем токен из кэша
+            token = cipher_suite.decrypt(encrypted_token).decode('utf-8')
+            return token
+        except Exception:
+            # Если не удалось расшифровать - логируем и получаем новый
+            logger.warning("Не удалось расшифровать токен из кэша")
+    
+    # Получаем секрет из SERVICE_CLIENTS
     secret = SERVICE_CLIENTS.get(SERVICE_CLIENT_ID)
     if not secret:
         raise RuntimeError(f"Нет секрета для client_id={SERVICE_CLIENT_ID}")
-        
-    # Запрашиваем новый токен
-    data = {
-        "grant_type": "client_credentials",
-        "client_id": SERVICE_CLIENT_ID,
-        "client_secret": secret
-    }
-    
+    data = {"grant_type":"client_credentials","client_id":SERVICE_CLIENT_ID,"client_secret":secret}
     async with httpx.AsyncClient() as client:
-        r = await client.post(f"{AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
+        r = await client.post(f"{settings.AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
         r.raise_for_status()
         new_token = r.json().get("access_token")
-        
-    # Кэшируем токен с TTL, вычисленным из срока действия токена
-    ttl = SERVICE_TOKEN_EXPIRE_MINUTES * 60 - 30
+    
+    # Определяем TTL
+    ttl = SERVICE_TOKEN_EXPIRE_MINUTES*60 - 30
     try:
         payload = jwt.decode(new_token, options={"verify_signature": False})
         exp = payload.get("exp")
@@ -63,6 +68,9 @@ async def _get_service_token():
             ttl = max(int(exp - datetime.now(timezone.utc).timestamp() - 5), 1)
     except (jwt.InvalidTokenError, jwt.DecodeError):
         pass
+    
+    # Шифруем токен перед сохранением в кэш
+    encrypted_token = cipher_suite.encrypt(new_token.encode('utf-8'))
+    await set_cached_data("service_token_rabbit", encrypted_token, ttl)
         
-    await set_cached_data("rabbit_service_token", new_token, ttl)
-    return new_token
+    return new_token 

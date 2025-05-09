@@ -35,7 +35,7 @@ async def check_order_info(order_id: int) -> Dict[str, bool]:
                 )
                 if response.status_code == 401:
                     # token expired - clear cache and retry
-                    await cache_service.delete("rabbit_service_token")
+                    await cache_service.delete("service_token_rabbit")
                     await asyncio.sleep(delay)
                     continue
                 break

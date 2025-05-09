@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 import jwt
 import httpx
+from cryptography.fernet import Fernet
 
 from cache import get_cached_data, set_cached_data
 from config import settings, get_service_clients
@@ -16,12 +17,24 @@ SERVICE_CLIENT_ID = settings.SERVICE_CLIENT_ID
 SERVICE_TOKEN_URL = f"{settings.AUTH_SERVICE_URL}/auth/token"
 SERVICE_TOKEN_EXPIRE_MINUTES = settings.SERVICE_TOKEN_EXPIRE_MINUTES
 
+# Добавим в начало файла или в конфиг
+# В production ключ должен храниться в защищенном месте (переменных окружения, Vault, KMS)
+ENCRYPTION_KEY = Fernet.generate_key()
+cipher_suite = Fernet(ENCRYPTION_KEY)
+
 async def get_service_token():
     """Получает JWT токен для межсервисного взаимодействия."""
     # try cache
-    token = await get_cached_data("service_token")
-    if token:
-        return token
+    encrypted_token = await get_cached_data("service_token")
+    if encrypted_token:
+        try:
+            # Расшифровываем токен из кэша
+            token = cipher_suite.decrypt(encrypted_token).decode('utf-8')
+            return token
+        except Exception:
+            # Если не удалось расшифровать - логируем и получаем новый
+            logger.warning("Не удалось расшифровать токен из кэша")
+    
     # Получаем секрет из SERVICE_CLIENTS
     secret = SERVICE_CLIENTS.get(SERVICE_CLIENT_ID)
     if not secret:
@@ -31,7 +44,8 @@ async def get_service_token():
         r = await client.post(f"{settings.AUTH_SERVICE_URL}/auth/token", data=data, timeout=5)
         r.raise_for_status()
         new_token = r.json().get("access_token")
-    # cache with TTL from exp claim or default
+    
+    # Определяем TTL
     ttl = SERVICE_TOKEN_EXPIRE_MINUTES*60 - 30
     try:
         payload = jwt.decode(new_token, options={"verify_signature": False})
@@ -40,5 +54,9 @@ async def get_service_token():
             ttl = max(int(exp - datetime.now(timezone.utc).timestamp() - 5), 1)
     except (jwt.InvalidTokenError, jwt.DecodeError):
         pass
-    await set_cached_data("service_token", new_token, ttl)
+    
+    # Шифруем токен перед сохранением в кэш
+    encrypted_token = cipher_suite.encrypt(new_token.encode('utf-8'))
+    await set_cached_data("service_token", encrypted_token, ttl)
+    
     return new_token 

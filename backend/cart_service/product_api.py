@@ -207,7 +207,7 @@ class ProductAPI:
                             logger.info("Осталось получить данные для %d продуктов индивидуально", len(to_fetch_ids))
                         if response.status_code == 401:
                             # token expired - clear cache and retry
-                            await cache_service.delete("service_token")
+                            await cache_service.delete("service_token_cart")
                             await asyncio.sleep(delay)
                             continue
                         break

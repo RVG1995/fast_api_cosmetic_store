@@ -42,6 +42,7 @@ const CheckoutPage = () => {
   const [showBoxberryModal, setShowBoxberryModal] = useState(false);
   const [selectedPickupPoint, setSelectedPickupPoint] = useState(null);
   const [isBoxberryDelivery, setIsBoxberryDelivery] = useState(false);
+  const [boxberryCityCode, setBoxberryCityCode] = useState(null);
   
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
@@ -146,10 +147,17 @@ const CheckoutPage = () => {
   const handlePickupPointSelected = (point) => {
     console.log('Выбран пункт выдачи:', point);
     setSelectedPickupPoint(point);
+    // Устанавливаем флаг isBoxberryDelivery в true при выборе пункта
+    setIsBoxberryDelivery(true);
     setFormData(prev => ({
       ...prev,
       delivery_address: point.Address
     }));
+    
+    // Сохраняем код города, если он есть в модальном окне
+    if (point.CityCode) {
+      setBoxberryCityCode(point.CityCode);
+    }
   };
 
   // Обработчик открытия модального окна BoxBerry
@@ -230,17 +238,28 @@ const CheckoutPage = () => {
         product_id: item.product_id,
         quantity: item.quantity
       })),
-      fullName: formData.fullName,
+      full_name: formData.fullName,
       email: formData.email,
       phone: formData.phone,
       delivery_address: formData.delivery_address,
       comment: formData.comment || '',
-      personalDataAgreement: formData.personalDataAgreement,
+      personal_data_agreement: formData.personalDataAgreement,
       promo_code: promoCode ? promoCode.code : undefined,
       receive_notifications: !user ? formData.receiveNotifications : undefined, // Передаем только для неавторизованных пользователей
-      is_boxberry_pickup: isBoxberryDelivery, // Добавляем признак доставки в пункт выдачи BoxBerry
-      boxberry_point_code: selectedPickupPoint?.Code || null // Добавляем код пункта выдачи
+      
+      // Информация о типе доставки
+      delivery_type: isBoxberryDelivery ? "boxberry" : "standard",
+      boxberry_point_id: isBoxberryDelivery && selectedPickupPoint ? selectedPickupPoint.Code : null,
+      boxberry_point_address: isBoxberryDelivery && selectedPickupPoint ? selectedPickupPoint.Address : null,
+      boxberry_city_code: isBoxberryDelivery && selectedPickupPoint ? boxberryCityCode : null
     };
+    
+    // Логи состояния доставки BoxBerry
+    console.log("Состояние доставки BoxBerry:", {
+      isBoxberryDelivery,
+      selectedPickupPoint,
+      boxberryCityCode
+    });
     
     console.log("Отправляемые данные заказа:", orderData);
     

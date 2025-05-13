@@ -1064,6 +1064,35 @@ const AdminOrderDetail = () => {
             <Card.Body>
               <p><strong>Получатель:</strong> {order.full_name}</p>
               <p><strong>Адрес доставки:</strong> {order.delivery_address || "Не указан"}</p>
+              
+              {/* Информация о типе доставки */}
+              <div className="mb-3">
+                <p>
+                  <strong>Тип доставки:</strong>{' '}
+                  {order.delivery_type === 'boxberry' ? (
+                    <Badge bg="info">BoxBerry</Badge>
+                  ) : (
+                    <Badge bg="secondary">Стандартная доставка</Badge>
+                  )}
+                </p>
+                
+                {/* Информация о пункте BoxBerry, если это доставка BoxBerry */}
+                {order.delivery_type === 'boxberry' && (
+                  <div className="bg-light p-2 rounded">
+                    <p className="mb-1"><strong>Пункт выдачи BoxBerry:</strong></p>
+                    {order.boxberry_point_address && (
+                      <p className="mb-1 small">{order.boxberry_point_address}</p>
+                    )}
+                    {order.boxberry_point_id && (
+                      <p className="mb-0 small">Код пункта: {order.boxberry_point_id}</p>
+                    )}
+                    {order.boxberry_city_code && (
+                      <p className="mb-0 small">Код города: {order.boxberry_city_code}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              
               <p><strong>Телефон:</strong> {order.phone || "Не указан"}</p>
               <p><strong>Email:</strong> {order.email}</p>
               <p>

@@ -115,7 +115,12 @@ async def create_order(
         discount_amount=0,  # Будет обновлено после расчета скидки
         is_paid=False,
         personal_data_agreement=order_data.personal_data_agreement,
-        receive_notifications=order_data.receive_notifications
+        receive_notifications=order_data.receive_notifications,
+        # Добавляем поля для BoxBerry
+        delivery_type=order_data.delivery_type if hasattr(order_data, 'delivery_type') else "standard",
+        boxberry_point_id=order_data.boxberry_point_id if hasattr(order_data, 'boxberry_point_id') else None,
+        boxberry_point_address=order_data.boxberry_point_address if hasattr(order_data, 'boxberry_point_address') else None,
+        boxberry_city_code=order_data.boxberry_city_code if hasattr(order_data, 'boxberry_city_code') else None
     )
     session.add(order)
     await session.flush()

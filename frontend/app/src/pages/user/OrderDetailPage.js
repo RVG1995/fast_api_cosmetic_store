@@ -550,6 +550,34 @@ const OrderDetailPage = () => {
                 </p>
               </div>
               
+              {/* Информация о типе доставки */}
+              <div className="mt-3">
+                <h5>Способ доставки</h5>
+                <div className="delivery-type-item">
+                  <span className="delivery-type-label">Тип доставки:</span>
+                  <span className="delivery-type-value">
+                    {order.delivery_type === "boxberry" ? (
+                      <Badge bg="info">BoxBerry</Badge>
+                    ) : (
+                      <Badge bg="secondary">Стандартная доставка</Badge>
+                    )}
+                  </span>
+                </div>
+                
+                {/* Информация о пункте выдачи BoxBerry */}
+                {order.delivery_type === "boxberry" && order.boxberry_point_address && (
+                  <div className="boxberry-info mt-2">
+                    <div className="boxberry-label">Пункт выдачи BoxBerry:</div>
+                    <div className="boxberry-address">{order.boxberry_point_address}</div>
+                    {order.boxberry_point_id && (
+                      <div className="boxberry-id">
+                        <small>Код пункта: {order.boxberry_point_id}</small>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              
               <div className="mt-3">
                 <h5>Контактная информация</h5>
                 {order.phone && (

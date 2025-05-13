@@ -209,7 +209,7 @@ export const OrderProvider = ({ children }) => {
     
     try {
       // Проверка наличия обязательных полей
-      if (!orderData.fullName && !orderData.shipping_address?.full_name) {
+      if (!orderData.fullName && !orderData.full_name && !orderData.shipping_address?.full_name) {
         setError("Необходимо указать ФИО получателя");
         return null;
       }
@@ -222,14 +222,36 @@ export const OrderProvider = ({ children }) => {
       // Подготовка данных в новом формате
       const newOrderData = {
         items: orderData.items,
-        full_name: orderData.shipping_address?.full_name || orderData.fullName || "",
+        full_name: orderData.shipping_address?.full_name || orderData.full_name || orderData.fullName || "",
         email: orderData.contact_email || orderData.email || "",
         phone: orderData.contact_phone || orderData.phone || "",
         delivery_address: orderData.shipping_address?.address || orderData.delivery_address || "",
         comment: orderData.notes || orderData.comment || "",
-        personal_data_agreement: Boolean(orderData.personalDataAgreement),
+        personal_data_agreement: Boolean(orderData.personal_data_agreement || orderData.personalDataAgreement),
         receive_notifications: Boolean(orderData.receive_notifications)
       };
+      
+      // Добавляем информацию о типе доставки и пункте выдачи BoxBerry
+      if (orderData.delivery_type) {
+        newOrderData.delivery_type = orderData.delivery_type;
+      }
+      
+      if (orderData.boxberry_point_id) {
+        newOrderData.boxberry_point_id = orderData.boxberry_point_id;
+      }
+      
+      if (orderData.boxberry_point_address) {
+        newOrderData.boxberry_point_address = orderData.boxberry_point_address;
+      }
+      
+      if (orderData.boxberry_city_code) {
+        newOrderData.boxberry_city_code = orderData.boxberry_city_code;
+      }
+      
+      // Для обратной совместимости с существующим кодом
+      if (orderData.is_boxberry_pickup && !newOrderData.delivery_type) {
+        newOrderData.delivery_type = "boxberry";
+      }
       
       // Добавляем промокод, если он есть
       if (promoCode) {

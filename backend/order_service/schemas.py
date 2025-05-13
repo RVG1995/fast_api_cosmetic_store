@@ -89,6 +89,12 @@ class OrderCreate(BaseModel):
     delivery_address: str = Field(..., min_length=5, max_length=255)
     comment: Optional[str] = None
     
+    # Информация о типе доставки
+    delivery_type: str = Field("standard", description="Тип доставки: standard, boxberry")
+    boxberry_point_id: Optional[str] = Field(None, description="ID пункта выдачи BoxBerry")
+    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи BoxBerry")
+    boxberry_city_code: Optional[str] = Field(None, description="Код города BoxBerry")
+    
     # Поле для промокода
     promo_code: Optional[str] = Field(None, min_length=3, max_length=50)
 
@@ -231,6 +237,12 @@ class OrderUpdate(BaseModel):
     phone: Optional[str] = Field(None, min_length=11, max_length=12)
     delivery_address: Optional[str] = Field(None, min_length=5, max_length=255)
     comment: Optional[str] = None
+    
+    # Информация о типе доставки
+    delivery_type: Optional[str] = Field(None, description="Тип доставки: standard, boxberry")
+    boxberry_point_id: Optional[str] = Field(None, description="ID пункта выдачи BoxBerry")
+    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи BoxBerry")
+    boxberry_city_code: Optional[str] = Field(None, description="Код города BoxBerry")
     
     is_paid: Optional[bool] = None
     
@@ -393,6 +405,12 @@ class OrderResponse(BaseModel):
     phone: str
     delivery_address: str
     comment: Optional[str] = None
+    
+    # Информация о типе доставки
+    delivery_type: str = Field("standard", description="Тип доставки: standard, boxberry")
+    boxberry_point_id: Optional[str] = None
+    boxberry_point_address: Optional[str] = None
+    boxberry_city_code: Optional[str] = None
     
     is_paid: bool
     personal_data_agreement: Optional[bool] = None
@@ -575,12 +593,18 @@ class OrderSchema(BaseModel):
     is_paid: bool
     personal_data_agreement: bool = Field(..., description="Согласие на обработку персональных данных")
     
+    # Информация о типе доставки
+    delivery_type: str = Field("standard", description="Тип доставки: standard, boxberry")
+    boxberry_point_id: Optional[str] = None
+    boxberry_point_address: Optional[str] = None
+    boxberry_city_code: Optional[str] = None
+    
     order_number: str
     status: Optional[OrderStatusSchema] = None
     items: List[OrderItemSchema] = []
     status_history: List[OrderStatusHistorySchema] = []
     
-    model_config = ConfigDict(from_attributes=True) 
+    model_config = ConfigDict(from_attributes=True)
 
 class AdminOrderCreate(BaseModel):
     """Схема для создания заказа администратором."""
@@ -592,6 +616,12 @@ class AdminOrderCreate(BaseModel):
     phone: str = Field(..., min_length=11, max_length=12)
     delivery_address: str = Field(..., min_length=5, max_length=255)
     comment: Optional[str] = None
+    
+    # Информация о типе доставки
+    delivery_type: str = Field("standard", description="Тип доставки: standard, boxberry")
+    boxberry_point_id: Optional[str] = Field(None, description="ID пункта выдачи BoxBerry")
+    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи BoxBerry")
+    boxberry_city_code: Optional[str] = Field(None, description="Код города BoxBerry")
     
     # Поле для привязки к пользователю (опционально)
     user_id: Optional[int] = None

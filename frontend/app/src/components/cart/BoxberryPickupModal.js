@@ -16,6 +16,32 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
   const [cityInputValue, setCityInputValue] = useState('');
   const [citySearchResults, setCitySearchResults] = useState([]);
   const [searchingCity, setSearchingCity] = useState(false);
+  const [allCities, setAllCities] = useState([]);
+  const [loadingCities, setLoadingCities] = useState(false);
+
+  // Загружаем список всех городов при первом открытии модального окна
+  useEffect(() => {
+    if (show && allCities.length === 0 && !loadingCities) {
+      fetchAllCities();
+    }
+  }, [show, allCities.length, loadingCities]);
+
+  // Функция загрузки всех городов
+  const fetchAllCities = async () => {
+    try {
+      setLoadingCities(true);
+      const response = await axios.get(`${API_URLS.DELIVERY_SERVICE}/delivery/boxberry/cities`);
+      
+      if (response.data && Array.isArray(response.data)) {
+        setAllCities(response.data);
+        console.log(`Загружено ${response.data.length} городов из API BoxBerry`);
+      }
+    } catch (error) {
+      console.error('Ошибка при загрузке списка городов:', error);
+    } finally {
+      setLoadingCities(false);
+    }
+  };
 
   // Извлекаем название города из адреса или показываем поле ввода города
   useEffect(() => {
@@ -50,24 +76,49 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
   }, [selectedAddress]);
 
   // Функция поиска города
-  const searchCity = async (query) => {
-    if (!query || query.trim().length < 3) {
+  const searchCity = (query) => {
+    if (!query || query.trim().length < 2) {
       setCitySearchResults([]);
       return;
     }
     
     try {
       setSearchingCity(true);
-      const response = await axios.get(`${API_URLS.DELIVERY_SERVICE}/delivery/boxberry/cities`);
+      const queryLower = query.toLowerCase().trim();
       
-      if (response.data && Array.isArray(response.data)) {
-        const cities = response.data;
-        const filteredCities = cities.filter(city => 
-          city.Name.toLowerCase().includes(query.toLowerCase()) || 
-          (city.UniqName && city.UniqName.toLowerCase().includes(query.toLowerCase()))
-        );
+      if (allCities.length > 0) {
+        // Фильтруем города из кэшированного списка
+        const filteredCities = allCities.filter(city => {
+          const nameMatch = city.Name.toLowerCase().includes(queryLower);
+          const uniqNameMatch = city.UniqName && city.UniqName.toLowerCase().includes(queryLower);
+          const regionMatch = city.Region && city.Region.toLowerCase().includes(queryLower);
+          
+          return nameMatch || uniqNameMatch || regionMatch;
+        });
         
-        setCitySearchResults(filteredCities.slice(0, 10)); // Ограничиваем результаты первыми 10
+        // Сначала точные совпадения по имени, затем по региону
+        const sortedCities = filteredCities.sort((a, b) => {
+          // Приоритет точного совпадения имени
+          const aExactName = a.Name.toLowerCase() === queryLower;
+          const bExactName = b.Name.toLowerCase() === queryLower;
+          
+          if (aExactName && !bExactName) return -1;
+          if (!aExactName && bExactName) return 1;
+          
+          // Приоритет начала имени
+          const aStartsWithName = a.Name.toLowerCase().startsWith(queryLower);
+          const bStartsWithName = b.Name.toLowerCase().startsWith(queryLower);
+          
+          if (aStartsWithName && !bStartsWithName) return -1;
+          if (!aStartsWithName && bStartsWithName) return 1;
+          
+          // Алфавитный порядок
+          return a.Name.localeCompare(b.Name);
+        });
+        
+        setCitySearchResults(sortedCities.slice(0, 15)); // Ограничиваем результаты первыми 15
+      } else {
+        setCitySearchResults([]);
       }
     } catch (err) {
       console.error("Ошибка при поиске города:", err);
@@ -214,37 +265,52 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
           <div className="city-input-block mb-4">
             <Form.Group className="mb-3">
               <Form.Label>Введите город для поиска пунктов выдачи</Form.Label>
-              <div className="d-flex">
-                <Form.Control
-                  type="text"
-                  value={cityInputValue}
-                  onChange={handleCityInputChange}
-                  placeholder="Например: Москва"
-                  className="me-2"
-                />
-                <Button 
-                  variant="primary" 
-                  onClick={handleSearchCity}
-                  disabled={!cityInputValue.trim() || searchingCity}
-                >
-                  {searchingCity ? <Spinner size="sm" animation="border" /> : "Найти"}
-                </Button>
-              </div>
-              {citySearchResults.length > 0 && (
-                <div className="city-suggestions position-relative mt-1">
-                  <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
-                    {citySearchResults.map((city, i) => (
-                      <div
-                        key={i}
-                        className="suggestion-item px-2 py-1 hover-bg-light"
-                        onClick={() => handleCitySelect(city)}
-                      >
-                        {city.UniqName || city.Name}
-                      </div>
-                    ))}
-                  </div>
+              <div className="position-relative">
+                <div className="d-flex">
+                  <Form.Control
+                    type="text"
+                    value={cityInputValue}
+                    onChange={handleCityInputChange}
+                    placeholder="Например: Москва"
+                    className="me-2"
+                    autoComplete="off"
+                  />
+                  <Button 
+                    variant="primary" 
+                    onClick={handleSearchCity}
+                    disabled={!cityInputValue.trim() || searchingCity}
+                  >
+                    {searchingCity ? <Spinner size="sm" animation="border" /> : "Найти"}
+                  </Button>
                 </div>
-              )}
+                
+                {citySearchResults.length > 0 && (
+                  <div className="city-suggestions-dropdown">
+                    <ListGroup className="city-suggestions-list">
+                      {citySearchResults.map((city, i) => (
+                        <ListGroup.Item
+                          key={i}
+                          action
+                          onClick={() => handleCitySelect(city)}
+                          className="city-suggestion-item"
+                        >
+                          <div className="city-name">{city.Name}</div>
+                          {city.Region && (
+                            <div className="city-region">{city.Region} {city.District ? `, ${city.District}` : ''}</div>
+                          )}
+                        </ListGroup.Item>
+                      ))}
+                    </ListGroup>
+                  </div>
+                )}
+                
+                {loadingCities && (
+                  <div className="text-center mt-2">
+                    <Spinner size="sm" animation="border" variant="secondary" />
+                    <span className="ms-2 text-muted">Загрузка списка городов...</span>
+                  </div>
+                )}
+              </div>
             </Form.Group>
           </div>
         )}

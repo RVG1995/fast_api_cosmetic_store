@@ -258,26 +258,19 @@ async def suggest_address(query: dict):
         # Проверяем свежесть данных в кэше и количество результатов
         should_refresh = False
         if cached_result:
-            # Проверяем возраст кэша
-            cache_timestamp = cached_result.get("timestamp", 0)
-            current_time = int(time.time())
-            cache_age = current_time - cache_timestamp
-            
             # Проверяем количество подсказок в результате
             suggestions_count = len(cached_result.get("suggestions", []))
             
             # Запрос нужно обновить если:
-            # 1. Кэш старше 1 часа (3600 секунд) 
-            # 2. Для запроса нет подсказок
-            # 3. Принудительно запрошено обновление через force_cache
+            # 1. В кэше нет подходящих подсказок
+            # 2. Принудительно запрошено обновление через force_cache
             should_refresh = (
-                cache_age > 3600 or 
                 suggestions_count == 0 or 
                 query_dict.get("force_cache", False)
             )
             
             if should_refresh:
-                logger.info("Кэш устарел или нет результатов, делаю новый запрос к API для: %s", query_text)
+                logger.info("Нет результатов или запрошено обновление кэша для: %s", query_text)
                 cached_result = None
             else:
                 # Если кэш свежий и в нем есть результаты, используем его
@@ -360,29 +353,22 @@ async def suggest_fio(query: Union[str, dict]):
         # Проверяем свежесть данных в кэше и количество результатов
         should_refresh = False
         if cached_result:
-            # Проверяем возраст кэша
-            cache_timestamp = cached_result.get("timestamp", 0)
-            current_time = int(time.time())
-            cache_age = current_time - cache_timestamp
-            
             # Проверяем количество подсказок в результате
             suggestions_count = len(cached_result.get("suggestions", []))
             
             # Запрос нужно обновить если:
-            # 1. Кэш старше 1 часа (3600 секунд) 
-            # 2. Для запроса нет подсказок
-            # 3. Принудительно запрошено обновление через force_cache
+            # 1. В кэше нет подходящих подсказок
+            # 2. Принудительно запрошено обновление через force_cache
             should_refresh = (
-                cache_age > 3600 or 
                 suggestions_count == 0 or 
                 "force_cache" in query_text
             )
             
             if should_refresh:
-                logger.info("Кэш устарел или нет результатов, делаю новый запрос к API для ФИО: %s", query_text)
+                logger.info("Нет результатов или запрошено обновление кэша для ФИО: %s", query_text)
                 cached_result = None
             else:
-                # Если кэш свежий и в нем есть результаты, используем его
+                # Если в кэше есть результаты, используем его
                 if suggestions_count > 0:
                     logger.info("Возвращаю %d подсказок из кэша для ФИО: %s", suggestions_count, query_text)
                     return cached_result

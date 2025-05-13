@@ -5,7 +5,6 @@ import logging
 import json
 import hashlib
 from typing import Union
-import time
 
 from fastapi import APIRouter, HTTPException
 import httpx
@@ -32,26 +31,51 @@ def normalize_obj(obj):
     if isinstance(obj, list):
         return [normalize_obj(i) for i in obj]
     if isinstance(obj, dict):
+        # Для словаря с query нормализуем и само значение query
+        if "query" in obj and isinstance(obj["query"], str):
+            obj_copy = obj.copy()
+            obj_copy["query"] = obj_copy["query"].strip().lower()
+            return {k: normalize_obj(obj_copy[k]) for k in sorted(obj_copy)}
         return {k: normalize_obj(obj[k]) for k in sorted(obj)}
     return obj
 
-def generate_cache_key(obj_type, query):
-    """Генерирует ключ кэша для запроса."""
-    query_str = query if isinstance(query, str) else json.dumps(query, ensure_ascii=False, sort_keys=True)
-    return f"dadata:{obj_type}:{hashlib.md5(query_str.encode('utf-8')).hexdigest()}"
+def get_cache_key(obj_type, query):
+    """Генерирует ключ для кэша с учетом регистра."""
+    if isinstance(query, dict) and "query" in query:
+        # Для запросов в формате словаря нормализуем запрос
+        query_dict = query.copy()
+        query_dict["query"] = query_dict["query"].lower().strip()
+        # Создаем строку JSON из словаря с отсортированными ключами
+        key_str = json.dumps(query_dict, ensure_ascii=False, sort_keys=True)
+    else:
+        # Для строковых запросов приводим к нижнему регистру
+        key_str = str(query).lower().strip()
+    
+    # Хешируем для создания короткого ключа
+    hash_obj = hashlib.md5(key_str.encode('utf-8'))
+    hash_key = hash_obj.hexdigest()
+    
+    return f"dadata:{obj_type}:{hash_key}"
 
 def trim_query(query):
-    """Удаляет последние символы из запроса до последнего пробела или до полного удаления."""
-    if not query or len(query) <= 1:
-        return None
+    """Обрезает запрос, чтобы получить подзапрос для поиска в кэше."""
+    if isinstance(query, dict) and "query" in query:
+        return query.copy()
     
-    # Ищем последний пробел
-    last_space = query.rfind(' ')
-    if last_space > 0:
-        # Если есть пробел, возвращаем строку до него
-        return query[:last_space]
-    # Если нет пробела, возвращаем строку без последнего символа
-    return query[:-1]
+    if isinstance(query, str):
+        if len(query) <= 3:
+            return query.lower().strip()  # Маленькие запросы возвращаем как есть
+        
+        # Обрезаем запрос до последнего пробела
+        query_lower = query.lower().strip()
+        last_space = query_lower.rfind(" ")
+        if last_space > 0:
+            # Если есть пробел, возвращаем строку до последнего пробела
+            return query_lower[:last_space]
+        # Если пробела нет, возвращаем первые несколько символов
+        return query_lower[:3]
+            
+    return query  # Если запрос не строка и не словарь, возвращаем как есть
 
 async def smart_cache_lookup(obj_type, query):
     """
@@ -65,153 +89,76 @@ async def smart_cache_lookup(obj_type, query):
     Returns:
         Данные из кэша или None, если ничего не найдено
     """
+    # Нормализуем запрос перед поиском в кэше
     if isinstance(query, dict):
         # Для запросов в формате словаря (address)
-        original_query = query.get("query", "")
-        
-        # Сначала ищем точное совпадение
-        norm_query = normalize_obj(query)
-        key_str = json.dumps(norm_query, ensure_ascii=False, sort_keys=True)
-        exact_key = f"dadata:{obj_type}:{hashlib.md5(key_str.encode('utf-8')).hexdigest()}"
-        
-        cached = await get_cached_data(exact_key)
-        if cached:
-            logger.info("Точное попадание в кэш %s для запроса: %s", obj_type, original_query)
-            return cached
-        
-        # Если точного совпадения нет, ищем кеш для более коротких запросов
-        current_query = original_query
-        
-        while current_query:
-            current_query = trim_query(current_query)
-            if not current_query:
-                break
-                
-            # Создаем модифицированный запрос с более коротким значением
-            modified_query = query.copy()
-            modified_query["query"] = current_query
+        if "query" in query:
+            original_query = query.get("query", "").lower().strip()
             
-            norm_mod_query = normalize_obj(modified_query)
-            mod_key_str = json.dumps(norm_mod_query, ensure_ascii=False, sort_keys=True)
-            mod_key = f"dadata:{obj_type}:{hashlib.md5(mod_key_str.encode('utf-8')).hexdigest()}"
+            # Сначала ищем точное совпадение, используя get_cache_key
+            exact_key = get_cache_key(obj_type, query)
+            cached = await get_cached_data(exact_key)
             
-            cached = await get_cached_data(mod_key)
             if cached:
-                # Фильтруем результаты, чтобы они соответствовали текущему запросу
-                filtered_suggestions = []
-                query_lower = original_query.lower()
+                # Если нашли точное совпадение, возвращаем его
+                logger.info("Точное попадание в кэш %s для запроса: %s", obj_type, original_query)
+                return cached
                 
-                # Проходим по всем подсказкам из кэша
-                for suggestion in cached.get("suggestions", []):
-                    # Проверяем, соответствует ли подсказка тому, что уже ввел пользователь
-                    suggestion_value = suggestion.get("value", "").lower()
-                    if query_lower in suggestion_value or suggestion_value.startswith(query_lower):
-                        filtered_suggestions.append(suggestion)
+            # Если точного совпадения нет, ищем частичное
+            pattern = f"dadata:{obj_type}:*"
+            cached_keys = await get_cached_data_by_pattern(pattern)
+            
+            # Фильтруем полученные результаты
+            if cached_keys:
+                # Ищем подходящие подсказки для нашего запроса
+                prefix = original_query.lower().strip()
                 
-                # Если есть отфильтрованные подсказки, возвращаем их
-                if filtered_suggestions:
-                    logger.info("Частичное попадание в кэш %s для запроса: %s (использован кеш для: %s, найдено %d подсказок)", 
-                               obj_type, original_query, current_query, len(filtered_suggestions))
-                    
-                    # Создаем новый объект с только теми подсказками, которые соответствуют запросу
-                    filtered_result = cached.copy()
-                    filtered_result["suggestions"] = filtered_suggestions
-                    return filtered_result
-                else:
-                    logger.info("Частичное попадание в кэш %s, но нет релевантных подсказок для запроса: %s", 
-                               obj_type, original_query)
-        
-        # Если пошаговое уменьшение не привело к результату, 
-        # попробуем найти по шаблону используя get_cached_data_by_pattern
-        pattern = f"dadata:{obj_type}:*"
-        cached_keys = await get_cached_data_by_pattern(pattern)
-        
-        if cached_keys:
-            # Ищем ключи, содержащие начало строки запроса
-            prefix = original_query.lower().strip()
-            if len(prefix) >= 3:  # Проверяем только если префикс достаточно длинный
-                for key, value in cached_keys.items():
-                    # Проверяем, содержит ли кэшированный запрос наш префикс
-                    if value and isinstance(value, dict) and "query" in str(value):
-                        cached_query = ""
-                        
-                        # Фильтруем подсказки
-                        filtered_suggestions = []
-                        for suggestion in value.get("suggestions", []):
-                            if "value" in suggestion:
-                                cached_value = suggestion.get("value", "").lower()
-                                # Проверяем, соответствует ли подсказка текущему запросу
-                                if prefix in cached_value or cached_value.startswith(prefix):
-                                    filtered_suggestions.append(suggestion)
-                                    cached_query = cached_value
-                        
-                        if filtered_suggestions:
-                            logger.info("Шаблонное совпадение в кэше %s для запроса: %s (найдено %d подсказок)", 
-                                      obj_type, original_query, len(filtered_suggestions))
+                if len(prefix) >= 3:  # Проверяем только если префикс достаточно длинный
+                    for key, value in cached_keys.items():
+                        # Проверяем, содержит ли кэшированный результат подходящие подсказки
+                        if value and isinstance(value, dict) and "suggestions" in value:
+                            # Фильтруем подсказки
+                            filtered_suggestions = []
+                            for suggestion in value.get("suggestions", []):
+                                if "value" in suggestion:
+                                    cached_value = suggestion.get("value", "").lower()
+                                    # Проверяем, соответствует ли подсказка текущему запросу
+                                    if prefix in cached_value or cached_value.startswith(prefix):
+                                        filtered_suggestions.append(suggestion)
                             
-                            # Создаем новый объект с только теми подсказками, которые соответствуют запросу
-                            filtered_result = value.copy()
-                            filtered_result["suggestions"] = filtered_suggestions
-                            return filtered_result
+                            if filtered_suggestions:
+                                # Создаем новый результат с отфильтрованными подсказками
+                                filtered_result = value.copy()
+                                filtered_result["suggestions"] = filtered_suggestions
+                                logger.info("Частичное попадание в кэш %s для запроса: %s (найдено %d подсказок)", 
+                                          obj_type, original_query, len(filtered_suggestions))
+                                return filtered_result
+                
+                logger.info("Частичное попадание в кэш %s, но нет релевантных подсказок для запроса: %s", 
+                          obj_type, original_query)
     
     else:
-        # Для строковых запросов (fio)
-        original_query = query
+        # Для запросов в формате строки (fio)
+        original_query = str(query).lower().strip()
         
-        # Сначала ищем точное совпадение
-        norm_query = normalize_obj(query)
-        exact_key = f"dadata:{obj_type}:{hashlib.md5(norm_query.encode('utf-8')).hexdigest()}"
-        
+        # Сначала ищем точное совпадение, используя get_cache_key
+        exact_key = get_cache_key(obj_type, query)
         cached = await get_cached_data(exact_key)
+        
         if cached:
+            # Если нашли точное совпадение, возвращаем его
             logger.info("Точное попадание в кэш %s для запроса: %s", obj_type, original_query)
             return cached
-        
-        # Если точного совпадения нет, ищем кеш для более коротких запросов
-        current_query = original_query
-        
-        while current_query:
-            current_query = trim_query(current_query)
-            if not current_query:
-                break
-                
-            norm_current = normalize_obj(current_query)
-            current_key = f"dadata:{obj_type}:{hashlib.md5(norm_current.encode('utf-8')).hexdigest()}"
             
-            cached = await get_cached_data(current_key)
-            if cached:
-                # Фильтруем результаты, чтобы они соответствовали текущему запросу
-                filtered_suggestions = []
-                query_lower = original_query.lower()
-                
-                # Проходим по всем подсказкам из кэша
-                for suggestion in cached.get("suggestions", []):
-                    # Проверяем, соответствует ли подсказка тому, что уже ввел пользователь
-                    suggestion_value = suggestion.get("value", "").lower()
-                    if query_lower in suggestion_value or suggestion_value.startswith(query_lower):
-                        filtered_suggestions.append(suggestion)
-                
-                # Если есть отфильтрованные подсказки, возвращаем их
-                if filtered_suggestions:
-                    logger.info("Частичное попадание в кэш %s для запроса: %s (использован кеш для: %s, найдено %d подсказок)", 
-                               obj_type, original_query, current_query, len(filtered_suggestions))
-                    
-                    # Создаем новый объект с только теми подсказками, которые соответствуют запросу
-                    filtered_result = cached.copy()
-                    filtered_result["suggestions"] = filtered_suggestions
-                    return filtered_result
-                else:
-                    logger.info("Частичное попадание в кэш %s, но нет релевантных подсказок для запроса: %s", 
-                               obj_type, original_query)
-        
-        # Если пошаговое уменьшение не привело к результату, 
-        # попробуем найти по шаблону используя get_cached_data_by_pattern
+        # Если точного совпадения нет, ищем в кэше по шаблону
         pattern = f"dadata:{obj_type}:*"
         cached_keys = await get_cached_data_by_pattern(pattern)
         
+        # Фильтруем полученные результаты
         if cached_keys:
-            # Ищем ключи, содержащие начало строки запроса
+            # Ищем подходящие подсказки для нашего запроса
             prefix = original_query.lower().strip()
+            
             if len(prefix) >= 3:  # Проверяем только если префикс достаточно длинный
                 for key, value in cached_keys.items():
                     if value and isinstance(value, dict) and "suggestions" in value:
@@ -225,14 +172,18 @@ async def smart_cache_lookup(obj_type, query):
                                     filtered_suggestions.append(suggestion)
                         
                         if filtered_suggestions:
-                            logger.info("Шаблонное совпадение в кэше %s для запроса: %s (найдено %d подсказок)", 
-                                      obj_type, original_query, len(filtered_suggestions))
-                            
-                            # Создаем новый объект с только теми подсказками, которые соответствуют запросу
+                            # Создаем новый результат с отфильтрованными подсказками
                             filtered_result = value.copy()
                             filtered_result["suggestions"] = filtered_suggestions
+                            logger.info("Частичное попадание в кэш %s для запроса: %s (найдено %d подсказок)", 
+                                      obj_type, original_query, len(filtered_suggestions))
                             return filtered_result
+            
+            logger.info("Частичное попадание в кэш %s, но нет релевантных подсказок для запроса: %s", 
+                      obj_type, original_query)
     
+    # Если ничего не нашли в кэше
+    logger.info("Промах кэша подсказок %s, отправляю запрос к API", obj_type)
     return None
 
 @router.post("/address")
@@ -240,22 +191,25 @@ async def suggest_address(query: dict):
     """Получить подсказки адреса"""
     try:
         # Извлекаем строку запроса, если запрос передан в формате {query: "строка"}
-        query_dict = query
+        query_dict = query.copy()  # Копируем, чтобы не изменять входной параметр
         if isinstance(query, dict) and "query" in query:
-            query_text = query.get("query", "")
+            query_text = query.get("query", "").strip()
+            # Приводим к нижнему регистру для поиска в кэше
+            query_dict["query"] = query_text.lower().strip()
         else:
             # Если запрос передан как строка напрямую
-            query_text = str(query)
-            query_dict = {"query": query_text}
+            query_text = str(query).strip()
+            # Нормализуем для кэша
+            query_dict = {"query": query_text.lower().strip()}
 
         # Если запрос пустой, возвращаем пустой результат
         if not query_text:
             return {"suggestions": []}
         
-        # Проверяем кэш
+        # Проверяем кэш по нормализованному запросу
         cached_result = await smart_cache_lookup("address", query_dict)
         
-        # Проверяем свежесть данных в кэше и количество результатов
+        # Проверяем количество результатов
         should_refresh = False
         if cached_result:
             # Проверяем количество подсказок в результате
@@ -277,61 +231,46 @@ async def suggest_address(query: dict):
                 if suggestions_count > 0:
                     logger.info("Возвращаю %d подсказок из кэша для запроса: %s", suggestions_count, query_text)
                     return cached_result
-
-        if not cached_result:
-            # Кэша нет или он устарел, делаем запрос к API
-            logger.info("Промах кэша подсказок адресов, отправляю запрос к API")
+        
+        # Кэша нет или в нем нет результатов
+        # API DaData для подсказок адресов
+        api_url = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address"
+        
+        # Заголовки запроса
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Token {settings.DADATA_TOKEN}"
+        }
+        
+        # Отправляем запрос (с оригинальным запросом, не с нормализованным)
+        request_data = query.copy() if isinstance(query, dict) else {"query": str(query)}
+        async with httpx.AsyncClient() as client:
+            response = await client.post(api_url, json=request_data, headers=headers)
+            logger.info("HTTP Request: %s %s \"%s\"", 
+                      response.request.method, response.request.url, 
+                      response.http_version + " " + str(response.status_code))
             
-            dadata_url = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address"
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "Authorization": f"Token {settings.DADATA_TOKEN}"
-            }
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    dadata_url,
-                    headers=headers,
-                    json=query_dict,
-                    timeout=5.0
-                )
+            # Если запрос успешен
+            if response.status_code == 200:
+                result = response.json()
                 
-                logger.info("HTTP Request: %s %s \"%s %s \"", 
-                          response.request.method, response.request.url, 
-                          response.http_version, response.status_code)
+                # Сохраняем результат в кэш, но с нормализованным запросом
+                cache_key = get_cache_key("address", query_dict)
+                await set_cached_data(cache_key, result, DADATA_CACHE_TTL)
+                logger.info("Сохраняю в кэш подсказки адресов, ключ=%s, ttl=%s", cache_key, DADATA_CACHE_TTL)
                 
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    # Добавляем метку времени к результату
-                    result["timestamp"] = int(time.time())
-                    
-                    # Сохраняем в кэш
-                    query_norm = normalize_obj(query_dict)
-                    key_str = json.dumps(query_norm, ensure_ascii=False, sort_keys=True)
-                    cache_key = f"dadata:address:{hashlib.md5(key_str.encode('utf-8')).hexdigest()}"
-                    
-                    logger.info("Сохраняю в кэш подсказки адресов, ключ=%s, ttl=%s", cache_key, DADATA_CACHE_TTL)
-                    await set_cached_data(cache_key, result, DADATA_CACHE_TTL)
-                    
-                    return result
-                else:
-                    logger.error("Ошибка при запросе к DaData API: %s", response.text)
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail="Ошибка при запросе к DaData API"
-                    )
-        else:
-            # Возвращаем данные из кэша, они прошли проверку свежести выше
-            return cached_result
-            
+                return result
+            else:
+                # Если запрос завершился с ошибкой
+                logger.error("Ошибка запроса к DaData API для адреса: %s, статус: %d", 
+                           query_text, response.status_code)
+                raise HTTPException(status_code=response.status_code, 
+                                   detail=f"Ошибка запроса к DaData API: {response.text}")
+    
     except Exception as e:
         logger.exception("Ошибка при получении подсказок адреса: %s", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail=f"Ошибка при получении подсказок адреса: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Ошибка при получении подсказок адреса: {str(e)}")
 
 @router.post("/fio")
 async def suggest_fio(query: Union[str, dict]):
@@ -339,18 +278,23 @@ async def suggest_fio(query: Union[str, dict]):
     try:
         # Извлекаем строку запроса в зависимости от формата
         if isinstance(query, dict) and "query" in query:
-            query_text = query.get("query", "")
+            query_text = query.get("query", "").strip()
+            # Создаем нормализованный запрос для кэша
+            query_dict = query.copy()
+            query_dict["query"] = query_text.lower().strip()
         else:
-            query_text = str(query)
+            query_text = str(query).strip()
+            # Нормализуем для кэша
+            query_dict = {"query": query_text.lower().strip()}
             
         # Если запрос пустой, возвращаем пустой результат
         if not query_text:
             return {"suggestions": []}
         
-        # Проверяем кэш
-        cached_result = await smart_cache_lookup("fio", query_text)
+        # Проверяем кэш по нормализованному запросу
+        cached_result = await smart_cache_lookup("fio", query_dict)
         
-        # Проверяем свежесть данных в кэше и количество результатов
+        # Проверяем количество результатов
         should_refresh = False
         if cached_result:
             # Проверяем количество подсказок в результате
@@ -358,67 +302,63 @@ async def suggest_fio(query: Union[str, dict]):
             
             # Запрос нужно обновить если:
             # 1. В кэше нет подходящих подсказок
-            # 2. Принудительно запрошено обновление через force_cache
+            # 2. Принудительно запрошено обновление
+            force_refresh = False
+            if isinstance(query, dict):
+                force_refresh = query.get("force_cache", False)
+                
             should_refresh = (
                 suggestions_count == 0 or 
-                "force_cache" in query_text
+                force_refresh
             )
             
             if should_refresh:
-                logger.info("Нет результатов или запрошено обновление кэша для ФИО: %s", query_text)
+                logger.info("Нет результатов или запрошено обновление кэша для: %s", query_text)
                 cached_result = None
             else:
-                # Если в кэше есть результаты, используем его
+                # Если кэш свежий и в нем есть результаты, используем его
                 if suggestions_count > 0:
-                    logger.info("Возвращаю %d подсказок из кэша для ФИО: %s", suggestions_count, query_text)
+                    logger.info("Возвращаю %d подсказок из кэша для запроса: %s", suggestions_count, query_text)
                     return cached_result
+        
+        # Кэша нет или нужно обновление
+        # API DaData для подсказок ФИО
+        api_url = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/fio"
+        
+        # Заголовки запроса
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Token {settings.DADATA_TOKEN}"
+        }
+        
+        # Подготавливаем данные запроса (используем оригинальный запрос)
+        request_data = query if isinstance(query, dict) else {"query": query_text}
+        
+        # Отправляем запрос
+        async with httpx.AsyncClient() as client:
+            response = await client.post(api_url, json=request_data, headers=headers)
+            logger.info("HTTP Request: %s %s \"%s\"", 
+                      response.request.method, response.request.url, 
+                      response.http_version + " " + str(response.status_code))
+            
+            # Если запрос успешен
+            if response.status_code == 200:
+                result = response.json()
                 
-        if not cached_result:
-            # Кэша нет, делаем запрос к API
-            logger.info("Промах кэша подсказок ФИО, отправляю запрос к API")
-            
-            dadata_url = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/fio"
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "Authorization": f"Token {settings.DADATA_TOKEN}"
-            }
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    dadata_url,
-                    headers=headers,
-                    json={"query": query_text},
-                    timeout=5.0
-                )
+                # Сохраняем результат в кэш с нормализованным ключом
+                cache_key = get_cache_key("fio", query_dict)
+                await set_cached_data(cache_key, result, DADATA_CACHE_TTL)
+                logger.info("Сохраняю в кэш подсказки ФИО, ключ=%s, ttl=%s", cache_key, DADATA_CACHE_TTL)
                 
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    # Добавляем метку времени к результату
-                    result["timestamp"] = int(time.time())
-                    
-                    # Сохраняем в кэш
-                    query_norm = normalize_obj(query_text)
-                    cache_key = f"dadata:fio:{hashlib.md5(query_norm.encode('utf-8')).hexdigest()}"
-                    
-                    logger.info("Сохраняю в кэш подсказки ФИО, ключ=%s, ttl=%s", cache_key, DADATA_CACHE_TTL)
-                    await set_cached_data(cache_key, result, DADATA_CACHE_TTL)
-                    
-                    return result
-                else:
-                    logger.error("Ошибка при запросе к DaData API: %s", response.text)
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail="Ошибка при запросе к DaData API"
-                    )
-        else:
-            # Возвращаем данные из кэша, они прошли проверку свежести выше
-            return cached_result
-            
+                return result
+            else:
+                # Если запрос завершился с ошибкой
+                logger.error("Ошибка запроса к DaData API для ФИО: %s, статус: %d", 
+                           query_text, response.status_code)
+                raise HTTPException(status_code=response.status_code, 
+                                   detail=f"Ошибка запроса к DaData API: {response.text}")
+    
     except Exception as e:
         logger.exception("Ошибка при получении подсказок ФИО: %s", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail=f"Ошибка при получении подсказок ФИО: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Ошибка при получении подсказок ФИО: {str(e)}")

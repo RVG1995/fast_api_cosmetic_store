@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { Alert, Button, Form, Card, Row, Col, Spinner } from 'react-bootstrap';
 import { formatPrice } from '../utils/helpers';
 import PromoCodeForm from '../components/PromoCodeForm';
+import BoxberryPickupModal from '../components/cart/BoxberryPickupModal';
 import './CheckoutPage.css';
 import axios from 'axios';
 import { API_URLS } from '../utils/constants';
@@ -36,6 +37,11 @@ const CheckoutPage = () => {
   const [nameSuggestions, setNameSuggestions] = useState([]);
   // Подсказки адресов
   const [addressOptions, setAddressOptions] = useState([]);
+  
+  // Состояния для BoxBerry
+  const [showBoxberryModal, setShowBoxberryModal] = useState(false);
+  const [selectedPickupPoint, setSelectedPickupPoint] = useState(null);
+  const [isBoxberryDelivery, setIsBoxberryDelivery] = useState(false);
   
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
@@ -94,21 +100,61 @@ const CheckoutPage = () => {
   // Обработчик изменения полей формы
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    
+    // Если включается BoxBerry, сбрасываем адрес доставки
+    if (name === 'isBoxberryDelivery') {
+      setIsBoxberryDelivery(checked);
+      if (checked) {
+        // Если у нас уже был выбран пункт, восстанавливаем его
+        if (selectedPickupPoint) {
+          setFormData(prev => ({
+            ...prev, 
+            delivery_address: selectedPickupPoint.Address
+          }));
+        } else {
+          // Иначе очищаем поле адреса
+          setFormData(prev => ({...prev, delivery_address: ''}));
+        }
+      }
+      return;
+    }
+    
     if (name === 'fullName') { 
       fetchNameSuggestions(value); 
       setFormData(prev => ({...prev, fullName: value})); 
       return; 
     }
+    
     if (name === 'delivery_address') {
+      // Если активирована доставка BoxBerry, не разрешаем менять поле адреса
+      if (isBoxberryDelivery) return;
+      
       fetchAddressSuggestions(value);
       setFormData(prev => ({...prev, delivery_address: value}));
       return;
     }
+    
     if (type === 'checkbox') { 
       setFormData(prev => ({...prev, [name]: checked})); 
       return; 
     }
+    
     setFormData(prev => ({...prev, [name]: value}));
+  };
+
+  // Обработчик выбора пункта выдачи BoxBerry
+  const handlePickupPointSelected = (point) => {
+    console.log('Выбран пункт выдачи:', point);
+    setSelectedPickupPoint(point);
+    setFormData(prev => ({
+      ...prev,
+      delivery_address: point.Address
+    }));
+  };
+
+  // Обработчик открытия модального окна BoxBerry
+  const handleOpenBoxberryModal = () => {
+    setShowBoxberryModal(true);
   };
 
   // Обработчик применения промокода
@@ -191,7 +237,9 @@ const CheckoutPage = () => {
       comment: formData.comment || '',
       personalDataAgreement: formData.personalDataAgreement,
       promo_code: promoCode ? promoCode.code : undefined,
-      receive_notifications: !user ? formData.receiveNotifications : undefined // Передаем только для неавторизованных пользователей
+      receive_notifications: !user ? formData.receiveNotifications : undefined, // Передаем только для неавторизованных пользователей
+      is_boxberry_pickup: isBoxberryDelivery, // Добавляем признак доставки в пункт выдачи BoxBerry
+      boxberry_point_code: selectedPickupPoint?.Code || null // Добавляем код пункта выдачи
     };
     
     console.log("Отправляемые данные заказа:", orderData);
@@ -365,6 +413,38 @@ const CheckoutPage = () => {
                   </Col>
                 </Row>
                 
+                {/* Опция выбора доставки в пункт выдачи BoxBerry */}
+                <Form.Group className="mb-3">
+                  <Form.Check
+                    type="checkbox"
+                    id="isBoxberryDelivery"
+                    name="isBoxberryDelivery"
+                    checked={isBoxberryDelivery}
+                    onChange={handleChange}
+                    label="Доставка в пункт выдачи BoxBerry"
+                  />
+                </Form.Group>
+                
+                {/* Кнопка выбора пункта выдачи BoxBerry */}
+                {isBoxberryDelivery && (
+                  <div className="mb-3">
+                    <Button 
+                      variant="outline-primary" 
+                      onClick={handleOpenBoxberryModal}
+                      className="d-block w-100"
+                    >
+                      {selectedPickupPoint ? "Изменить пункт выдачи" : "Выбрать пункт выдачи BoxBerry"}
+                    </Button>
+                    {selectedPickupPoint && (
+                      <div className="mt-2 p-2 border rounded bg-light">
+                        <p className="mb-1"><strong>{selectedPickupPoint.Name}</strong></p>
+                        <p className="mb-1 small">{selectedPickupPoint.Address}</p>
+                        <p className="mb-0 small text-muted">График работы: {selectedPickupPoint.WorkShedule}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
                 <Form.Group className="position-relative" controlId="delivery_address">
                   <Form.Label>Адрес доставки</Form.Label>
                   <Form.Control
@@ -375,8 +455,9 @@ const CheckoutPage = () => {
                     onChange={handleChange}
                     required
                     placeholder="Введите полный адрес"
+                    disabled={isBoxberryDelivery}
                   />
-                  {addressOptions.length > 0 && (
+                  {!isBoxberryDelivery && addressOptions.length > 0 && (
                     <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
                       {addressOptions.map((opt, i) => (
                         <div
@@ -438,7 +519,7 @@ const CheckoutPage = () => {
                   variant="primary" 
                   type="submit" 
                   className="w-100"
-                  disabled={loading}
+                  disabled={loading || (isBoxberryDelivery && !selectedPickupPoint)}
                 >
                   {loading ? (
                     <>
@@ -517,6 +598,14 @@ const CheckoutPage = () => {
           </Card>
         </Col>
       </Row>
+      
+      {/* Модальное окно выбора пункта выдачи BoxBerry */}
+      <BoxberryPickupModal
+        show={showBoxberryModal}
+        onHide={() => setShowBoxberryModal(false)}
+        onPickupPointSelected={handlePickupPointSelected}
+        selectedAddress={formData.delivery_address}
+      />
     </div>
   );
 };

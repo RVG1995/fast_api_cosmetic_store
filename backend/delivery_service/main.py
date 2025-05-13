@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.dadata import router as dadata_router
+from routers.boxberry import router as boxberry_router
 from cache import close_redis, cache_service
 from config import settings, get_cors_origins
 
@@ -66,6 +67,7 @@ app.add_middleware(
 )
 
 app.include_router(dadata_router, prefix="/delivery")
+app.include_router(boxberry_router, prefix="/delivery")
 
 # Маршрут для проверки работоспособности сервиса
 @app.get("/api/health", tags=["health"])

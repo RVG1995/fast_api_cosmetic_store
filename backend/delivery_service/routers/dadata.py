@@ -1,6 +1,5 @@
 """Роутер для интеграции с API DaData для подсказок адресов и ФИО с кэшированием."""
 
-import os
 import logging
 import json
 import hashlib
@@ -9,9 +8,10 @@ from typing import Union
 from fastapi import APIRouter, HTTPException
 import httpx
 logger = logging.getLogger("dadata_router")
-DADATA_CACHE_TTL = int(os.getenv("DADATA_CACHE_TTL", "86400"))  # TTL сутки
 from cache import get_cached_data, set_cached_data, get_cached_data_by_pattern
 from config import settings
+
+DADATA_CACHE_TTL = settings.DADATA_CACHE_TTL
 
 router = APIRouter(
     prefix="/dadata",

@@ -57,7 +57,10 @@ class Settings(BaseSettings):
     RABBITMQ_USER: str = "user"
     RABBITMQ_PASS: str = "password"
 
+    # Настройки DaData API
     DADATA_TOKEN: str = ""
+    DADATA_API_KEY: str = ""
+    DADATA_API_URL: str = "https://suggestions.dadata.ru/suggestions/api/4_1/rs"
     
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),

@@ -1,6 +1,6 @@
 """Модуль для работы с кэшированием данных в Redis."""
 
-from typing import Any, Optional, Dict, Union, Callable
+from typing import Any, Optional, Dict, Union, Callable, List
 import logging
 import hashlib
 from functools import wraps
@@ -157,6 +157,28 @@ class CacheService:
             logger.error("Ошибка при удалении ключей по шаблону %s: %s", pattern, str(e))
             return 0
     
+    async def get_keys_by_pattern(self, pattern: str) -> List[str]:
+        """
+        Получает список ключей, соответствующих шаблону
+        
+        Args:
+            pattern: Шаблон ключей для поиска (например, "dadata:address:*")
+            
+        Returns:
+            List[str]: Список найденных ключей
+        """
+        if not self.enabled or not self.redis:
+            return []
+            
+        try:
+            keys = []
+            async for key in self.redis.scan_iter(match=pattern):
+                keys.append(key)
+            return keys
+        except (redis.ConnectionError, redis.TimeoutError, redis.ResponseError) as e:
+            logger.error("Ошибка при получении ключей по шаблону %s: %s", pattern, str(e))
+            return []
+    
     def get_key_for_user(self, user_id: Union[int, str], action: str) -> str:
         """
         Формирует ключ кэша для пользовательских данных
@@ -222,6 +244,37 @@ async def get_cached_data(key: str) -> Optional[Any]:
 async def set_cached_data(key: str, data: Any, ttl: int = DEFAULT_CACHE_TTL) -> bool:
     """Сохраняет данные в кэш"""
     return await cache_service.set(key, data, ttl)
+
+async def get_cached_data_by_pattern(pattern: str) -> Dict[str, Any]:
+    """
+    Получает все данные из кэша по шаблону ключей
+    
+    Args:
+        pattern: Шаблон ключей для поиска (например, "dadata:address:*")
+        
+    Returns:
+        Dict[str, Any]: Словарь {ключ: значение} для всех найденных ключей
+    """
+    if not CACHE_ENABLED:
+        return {}
+        
+    try:
+        keys = await cache_service.get_keys_by_pattern(pattern)
+        if not keys:
+            return {}
+            
+        result = {}
+        for key in keys:
+            data = await get_cached_data(key)
+            if data:
+                # Преобразуем bytes в строку, если нужно
+                str_key = key.decode('utf-8') if isinstance(key, bytes) else key
+                result[str_key] = data
+                
+        return result
+    except Exception as e:
+        logger.error("Ошибка при получении данных по шаблону %s: %s", pattern, str(e))
+        return {}
 
 async def invalidate_cache(*patterns: str) -> None:
     """

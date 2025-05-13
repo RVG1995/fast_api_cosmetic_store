@@ -109,9 +109,7 @@ async def create_order(
         full_name=order_data.full_name,
         email=order_data.email,
         phone=order_data.phone,
-        region=order_data.region,
-        city=order_data.city,
-        street=order_data.street,
+        delivery_address=order_data.delivery_address,
         comment=order_data.comment,
         promo_code_id=promo_code_id,
         discount_amount=0,  # Будет обновлено после расчета скидки
@@ -326,14 +324,8 @@ async def update_order(
     if order_data.phone is not None:
         order.phone = order_data.phone
     
-    if order_data.region is not None:
-        order.region = order_data.region
-    
-    if order_data.city is not None:
-        order.city = order_data.city
-    
-    if order_data.street is not None:
-        order.street = order_data.street
+    if order_data.delivery_address is not None:
+        order.delivery_address = order_data.delivery_address
     
     if order_data.comment is not None:
         order.comment = order_data.comment

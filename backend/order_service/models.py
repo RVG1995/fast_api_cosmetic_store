@@ -91,9 +91,7 @@ class OrderModel(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(100), nullable=False)
     phone: Mapped[str] = mapped_column(String(50), nullable=False)
-    region: Mapped[str] = mapped_column(String(100), nullable=False)
-    city: Mapped[str] = mapped_column(String(100), nullable=False)
-    street: Mapped[str] = mapped_column(String(255), nullable=False)
+    delivery_address: Mapped[str] = mapped_column(String(255), nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

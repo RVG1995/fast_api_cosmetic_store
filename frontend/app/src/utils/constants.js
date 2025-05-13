@@ -17,7 +17,8 @@ export const API_URLS = {
   USER: 'http://localhost:8088/api',
   CONTENT: 'http://localhost:8088/api',
   NOTIFICATION: 'http://localhost:8088/api',
-  NOTIFICATION_SERVICE_URL: 'http://localhost:8088/api'
+  NOTIFICATION_SERVICE_URL: 'http://localhost:8088/api',
+  DELIVERY_SERVICE: 'http://localhost:8088/api'
 };
 
 // Маршруты

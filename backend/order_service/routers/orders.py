@@ -565,9 +565,7 @@ async def reorder_endpoint(
             full_name=original_order.full_name,
             email=original_order.email,
             phone=original_order.phone,
-            region=original_order.region,
-            city=original_order.city,
-            street=original_order.street,
+            delivery_address=original_order.delivery_address,
             comment=f"Повторный заказ на основе заказа #{original_order.id}",
             personal_data_agreement=personal_data_agreement,
             items=order_items
@@ -1064,9 +1062,7 @@ async def update_order_items_endpoint(
             "full_name": updated_order.full_name,
             "email": updated_order.email,
             "phone": updated_order.phone,
-            "region": updated_order.region,
-            "city": updated_order.city,
-            "street": updated_order.street,
+            "delivery_address": updated_order.delivery_address,
             "comment": updated_order.comment,
             "is_paid": updated_order.is_paid,
             "items": [
@@ -1298,9 +1294,7 @@ async def create_order_admin(
             full_name=order_data.full_name,
             email=order_data.email,
             phone=phone,  # Используем нормализованный телефон
-            region=order_data.region,
-            city=order_data.city,
-            street=order_data.street,
+            delivery_address=order_data.delivery_address,
             comment=order_data.comment,
             promo_code=promo_code,  # Используем обработанный промокод
             personal_data_agreement=True  # Для админа всегда True

@@ -251,6 +251,12 @@ if check_directory "$BACKEND_DIR"; then
         start_service "notifications_service" "$BACKEND_DIR/notifications_service" "python main.py"
         sleep 2
     fi
+    # Запуск сервиса доставки
+    if [ -d "$BACKEND_DIR/delivery_service" ]; then
+        # запускаем как модуль, чтобы относительный импорт заработал
+        start_service "delivery_service" "$BACKEND_DIR/delivery_service" "python main.py"
+        sleep 2
+    fi
     
     # Деактивация виртуального окружения не требуется, т.к. каждый сервис запускается в своем подпроцессе
 else

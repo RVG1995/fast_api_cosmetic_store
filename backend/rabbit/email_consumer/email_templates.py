@@ -180,11 +180,7 @@ def create_order_email_content(order_data):
                 </tr>
                 <tr>
                     <td style="padding: 5px 0;"><strong>Адрес доставки:</strong></td>
-                    <td>
-                        {order_data.get('region', '')}, 
-                        {order_data.get('city', '')}, 
-                        {order_data.get('street', '')},
-                    </td>
+                    <td>{order_data.get('delivery_address', 'Н/Д')}</td>
                 </tr>
             </table>
             
@@ -384,11 +380,7 @@ def create_status_update_email_content(order_data):
                 </tr>
                 <tr>
                     <td style="padding: 5px 0;"><strong>Адрес доставки:</strong></td>
-                    <td>
-                        {order_data.get('region', '')}, 
-                        {order_data.get('city', '')}, 
-                        {order_data.get('street', '')},
-                    </td>
+                    <td>{order_data.get('delivery_address', 'Н/Д')}</td>
                 </tr>
             </table>
             

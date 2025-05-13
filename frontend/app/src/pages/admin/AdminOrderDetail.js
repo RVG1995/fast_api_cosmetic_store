@@ -1063,9 +1063,7 @@ const AdminOrderDetail = () => {
             </Card.Header>
             <Card.Body>
               <p><strong>Получатель:</strong> {order.full_name}</p>
-              <p><strong>Улица:</strong> {order.street || "Не указана"}</p>
-              <p><strong>Город:</strong> {order.city || "Не указан"}</p>
-              <p><strong>Регион:</strong> {order.region || "Не указан"}</p>
+              <p><strong>Адрес доставки:</strong> {order.delivery_address || "Не указан"}</p>
               <p><strong>Телефон:</strong> {order.phone || "Не указан"}</p>
               <p><strong>Email:</strong> {order.email}</p>
               <p>

@@ -214,18 +214,8 @@ export const OrderProvider = ({ children }) => {
         return null;
       }
       
-      if (!orderData.region && !orderData.shipping_address?.state) {
-        setError("Необходимо указать регион доставки");
-        return null;
-      }
-      
-      if (!orderData.city && !orderData.shipping_address?.city) {
-        setError("Необходимо указать город");
-        return null;
-      }
-      
-      if (!orderData.street && !orderData.shipping_address?.address_line1) {
-        setError("Необходимо указать адрес");
+      if (!orderData.delivery_address && !orderData.shipping_address?.address) {
+        setError("Необходимо указать адрес доставки");
         return null;
       }
       
@@ -235,12 +225,10 @@ export const OrderProvider = ({ children }) => {
         full_name: orderData.shipping_address?.full_name || orderData.fullName || "",
         email: orderData.contact_email || orderData.email || "",
         phone: orderData.contact_phone || orderData.phone || "",
-        region: orderData.shipping_address?.state || orderData.region || "",
-        city: orderData.shipping_address?.city || orderData.city || "",
-        street: orderData.shipping_address?.address_line1 || orderData.street || "",
+        delivery_address: orderData.shipping_address?.address || orderData.delivery_address || "",
         comment: orderData.notes || orderData.comment || "",
         personal_data_agreement: Boolean(orderData.personalDataAgreement),
-        receive_notifications:Boolean(orderData.receive_notifications)
+        receive_notifications: Boolean(orderData.receive_notifications)
       };
       
       // Добавляем промокод, если он есть
@@ -259,7 +247,7 @@ export const OrderProvider = ({ children }) => {
       }
       
       // Проверяем итоговый объект на наличие всех обязательных полей
-      const requiredFields = ['full_name', 'phone', 'region', 'city', 'street', 'personal_data_agreement'];
+      const requiredFields = ['full_name', 'phone', 'delivery_address', 'personal_data_agreement'];
       const missingFields = requiredFields.filter(field => !newOrderData[field]);
       
       if (missingFields.length > 0) {
@@ -267,9 +255,7 @@ export const OrderProvider = ({ children }) => {
           full_name: 'ФИО получателя',
           email: 'Email',
           phone: 'Телефон',
-          region: 'Регион',
-          city: 'Город',
-          street: 'Адрес',
+          delivery_address: 'Адрес доставки',
           personal_data_agreement: 'Согласие на обработку персональных данных'
         };
         
@@ -320,9 +306,7 @@ export const OrderProvider = ({ children }) => {
                 'full_name': 'ФИО',
                 'email': 'Email',
                 'phone': 'Телефон',
-                'region': 'Регион',
-                'city': 'Город',
-                'street': 'Улица',
+                'delivery_address': 'Адрес доставки',
                 'comment': 'Комментарий',
                 'promo_code': 'Промокод'
               };

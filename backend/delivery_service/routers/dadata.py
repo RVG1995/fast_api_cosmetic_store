@@ -10,8 +10,8 @@ import httpx
 logger = logging.getLogger("dadata_router")
 DADATA_CACHE_TTL = int(os.getenv("DADATA_CACHE_TTL", "86400"))  # TTL сутки
 from cache import get_cached_data, set_cached_data
-from schemas import SuggestRequest
 from config import settings
+
 router = APIRouter(
     prefix="/dadata",
     tags=["dadata"],
@@ -34,12 +34,11 @@ def normalize_obj(obj):
     return obj
 
 @router.post("/address", summary="Proxy DaData address suggest")
-async def suggest_address(body: SuggestRequest):
+async def suggest_address(body: dict):
     """Получает подсказки адресов от DaData API с кэшированием."""
     url = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address"
-    payload = body.model_dump(exclude_none=True)
     # нормализуем значения для кэша (без учёта регистра)
-    norm = normalize_obj(payload)
+    norm = normalize_obj(body)
     key_str = json.dumps(norm, ensure_ascii=False, sort_keys=True)
     key = f"dadata:address:{hashlib.md5(key_str.encode('utf-8')).hexdigest()}"
     logger.info("Проверяю кэш подсказок адресов, ключ=%s", key)
@@ -49,7 +48,7 @@ async def suggest_address(body: SuggestRequest):
         return cached
     logger.info("Промах кэша подсказок адресов, ключ=%s, отправляю запрос к API", key)
     async with httpx.AsyncClient(timeout=5) as client:
-        resp = await client.post(url, json=payload, headers=HEADERS)
+        resp = await client.post(url, json=body, headers=HEADERS)
     if resp.status_code != 200:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     data = resp.json()

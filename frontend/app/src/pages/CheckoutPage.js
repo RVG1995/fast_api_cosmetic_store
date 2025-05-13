@@ -21,9 +21,7 @@ const CheckoutPage = () => {
     fullName: user?.full_name || '',
     email: user?.email || '',
     phone: '',
-    city: '',
-    region: '',
-    street: '',
+    delivery_address: '',
     comment: '',
     personalDataAgreement: false,
     receiveNotifications: true // По умолчанию согласие на получение уведомлений для неавторизованных пользователей
@@ -36,13 +34,8 @@ const CheckoutPage = () => {
   const [cartTotal, setCartTotal] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [nameSuggestions, setNameSuggestions] = useState([]);
-  // сохраним объекты подсказок для FIAS
-  const [regionOptions, setRegionOptions] = useState([]);
-  const [regionFiasId, setRegionFiasId] = useState('');
-  const [cityOptions, setCityOptions] = useState([]);
-  const [cityFiasId, setCityFiasId] = useState('');
-  // сохраним подсказки улиц с FIAS
-  const [streetOptions, setStreetOptions] = useState([]);
+  // Подсказки адресов
+  const [addressOptions, setAddressOptions] = useState([]);
   
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
@@ -68,7 +61,7 @@ const CheckoutPage = () => {
     if (!query) return setNameSuggestions([]);
     try {
       const { data } = await axios.post(
-        `${API_URLS.ORDER_SERVICE}/dadata/fio`,
+        `${API_URLS.DELIVERY_SERVICE}/delivery/dadata/fio`,
         { query }
       );
       console.log('Dadata FIO resp:', data.suggestions);
@@ -78,85 +71,44 @@ const CheckoutPage = () => {
       console.error('DaData FIO error', e);
     }
   };
-  // Подсказки регионов
-  const fetchRegionSuggestions = async (query) => {
+
+  // Подсказки адресов
+  const fetchAddressSuggestions = async (query) => {
+    console.log('Dadata address fetch:', query);
     if (!query) {
-      setRegionOptions([]);
+      setAddressOptions([]);
       return;
     }
     try {
       const { data } = await axios.post(
-        `${API_URLS.ORDER_SERVICE}/dadata/address`,
-        { query, from_bound:{ value:'region' }, to_bound:{ value:'region' } }
+        `${API_URLS.DELIVERY_SERVICE}/delivery/dadata/address`,
+        { query }
       );
-      setRegionOptions(data.suggestions);
-    } catch(e) { console.error('DaData region error', e); }
-  };
-  // Подсказки городов через axios с логами и bound 'city'
-  const fetchCitySuggestions = async (query) => {
-    console.log('Dadata city fetch:', query, 'regionFiasId:', regionFiasId);
-    if (!query) {
-      setCityOptions([]);
-      return;
+      console.log('Dadata address resp:', data.suggestions);
+      setAddressOptions(data.suggestions);
+    } catch(e) { 
+      console.error('DaData address error', e); 
     }
-    const body = { query, from_bound:{ value:'city' }, to_bound:{ value:'city' } };
-    if (regionFiasId) body.locations = [{ region_fias_id: regionFiasId }];
-    try {
-      const { data } = await axios.post(
-        `${API_URLS.ORDER_SERVICE}/dadata/address`,
-        body
-      );
-      console.log('Dadata city resp:', data.suggestions);
-      setCityOptions(data.suggestions);
-    } catch(e) {
-      console.error('DaData city error', e);
-    }
-  };
-  // Подсказки улиц через axios с логами и фильтром по city_fias_id
-  const fetchStreetSuggestions = async (query) => {
-    console.log('Dadata street fetch:', query, 'regionFiasId:', regionFiasId, 'cityFiasId:', cityFiasId);
-    if (!query) {
-      setStreetOptions([]);
-      return;
-    }
-    const body = { query, from_bound:{ value:'street' }, to_bound:{ value:'street' } };
-    if (cityFiasId) body.locations = [{ city_fias_id: cityFiasId }];
-    try {
-      const { data } = await axios.post(
-        `${API_URLS.ORDER_SERVICE}/dadata/address`,
-        body
-      );
-      console.log('Dadata street resp:', data.suggestions);
-      setStreetOptions(data.suggestions);
-    } catch(e) { console.error('DaData street error', e); }
   };
 
   // Обработчик изменения полей формы
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    if (name==='fullName')      { fetchNameSuggestions(value); setFormData(prev=>({...prev,fullName:value})); return; }
-    if (name==='region') {
-      fetchRegionSuggestions(value);
-      setFormData(prev=>({...prev, region:value, city:'', street:''}));
-      const found = regionOptions.find(s => s.value === value);
-      setRegionFiasId(found?.data?.fias_id || '');
+    if (name === 'fullName') { 
+      fetchNameSuggestions(value); 
+      setFormData(prev => ({...prev, fullName: value})); 
+      return; 
+    }
+    if (name === 'delivery_address') {
+      fetchAddressSuggestions(value);
+      setFormData(prev => ({...prev, delivery_address: value}));
       return;
     }
-    if (name==='city') {
-      fetchCitySuggestions(value);
-      setFormData(prev=>({...prev, city:value, street:''}));
-      const found = cityOptions.find(s => s.value === value);
-      // suggestion.data.fias_id now содержит city_fias_id при bound 'city'
-      setCityFiasId(found?.data?.fias_id || found?.data?.city_fias_id || '');
-      return;
+    if (type === 'checkbox') { 
+      setFormData(prev => ({...prev, [name]: checked})); 
+      return; 
     }
-    if (name==='street') {
-      fetchStreetSuggestions(value);
-      setFormData(prev => ({ ...prev, street: value }));
-      return;
-    }
-    if (type === 'checkbox')    { setFormData(prev=>({...prev,[name]:checked})); return; }
-    setFormData(prev=>({...prev,[name]:value}));
+    setFormData(prev => ({...prev, [name]: value}));
   };
 
   // Обработчик применения промокода
@@ -186,7 +138,7 @@ const CheckoutPage = () => {
     console.log("Форма отправляется, валидность:", form.checkValidity());
     
     // Дополнительная проверка обязательных полей
-    const requiredFields = ["fullName", "phone", "region", "city", "street", "personalDataAgreement"];
+    const requiredFields = ["fullName", "phone", "delivery_address", "personalDataAgreement"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     
     if (missingFields.length > 0) {
@@ -194,9 +146,7 @@ const CheckoutPage = () => {
       const fieldNames = {
         fullName: "ФИО получателя",
         phone: "Телефон",
-        region: "Регион",
-        city: "Город",
-        street: "Адрес доставки",
+        delivery_address: "Адрес доставки",
         personalDataAgreement: "Согласие на обработку персональных данных"
       };
       console.error("Отсутствуют обязательные поля:", missingFields.map(f => fieldNames[f]).join(", "));
@@ -237,9 +187,7 @@ const CheckoutPage = () => {
       fullName: formData.fullName,
       email: formData.email,
       phone: formData.phone,
-      region: formData.region,
-      city: formData.city,
-      street: formData.street,
+      delivery_address: formData.delivery_address,
       comment: formData.comment || '',
       personalDataAgreement: formData.personalDataAgreement,
       promo_code: promoCode ? promoCode.code : undefined,
@@ -417,94 +365,29 @@ const CheckoutPage = () => {
                   </Col>
                 </Row>
                 
-                <Form.Group className="mb-3 position-relative" controlId="region">
-                  <Form.Label>Регион</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="region"
-                    autoComplete="off"
-                    value={formData.region}
-                    onChange={handleChange}
-                    required
-                    placeholder="Москва и Московская область"
-                  />
-                  {regionOptions.length > 0 && (
-                    <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
-                      {regionOptions.map((opt, i) => (
-                        <div
-                          key={i}
-                          className="suggestion-item hover-bg-light"
-                          onClick={() => {
-                            setFormData(prev => ({ ...prev, region: opt.value, city: '', street: '' }));
-                            setRegionFiasId(opt.data.fias_id || '');
-                            setRegionOptions([]);
-                          }}
-                        >
-                          {opt.value}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <Form.Control.Feedback type="invalid">
-                    Пожалуйста, укажите регион
-                  </Form.Control.Feedback>
-                </Form.Group>
-                
-                <Form.Group className="mb-3 position-relative" controlId="city">
-                  <Form.Label>Город</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="city"
-                    autoComplete="off"
-                    value={formData.city}
-                    onChange={handleChange}
-                    required
-                    placeholder="Москва"
-                  />
-                  {cityOptions.length > 0 && (
-                    <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
-                      {cityOptions.map((opt, i) => (
-                        <div
-                          key={i}
-                          className="suggestion-item hover-bg-light"
-                          onClick={() => {
-                            setFormData(prev => ({ ...prev, city: opt.value, street: '' }));
-                            setCityFiasId(opt.data.fias_id || opt.data.city_fias_id || '');
-                            setCityOptions([]);
-                          }}
-                        >
-                          {opt.value}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <Form.Control.Feedback type="invalid">
-                    Пожалуйста, укажите город
-                  </Form.Control.Feedback>
-                </Form.Group>
-                
-                <Form.Group className="position-relative" controlId="street">
+                <Form.Group className="position-relative" controlId="delivery_address">
                   <Form.Label>Адрес доставки</Form.Label>
                   <Form.Control
                     type="text"
-                    name="street"
+                    name="delivery_address"
                     autoComplete="off"
-                    value={formData.street}
+                    value={formData.delivery_address}
                     onChange={handleChange}
                     required
+                    placeholder="Введите полный адрес"
                   />
-                  {streetOptions.length > 0 && (
+                  {addressOptions.length > 0 && (
                     <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
-                      {streetOptions.map((opt, i) => (
+                      {addressOptions.map((opt, i) => (
                         <div
                           key={i}
                           className="suggestion-item hover-bg-light"
                           onClick={() => {
-                            setFormData(prev => ({ ...prev, street: opt.data.street_with_type }));
-                            setStreetOptions([]);
+                            setFormData(prev => ({ ...prev, delivery_address: opt.value }));
+                            setAddressOptions([]);
                           }}
                         >
-                          {opt.data.street_with_type}
+                          {opt.value}
                         </div>
                       ))}
                     </div>

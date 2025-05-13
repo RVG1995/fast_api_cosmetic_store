@@ -14,9 +14,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     full_name: '',
     email: '',
     phone: '',
-    region: '',
-    city: '',
-    street: '',
+    delivery_address: '',
     comment: '',
     promo_code: '',
     status_id: 1, // По умолчанию первый статус (обычно "Новый")
@@ -357,7 +355,8 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
       return;
     }
     
-    if (!formData.full_name || !formData.email || !formData.region || !formData.city || !formData.street) {
+    // Проверка заполнения обязательных полей
+    if (!formData.full_name || !formData.email || !formData.delivery_address) {
       setError('Пожалуйста, заполните все обязательные поля');
       return;
     }
@@ -586,37 +585,13 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
             
             <h5 className="mb-3 mt-4">Адрес доставки</h5>
             <Row>
-              <Col md={4}>
+              <Col md={12}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Регион*</Form.Label>
+                  <Form.Label>Адрес доставки*</Form.Label>
                   <Form.Control
                     type="text"
-                    name="region"
-                    value={formData.region}
-                    onChange={handleChange}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={4}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Город*</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="city"
-                    value={formData.city}
-                    onChange={handleChange}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={4}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Улица, дом, квартира*</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="street"
-                    value={formData.street}
+                    name="delivery_address"
+                    value={formData.delivery_address}
                     onChange={handleChange}
                     required
                   />

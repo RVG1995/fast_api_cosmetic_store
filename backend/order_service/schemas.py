@@ -86,9 +86,7 @@ class OrderCreate(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     email: EmailStr
     phone: str = Field(..., min_length=11, max_length=12)
-    region: str = Field(..., min_length=2, max_length=100)
-    city: str = Field(..., min_length=2, max_length=100)
-    street: str = Field(..., min_length=5, max_length=255)
+    delivery_address: str = Field(..., min_length=5, max_length=255)
     comment: Optional[str] = None
     
     # Поле для промокода
@@ -122,7 +120,7 @@ class OrderCreate(BaseModel):
             raise ValueError('Телефон должен содержать только цифры')
         return v
     
-    @field_validator('full_name', 'region', 'city', 'street', 'comment', 'promo_code')
+    @field_validator('full_name', 'delivery_address', 'comment', 'promo_code')
     def validate_text_fields(cls, v, info):
         """Валидирует текстовые поля для защиты от SQL-инъекций и XSS-атак.
         
@@ -176,9 +174,7 @@ class OrderCreate(BaseModel):
         # Дополнительные проверки для всех полей
         text_fields = {
             'full_name': self.full_name,
-            'region': self.region,
-            'city': self.city,
-            'street': self.street
+            'delivery_address': self.delivery_address
         }
         
         if self.comment:
@@ -233,9 +229,7 @@ class OrderUpdate(BaseModel):
     full_name: Optional[str] = Field(None, min_length=2, max_length=255)
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, min_length=11, max_length=12)
-    region: Optional[str] = Field(None, min_length=2, max_length=100)
-    city: Optional[str] = Field(None, min_length=2, max_length=100)
-    street: Optional[str] = Field(None, min_length=5, max_length=255)
+    delivery_address: Optional[str] = Field(None, min_length=5, max_length=255)
     comment: Optional[str] = None
     
     is_paid: Optional[bool] = None
@@ -397,9 +391,7 @@ class OrderResponse(BaseModel):
     full_name: str
     email: Optional[str] = None
     phone: str
-    region: str
-    city: str
-    street: str
+    delivery_address: str
     comment: Optional[str] = None
     
     is_paid: bool
@@ -598,9 +590,7 @@ class AdminOrderCreate(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     email: EmailStr
     phone: str = Field(..., min_length=11, max_length=12)
-    region: str = Field(..., min_length=2, max_length=100)
-    city: str = Field(..., min_length=2, max_length=100)
-    street: str = Field(..., min_length=5, max_length=255)
+    delivery_address: str = Field(..., min_length=5, max_length=255)
     comment: Optional[str] = None
     
     # Поле для привязки к пользователю (опционально)

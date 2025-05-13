@@ -546,13 +546,7 @@ const OrderDetailPage = () => {
                   <strong>{order.full_name}</strong>
                 </p>
                 <p>
-                  <strong>Улица:</strong> {order.street || "Не указана"}
-                </p>
-                <p>
-                  <strong>Город:</strong> {order.city || "Не указан"}
-                </p>
-                <p>
-                  <strong>Регион:</strong> {order.region || "Не указан"}
+                  {order.delivery_address || "Адрес не указан"}
                 </p>
               </div>
               

@@ -844,7 +844,6 @@ async def generate_orders_report(
                     order_number,
                     created_at_str,
                     status_name,
-                    order.full_name,
                     f"{order.total_price:.2f} руб.",
                     is_paid_str
                 ])
@@ -856,7 +855,6 @@ async def generate_orders_report(
                     f"{order.id}-????",
                     "Ошибка даты",
                     "Ошибка статуса",
-                    order.full_name,
                     f"{order.total_price:.2f} руб.",
                     "Ошибка"
                 ])
@@ -1098,15 +1096,14 @@ async def generate_orders_report(
                             orders_data.append([
                                 str(order.id),
                                 f"{order.id}-????",
-                                "Н/Д",
-                                "Н/Д",
-                                order.full_name if hasattr(order, 'full_name') else "Н/Д",
-                                f"{order.total_price:.2f} руб." if hasattr(order, 'total_price') else "0.00 руб.",
-                                "Н/Д"
+                                "Ошибка даты",
+                                "Ошибка статуса",
+                                f"{order.total_price:.2f} руб.",
+                                "Ошибка"
                             ])
                     
                     # Создаем таблицу с чистыми, светлыми цветами
-                    orders_table = Table(orders_data, colWidths=[35, 70, 120, 100, 150, 70, 50])
+                    orders_table = Table(orders_data, colWidths=[35, 70, 120, 100, 150, 70])
                     
                     # Создаем базовые стили таблицы
                     table_styles = [
@@ -1118,8 +1115,8 @@ async def generate_orders_report(
                         ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
                         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
                         ('ALIGN', (0, 0), (0, -1), 'CENTER'),  # ID по центру
-                        ('ALIGN', (5, 1), (5, -1), 'RIGHT'),   # Суммы по правому краю
-                        ('ALIGN', (6, 1), (6, -1), 'CENTER'),  # Оплачен по центру
+                        ('ALIGN', (4, 1), (4, -1), 'RIGHT'),   # Суммы по правому краю (теперь индекс 4 вместо 5)
+                        ('ALIGN', (5, 1), (5, -1), 'CENTER'),  # Оплачен по центру (теперь индекс 5 вместо 6)
                         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                         ('FONTNAME', (0, 1), (-1, -1), font_name),
                         ('FONTSIZE', (0, 0), (-1, -1), 9),     # Уменьшенный размер шрифта для большого количества данных
@@ -1238,7 +1235,7 @@ async def generate_orders_report(
                 
                 # Таблица заказов
                 if orders:
-                    table = doc.add_table(rows=1, cols=7)
+                    table = doc.add_table(rows=1, cols=6)
                     table.style = 'Table Grid'
                     
                     # Заголовки таблицы

@@ -5,40 +5,25 @@
 .pickup-points-container {
   max-height: 400px;
   overflow-y: auto;
-  margin-bottom: 15px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
 }
 
 .pickup-point-item {
-  cursor: pointer;
-  padding: 15px;
-  border-left: 3px solid transparent;
-  transition: all 0.2s ease;
-}
-
-.pickup-point-item:hover {
-  background-color: #f8f9fa;
-  border-left-color: #007bff;
-}
-
-.pickup-point-item.active {
-  background-color: #e6f2ff !important;
-  border-left-color: #007bff !important;
+  padding: 10px 15px;
 }
 
 .pickup-point-name {
-  font-weight: bold;
+  font-weight: 600;
   margin-bottom: 5px;
 }
 
 .pickup-point-address {
-  color: #495057;
   margin-bottom: 5px;
 }
 
-.pickup-point-schedule, 
-.pickup-point-delivery {
+.pickup-point-schedule, .pickup-point-delivery {
   color: #6c757d;
-  font-size: 0.85rem;
 }
 
 .city-input-block {
@@ -50,48 +35,41 @@
 
 .city-suggestions-dropdown {
   position: absolute;
+  z-index: 1000;
   width: 100%;
-  max-height: 350px;
+  max-height: 250px;
   overflow-y: auto;
-  z-index: 1050;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+  background-color: white;
+  border: 1px solid #ced4da;
   border-radius: 4px;
   margin-top: 5px;
-  background-color: white;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
 .city-suggestions-list {
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
+  margin-bottom: 0;
 }
 
 .city-suggestion-item {
+  padding: 8px 12px;
   cursor: pointer;
-  padding: 10px 15px;
-  transition: background-color 0.2s;
-  border-left: 3px solid transparent;
-}
-
-.city-suggestion-item:hover {
-  background-color: #f0f7ff;
-  border-left-color: #007bff;
 }
 
 .city-name {
   font-weight: 500;
-  color: #343a40;
 }
 
 .city-region {
   font-size: 0.85rem;
   color: #6c757d;
-  margin-top: 2px;
 }
 
+/* Стиль для блока текущего города */
 .current-city {
-  font-size: 1.1rem;
-  padding: 8px 12px;
-  background-color: #f0f8ff;
-  border-radius: 5px;
-  color: #0056b3;
+  display: flex;
+  align-items: center;
+  background-color: #f8f9fa;
+  padding: 10px 15px;
+  border-radius: 4px;
+  border: 1px solid #dee2e6;
 } 

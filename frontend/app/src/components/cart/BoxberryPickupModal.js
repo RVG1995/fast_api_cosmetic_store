@@ -344,6 +344,22 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
           <>
             <div className="current-city mb-3">
               <strong>Город: </strong> {cityName}
+              {selectedAddress && (
+                <Button 
+                  variant="outline-secondary" 
+                  size="sm" 
+                  className="ms-2"
+                  onClick={() => {
+                    setShowCityInput(true);
+                    setCityInputValue(cityName);
+                    setSelectedPoint(null);
+                    setCityCode(null);
+                    setPickupPoints([]);
+                  }}
+                >
+                  Изменить город
+                </Button>
+              )}
             </div>
             
             <Form.Group className="mb-3">

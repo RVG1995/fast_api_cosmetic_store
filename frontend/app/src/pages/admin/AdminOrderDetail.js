@@ -864,8 +864,9 @@ const AdminOrderDetail = () => {
   const canEditItems = () => {
     if (!order || !order.status) return false;
     
+    // Запрещаем редактирование для определенных статусов и для оплаченных заказов
     const nonEditableStatuses = ['Отправлен', 'Доставлен', 'Отменен', 'Оплачен'];
-    return !nonEditableStatuses.includes(order.status.name);
+    return !nonEditableStatuses.includes(order.status.name) && !order.is_paid;
   };
   
   // Если заказ не загружен, показываем индикатор загрузки
@@ -997,7 +998,11 @@ const AdminOrderDetail = () => {
               {canEditItems() ? (
                 <OrderItemsEditor order={order} onOrderUpdated={setOrder} />
               ) : (
-                <Badge bg="secondary">Редактирование недоступно для заказов в статусе "{order.status.name}"</Badge>
+                <Badge bg="secondary">
+                  {order.is_paid ? 
+                    "Редактирование недоступно для оплаченных заказов" : 
+                    `Редактирование недоступно для заказов в статусе "${order.status.name}"`}
+                </Badge>
               )}
             </Card.Header>
             <Card.Body>
@@ -1191,33 +1196,6 @@ const AdminOrderDetail = () => {
                     value={statusNote}
                     onChange={handleNoteChange}
                     placeholder="Добавьте примечание к изменению статуса"
-                  />
-                </Form.Group>
-                
-                <Form.Group className="mb-3">
-                  <Form.Label>Тип доставки</Form.Label>
-                  <Form.Select
-                    name="delivery_type"
-                    value={updateData.delivery_type || ''}
-                    onChange={(e) => setUpdateData({ ...updateData, delivery_type: e.target.value })}
-                  >
-                    <option value="" disabled>Выберите тип доставки</option>
-                    <option value="boxberry_courier">Курьер BoxBerry</option>
-                    <option value="boxberry_pickup_point">Пункт выдачи BoxBerry</option>
-                    <option value="cdek_courier">Курьер СДЭК</option>
-                    <option value="cdek_pickup_point">Пункт выдачи СДЭК</option>
-                  </Form.Select>
-                </Form.Group>
-                
-                <Form.Group className="mb-3">
-                  <Form.Label>Адрес пункта выдачи</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="boxberry_point_address"
-                    value={updateData.boxberry_point_address || ''}
-                    onChange={(e) => setUpdateData({ ...updateData, boxberry_point_address: e.target.value })}
-                    placeholder={updateData.delivery_type?.includes('pickup_point') ? 'Укажите адрес пункта выдачи' : 'Не требуется для курьерской доставки'}
-                    disabled={!updateData.delivery_type?.includes('pickup_point')}
                   />
                 </Form.Group>
                 

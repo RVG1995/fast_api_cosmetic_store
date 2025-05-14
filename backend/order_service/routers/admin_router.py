@@ -393,6 +393,12 @@ async def update_order_status(
         new_status = await session.get(OrderStatusModel, status_id)
         new_status_name = new_status.name if new_status else "Неизвестный"
         
+        # Если новый статус - "Оплачен", автоматически устанавливаем флаг is_paid=True
+        if new_status and new_status.name == "Оплачен":
+            order.is_paid = True
+            logger.info("Автоматически установлен флаг оплаты для заказа %s при изменении статуса на 'Оплачен'", order_id)
+            session.add(order)
+        
         # Получаем информацию о старом статусе
         old_status = await session.get(OrderStatusModel, order.status_id)
         old_status_name = old_status.name if old_status else "Неизвестный"
@@ -474,6 +480,13 @@ async def update_order_items_endpoint(
             raise HTTPException(
                 status_code=400, 
                 detail=f"Редактирование товаров невозможно для заказа в статусе '{order.status.name}'"
+            )
+        
+        # Проверка статуса оплаты - запрещаем редактировать товары для оплаченных заказов
+        if order.is_paid:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Редактирование товаров невозможно для оплаченных заказов"
             )
         
         # Подготавливаем данные для обновления

@@ -1334,3 +1334,95 @@ async def generate_orders_report(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при генерации отчета"
         ) from e
+
+@router.put("/{order_id}/delivery", response_model=OrderResponse,dependencies=[Depends(get_admin_user)])
+async def update_order_delivery_info(
+    order_id: int = Path(..., ge=1),
+    delivery_data: dict = Body(...),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Обновление информации о доставке заказа (только для администраторов).
+    Эндпоинт для обновления типа доставки и адреса доставки.
+    
+    - **order_id**: ID заказа
+    - **delivery_data**: Данные о доставке для обновления:
+      - delivery_type: Тип доставки
+      - delivery_address: Адрес доставки
+    """
+    try:
+        logger.info("Запрос на обновление информации о доставке заказа. ID: %s, данные: %s", order_id, delivery_data)
+        
+        # Проверяем наличие обязательных полей
+        if not delivery_data.get("delivery_type"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Не указан тип доставки",
+            )
+            
+        if not delivery_data.get("delivery_address"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Не указан адрес доставки",
+            )
+        
+        # Получаем текущий заказ
+        order = await get_order_by_id(session, order_id)
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Заказ с ID {order_id} не найден",
+            )
+        
+        # Проверяем, можно ли изменять информацию о доставке
+        # Если заказ уже отправлен или доставлен, запрещаем изменения
+        statuses_not_allow_delivery_changes = ["Оплачен", "Отправлен", "Доставлен", "Отменен"]
+        if order.status and order.status.name in statuses_not_allow_delivery_changes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Невозможно изменить информацию о доставке для заказа в статусе '{order.status.name}'",
+            )
+        
+        # Проверка на оплаченность заказа - запрещаем изменять информацию о доставке для оплаченных заказов
+        if order.is_paid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Невозможно изменить информацию о доставке для оплаченного заказа",
+            )
+        
+        # Обновляем информацию о доставке
+        order.delivery_type = delivery_data.get("delivery_type")
+        order.delivery_address = delivery_data.get("delivery_address")
+        
+        # Если был изменен тип доставки с boxberry на другой, очищаем связанные поля
+        if order.delivery_type and not order.delivery_type.startswith("boxberry_"):
+            order.boxberry_point_id = None
+            order.boxberry_point_address = None
+            order.boxberry_city_code = None
+            
+        # Если новый тип доставки - пункт выдачи BoxBerry, копируем адрес доставки в boxberry_point_address
+        if order.delivery_type == "boxberry_pickup_point":
+            order.boxberry_point_address = order.delivery_address
+        
+        session.add(order)
+        
+        # Фиксируем изменения в базе данных
+        await session.commit()
+        
+        # Инвалидируем кэш заказа
+        await invalidate_order_cache(order_id)
+        logger.info("Кэш заказа %s инвалидирован после обновления информации о доставке", order_id)
+        
+        # Обновляем заказ в сессии
+        updated_order = await get_order_by_id(session, order_id)
+        
+        # Преобразуем модель в схему и возвращаем обновленный заказ
+        return OrderResponse.model_validate(updated_order)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Непредвиденная ошибка при обновлении информации о доставке: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Произошла ошибка при обновлении информации о доставке",
+        ) from e

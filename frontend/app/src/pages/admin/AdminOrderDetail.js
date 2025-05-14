@@ -9,6 +9,8 @@ import OrderStatusBadge from '../../components/OrderStatusBadge';
 import axios from 'axios';
 import { API_URLS } from '../../utils/constants';
 import AdminBackButton from '../../components/common/AdminBackButton';
+import { adminAPI } from '../../utils/api';
+import BoxberryPickupModal from '../../components/cart/BoxberryPickupModal';
 
 // Компонент для редактирования товаров в заказе
 const OrderItemsEditor = ({ order, onOrderUpdated }) => {
@@ -634,6 +636,39 @@ const AdminOrderDetail = () => {
     delivery_type: '',
     boxberry_point_address: ''
   });
+  const [showDeliveryForm, setShowDeliveryForm] = useState(false);
+  const [deliveryData, setDeliveryData] = useState({
+    delivery_type: '',
+    delivery_address: ''
+  });
+  const [updateDeliveryLoading, setUpdateDeliveryLoading] = useState(false);
+  const [updateDeliverySuccess, setUpdateDeliverySuccess] = useState(false);
+  const [updateDeliveryError, setUpdateDeliveryError] = useState(null);
+  const [showBoxberryModal, setShowBoxberryModal] = useState(false);
+  const [selectedPickupPoint, setSelectedPickupPoint] = useState(null);
+  
+  // Обработчик выбора пункта выдачи BoxBerry
+  const handlePickupPointSelected = (point) => {
+    setSelectedPickupPoint(point);
+    setDeliveryData({
+      ...deliveryData,
+      delivery_address: point.Address
+    });
+  };
+  
+  // Нужно ли показывать кнопку выбора пункта выдачи
+  const isBoxberryPickupPoint = deliveryData.delivery_type === 'boxberry_pickup_point';
+  
+  // useEffect для инициализации формы данными из заказа при открытии
+  useEffect(() => {
+    if (showDeliveryForm && order) {
+      setDeliveryData({
+        delivery_type: order.delivery_type || '',
+        delivery_address: order.delivery_address || ''
+      });
+      setSelectedPickupPoint(null);
+    }
+  }, [showDeliveryForm, order]);
   
   // Загрузка деталей заказа и статусов
   useEffect(() => {
@@ -931,6 +966,83 @@ const AdminOrderDetail = () => {
     }
   };
   
+  const handleUpdateDelivery = async () => {
+    setUpdateDeliveryLoading(true);
+    setUpdateDeliveryError(null);
+    
+    try {
+      console.log("Начинаем обновление информации о доставке заказа ID:", order?.id);
+      
+      // Формируем данные для запроса
+      const updateData = {
+        delivery_type: deliveryData.delivery_type,
+        delivery_address: deliveryData.delivery_address
+      };
+      
+      // Проверяем, есть ли изменения
+      const hasChanges = 
+        updateData.delivery_type !== order.delivery_type ||
+        updateData.delivery_address !== order.delivery_address;
+      
+      if (!hasChanges) {
+        setUpdateDeliveryError("Нет изменений для сохранения");
+        setUpdateDeliveryLoading(false);
+        return;
+      }
+      
+      // Проверяем, что все обязательные поля заполнены
+      if (!updateData.delivery_type) {
+        setUpdateDeliveryError("Выберите тип доставки");
+        setUpdateDeliveryLoading(false);
+        return;
+      }
+      
+      if (!updateData.delivery_address) {
+        setUpdateDeliveryError("Укажите адрес доставки");
+        setUpdateDeliveryLoading(false);
+        return;
+      }
+      
+      // Дополнительно проверяем, что для доставки в пункт выдачи BoxBerry выбран пункт
+      if (updateData.delivery_type === 'boxberry_pickup_point' && !selectedPickupPoint) {
+        setUpdateDeliveryError("Выберите пункт выдачи BoxBerry");
+        setUpdateDeliveryLoading(false);
+        return;
+      }
+      
+      console.log("Отправляем обновления:", updateData);
+      
+      // Отправляем запрос
+      const result = await adminAPI.updateOrderDeliveryInfo(order?.id, updateData);
+      console.log("Получен результат обновления:", result);
+      
+      // Обновляем заказ в компоненте
+      if (result) {
+        // Запрашиваем актуальное состояние заказа после обновления
+        const updatedOrder = await adminAPI.getOrderById(order?.id);
+        if (updatedOrder) {
+          setOrder(updatedOrder);
+        }
+        
+        // Очищаем состояние
+        setShowDeliveryForm(false);
+        setUpdateDeliverySuccess(true);
+        setTimeout(() => setUpdateDeliverySuccess(false), 3000);
+      }
+    } catch (err) {
+      console.error("Ошибка при обновлении информации о доставке:", err);
+      
+      if (err.response) {
+        console.error("Ответ сервера:", err.response.data);
+        setUpdateDeliveryError(err.response.data?.detail || "Ошибка при обновлении информации о доставке");
+      } else {
+        setUpdateDeliveryError(err.message || "Произошла ошибка при обновлении информации о доставке");
+      }
+    } finally {
+      setUpdateDeliveryLoading(false);
+    }
+  };
+  
   return (
     <Container className="py-4">
       <AdminBackButton to="/admin/orders" label="Вернуться к списку заказов" />
@@ -1090,29 +1202,123 @@ const AdminOrderDetail = () => {
             </Card.Header>
             <Card.Body>
               <p><strong>Получатель:</strong> {order.full_name}</p>
-              <p><strong>Адрес доставки:</strong> {order.delivery_address || "Не указан"}</p>
               
-              {/* Информация о типе доставки */}
+              {/* Информация о типе доставки и адресе с возможностью редактирования */}
               <div className="mb-3">
-                <p>
-                  <strong>Тип доставки:</strong>{' '}
-                  {formatDeliveryType(order.delivery_type)}
-                </p>
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <h6 className="mb-0">Информация о доставке</h6>
+                  <Button 
+                    variant="outline-primary" 
+                    size="sm"
+                    onClick={() => setShowDeliveryForm(!showDeliveryForm)}
+                    disabled={order.is_paid || (order.status && ["Отправлен", "Доставлен"].includes(order.status.name))}
+                    title={
+                      order.is_paid ? 
+                        "Невозможно изменить информацию о доставке для оплаченного заказа" : 
+                        order.status && ["Отправлен", "Доставлен"].includes(order.status.name) ?
+                          `Невозможно изменить информацию о доставке для заказа в статусе "${order.status.name}"` :
+                          "Изменить информацию о доставке"
+                    }
+                  >
+                    {showDeliveryForm ? "Отменить" : "Изменить"}
+                  </Button>
+                </div>
                 
-                {/* Информация о пункте BoxBerry, если это доставка BoxBerry */}
-                {order.delivery_type === 'boxberry' && (
-                  <div className="bg-light p-2 rounded">
-                    <p className="mb-1"><strong>Пункт выдачи BoxBerry:</strong></p>
-                    {order.boxberry_point_address && (
-                      <p className="mb-1 small">{order.boxberry_point_address}</p>
+                {(order.is_paid || (order.status && ["Отправлен", "Доставлен"].includes(order.status.name))) && !showDeliveryForm && (
+                  <Alert variant="info" className="mb-3">
+                    {order.is_paid ? 
+                      "Нельзя изменить информацию о доставке, так как заказ уже оплачен" : 
+                      `Нельзя изменить информацию о доставке для заказа в статусе "${order.status.name}"`}
+                  </Alert>
+                )}
+                
+                {showDeliveryForm ? (
+                  <Form className="mt-3">
+                    <Form.Group className="mb-3">
+                      <Form.Label>Тип доставки</Form.Label>
+                      <Form.Select 
+                        value={deliveryData.delivery_type} 
+                        onChange={(e) => setDeliveryData({...deliveryData, delivery_type: e.target.value})}
+                      >
+                        <option value="">Выберите тип доставки</option>
+                        <option value="boxberry_pickup_point">BoxBerry - Пункт выдачи</option>
+                        <option value="boxberry_courier">BoxBerry - Курьер</option>
+                        <option value="cdek_pickup_point">CDEK - Пункт выдачи</option>
+                        <option value="cdek_courier">CDEK - Курьер</option>
+                      </Form.Select>
+                    </Form.Group>
+                    
+                    <Form.Group className="mb-3">
+                      <Form.Label>Адрес доставки</Form.Label>
+                      <div className="d-flex">
+                        <Form.Control 
+                          type="text" 
+                          value={deliveryData.delivery_address}
+                          onChange={(e) => setDeliveryData({...deliveryData, delivery_address: e.target.value})}
+                          placeholder="Введите адрес доставки"
+                          readOnly={isBoxberryPickupPoint}
+                          className={isBoxberryPickupPoint ? "bg-light" : ""}
+                        />
+                        {isBoxberryPickupPoint && (
+                          <Button 
+                            variant="outline-primary"
+                            onClick={() => setShowBoxberryModal(true)}
+                            className="ms-2"
+                          >
+                            Выбрать пункт
+                          </Button>
+                        )}
+                      </div>
+                    </Form.Group>
+                    
+                    {isBoxberryPickupPoint && selectedPickupPoint && (
+                      <div className="mt-2 p-2 border rounded bg-light mb-3">
+                        <p className="mb-1"><strong>{selectedPickupPoint.Name}</strong></p>
+                        <p className="mb-1 small">{selectedPickupPoint.Address}</p>
+                        <p className="mb-0 small text-muted">График работы: {selectedPickupPoint.WorkShedule}</p>
+                      </div>
                     )}
-                    {order.boxberry_point_id && (
-                      <p className="mb-0 small">Код пункта: {order.boxberry_point_id}</p>
+                    
+                    <div className="d-flex justify-content-end">
+                      <Button 
+                        variant="primary" 
+                        size="sm" 
+                        onClick={handleUpdateDelivery}
+                        disabled={updateDeliveryLoading}
+                      >
+                        {updateDeliveryLoading ? (
+                          <>
+                            <Spinner as="span" animation="border" size="sm" />
+                            <span className="ms-2">Сохранение...</span>
+                          </>
+                        ) : (
+                          "Сохранить"
+                        )}
+                      </Button>
+                    </div>
+                    
+                    {updateDeliverySuccess && (
+                      <Alert variant="success" className="mt-3">
+                        Информация о доставке успешно обновлена
+                      </Alert>
                     )}
-                    {order.boxberry_city_code && (
-                      <p className="mb-0 small">Код города: {order.boxberry_city_code}</p>
+                    
+                    {updateDeliveryError && (
+                      <Alert variant="danger" className="mt-3">
+                        {updateDeliveryError}
+                      </Alert>
                     )}
-                  </div>
+                  </Form>
+                ) : (
+                  <>
+                    <p>
+                      <strong>Тип доставки:</strong>{' '}
+                      {formatDeliveryType(order.delivery_type)}
+                    </p>
+                    <p>
+                      <strong>Адрес доставки:</strong> {order.delivery_address || "Не указан"}
+                    </p>
+                  </>
                 )}
               </div>
               
@@ -1273,6 +1479,14 @@ const AdminOrderDetail = () => {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Модальное окно выбора пункта выдачи BoxBerry */}
+      <BoxberryPickupModal
+        show={showBoxberryModal}
+        onHide={() => setShowBoxberryModal(false)}
+        onPickupPointSelected={handlePickupPointSelected}
+        selectedAddress={deliveryData.delivery_address}
+      />
     </Container>
   );
 };

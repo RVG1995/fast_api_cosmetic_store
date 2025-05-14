@@ -316,7 +316,33 @@ export const adminAPI = {
       console.error('Ошибка при получении отчета:', error);
       throw error;
     }
-  }
+  },
+  
+  // Обновление информации о доставке заказа (для админки)
+  updateOrderDeliveryInfo: async (orderId, data) => {
+    try {
+      console.log(`Вызов API updateOrderDeliveryInfo для заказа ${orderId} с данными:`, data);
+      const response = await orderApi.put(`/admin/orders/${orderId}/delivery`, data);
+      console.log(`API updateOrderDeliveryInfo ответ успешно получен:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Ошибка в API updateOrderDeliveryInfo для заказа ${orderId}:`, error);
+      throw error;
+    }
+  },
+  
+  // Получение заказа по ID (для админки)
+  getOrderById: async (orderId) => {
+    try {
+      console.log(`Вызов API getOrderById для заказа ${orderId}`);
+      const response = await orderApi.get(`/admin/orders/${orderId}`);
+      console.log(`API getOrderById ответ успешно получен:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Ошибка в API getOrderById для заказа ${orderId}:`, error);
+      throw error;
+    }
+  },
 };
 
 // API для работы с контентом

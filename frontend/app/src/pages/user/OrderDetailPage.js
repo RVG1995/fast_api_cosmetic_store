@@ -558,37 +558,34 @@ const OrderDetailPage = () => {
               <h4 className="mb-0">Информация о получателе</h4>
             </Card.Header>
             <Card.Body>
-              <div className="shipping-address">
-                <h5>Адрес доставки</h5>
-                <p>
-                  <strong>{order.full_name}</strong>
-                </p>
-                <p>
-                  {order.delivery_address || "Адрес не указан"}
-                </p>
-              </div>
+              <h5 className="section-title">ФИО получателя</h5>
+              <p className="mb-4">
+                <strong>{order.full_name}</strong>
+              </p>
+              
+              <h5 className="section-title">Адрес доставки</h5>
+              <p className="mb-4">
+                {order.delivery_address || "Адрес не указан"}
+              </p>
               
               {/* Информация о доставке */}
-              <h5 className="section-title mt-4">Информация о доставке</h5>
-              <div className="mb-3 delivery-info">
-                <div className="detail-field">
-                  <span className="detail-label">Способ доставки:</span>
+              <h5 className="section-title">Способ доставки</h5>
+              <div className="mb-4 delivery-info">
+                <div className="detail-field mb-2">
+                  <span className="detail-label">Тип доставки:</span>
                   <span className="detail-value">{formatDeliveryType(order.delivery_type)}</span>
                 </div>
-                <div className="detail-field">
-                  <span className="detail-label">Адрес доставки:</span>
-                  <span className="detail-value">{order.delivery_address}</span>
-                </div>
+                
                 {order.boxberry_point_address && (
-                  <div className="detail-field">
+                  <div className="detail-field mb-2">
                     <span className="detail-label">Адрес пункта выдачи:</span>
                     <span className="detail-value">{order.boxberry_point_address}</span>
                   </div>
                 )}
               </div>
               
-              <div className="mt-3">
-                <h5>Контактная информация</h5>
+              <h5 className="section-title">Контактная информация</h5>
+              <div className="contact-info">
                 {order.phone && (
                   <div className="contact-item">
                     <span className="contact-label">Телефон:</span>

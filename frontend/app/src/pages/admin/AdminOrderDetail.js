@@ -900,7 +900,7 @@ const AdminOrderDetail = () => {
     if (!order || !order.status) return false;
     
     // Запрещаем редактирование для определенных статусов и для оплаченных заказов
-    const nonEditableStatuses = ['Отправлен', 'Доставлен', 'Отменен', 'Оплачен'];
+    const nonEditableStatuses = ['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'];
     return !nonEditableStatuses.includes(order.status.name) && !order.is_paid;
   };
   
@@ -1111,13 +1111,20 @@ const AdminOrderDetail = () => {
                 <OrderItemsEditor order={order} onOrderUpdated={setOrder} />
               ) : (
                 <Badge bg="secondary">
-                  {order.is_paid ? 
+                  {order.is_paid && order.status && !['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'].includes(order.status.name) ? 
                     "Редактирование недоступно для оплаченных заказов" : 
                     `Редактирование недоступно для заказов в статусе "${order.status.name}"`}
                 </Badge>
               )}
             </Card.Header>
             <Card.Body>
+              {!canEditItems() && (
+                <Alert variant="info" className="mb-3">
+                  {order.is_paid && order.status && !['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'].includes(order.status.name) ? 
+                    "Нельзя редактировать товары, так как заказ уже оплачен" : 
+                    `Нельзя редактировать товары для заказа в статусе "${order.status.name}"`}
+                </Alert>
+              )}
               <Table responsive hover>
                 <thead>
                   <tr>
@@ -1211,11 +1218,11 @@ const AdminOrderDetail = () => {
                     variant="outline-primary" 
                     size="sm"
                     onClick={() => setShowDeliveryForm(!showDeliveryForm)}
-                    disabled={order.is_paid || (order.status && ["Отправлен", "Доставлен"].includes(order.status.name))}
+                    disabled={order.is_paid || (order.status && ["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name))}
                     title={
-                      order.is_paid ? 
+                      order.is_paid && order.status && !["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name) ? 
                         "Невозможно изменить информацию о доставке для оплаченного заказа" : 
-                        order.status && ["Отправлен", "Доставлен"].includes(order.status.name) ?
+                        order.status && ["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name) ?
                           `Невозможно изменить информацию о доставке для заказа в статусе "${order.status.name}"` :
                           "Изменить информацию о доставке"
                     }
@@ -1224,9 +1231,9 @@ const AdminOrderDetail = () => {
                   </Button>
                 </div>
                 
-                {(order.is_paid || (order.status && ["Отправлен", "Доставлен"].includes(order.status.name))) && !showDeliveryForm && (
+                {(order.is_paid || (order.status && ["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name))) && !showDeliveryForm && (
                   <Alert variant="info" className="mb-3">
-                    {order.is_paid ? 
+                    {order.is_paid && order.status && !["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name) ? 
                       "Нельзя изменить информацию о доставке, так как заказ уже оплачен" : 
                       `Нельзя изменить информацию о доставке для заказа в статусе "${order.status.name}"`}
                   </Alert>

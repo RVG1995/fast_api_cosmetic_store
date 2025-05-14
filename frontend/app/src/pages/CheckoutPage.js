@@ -12,6 +12,18 @@ import axios from 'axios';
 import { API_URLS } from '../utils/constants';
 import { deliveryAPI } from '../utils/api';
 
+// Функция для склонения слова "день" в зависимости от числа
+const getDeliveryPeriodText = (days) => {
+  const cases = [2, 0, 1, 1, 1, 2];
+  const titles = ['день', 'дня', 'дней'];
+  
+  if (days % 100 > 4 && days % 100 < 20) {
+    return titles[2];
+  } else {
+    return titles[cases[Math.min(days % 10, 5)]];
+  }
+};
+
 const CheckoutPage = () => {
   const navigate = useNavigate();
   const { cart, clearCart } = useCart();
@@ -51,6 +63,7 @@ const CheckoutPage = () => {
   const [calculatingDelivery, setCalculatingDelivery] = useState(false);
   const [deliveryError, setDeliveryError] = useState(null);
   const [isPaymentOnDelivery, setIsPaymentOnDelivery] = useState(true); // По умолчанию оплата при получении
+  const [deliveryPeriod, setDeliveryPeriod] = useState(0); // Добавляем состояние для срока доставки
   
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
@@ -124,7 +137,9 @@ const CheckoutPage = () => {
       
       // Устанавливаем полученную стоимость доставки
       setDeliveryCost(result.price);
+      setDeliveryPeriod(result.delivery_period);
       console.log('Рассчитана стоимость доставки:', result.price);
+      console.log('Срок доставки (дней):', result.delivery_period);
       
     } catch (err) {
       console.error('Ошибка при расчете стоимости доставки:', err);
@@ -796,6 +811,14 @@ const CheckoutPage = () => {
                         )}
                       </div>
                     </div>
+                    
+                    {/* Срок доставки в днях */}
+                    {deliveryType && !calculatingDelivery && !deliveryError && deliveryPeriod > 0 && (
+                      <div className="delivery-period">
+                        <div>Срок доставки:</div>
+                        <div>{deliveryPeriod} {getDeliveryPeriodText(deliveryPeriod)}</div>
+                      </div>
+                    )}
                     
                     <div className="total">
                       <div>Итого:</div>

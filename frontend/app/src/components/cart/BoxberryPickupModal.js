@@ -4,6 +4,21 @@ import axios from 'axios';
 import { API_URLS } from '../../utils/constants';
 import './BoxberryPickupModal.css';
 
+// Функция для склонения слова "день" в зависимости от числа
+const getDeliveryPeriodText = (days) => {
+  days = parseInt(days, 10); // Преобразуем в число
+  if (isNaN(days)) return 'дней';
+  
+  const cases = [2, 0, 1, 1, 1, 2];
+  const titles = ['день', 'дня', 'дней'];
+  
+  if (days % 100 > 4 && days % 100 < 20) {
+    return titles[2];
+  } else {
+    return titles[cases[Math.min(days % 10, 5)]];
+  }
+};
+
 const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddress }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -384,16 +399,16 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
                     onClick={() => handleSelectPoint(point)}
                     className="pickup-point-item"
                   >
-                    <div className="pickup-point-name">{point.Name}</div>
-                    <div className="pickup-point-address">{point.Address}</div>
-                    <div className="pickup-point-schedule">
-                      <small>График работы: {point.WorkShedule}</small>
+                    <div className="pickup-item" onClick={() => handleSelectPoint(point)}>
+                      <h5>{point.Name}</h5>
+                      <p className="mb-1">{point.Address}</p>
+                      <p className="mb-0 small text-muted">Режим работы: {point.WorkShedule}</p>
+                      {point.DeliveryPeriod && (
+                        <div className="pickup-point-delivery">
+                          <small>Срок доставки: {point.DeliveryPeriod} {getDeliveryPeriodText(point.DeliveryPeriod)}</small>
+                        </div>
+                      )}
                     </div>
-                    {point.DeliveryPeriod && (
-                      <div className="pickup-point-delivery">
-                        <small>Срок доставки: {point.DeliveryPeriod}</small>
-                      </div>
-                    )}
                   </ListGroup.Item>
                 ))}
               </ListGroup>

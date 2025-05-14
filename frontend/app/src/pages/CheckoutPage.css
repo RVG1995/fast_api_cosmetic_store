@@ -311,4 +311,60 @@
   margin-left: 10px;
   margin-bottom: 0;
   cursor: pointer;
+}
+
+/* Delivery and payment options */
+.delivery-options-container,
+.payment-options-container {
+  margin-bottom: 20px;
+}
+
+.delivery-options-title,
+.payment-options-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.delivery-option,
+.payment-option {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 5px;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.delivery-option:hover,
+.payment-option:hover {
+  background-color: #f8f9fa;
+}
+
+.delivery-option.selected,
+.payment-option.selected {
+  border-color: #0d6efd;
+  background-color: #f0f7ff;
+}
+
+.delivery-option input,
+.payment-option input {
+  margin-right: 10px;
+}
+
+.delivery-error {
+  color: #dc3545;
+  font-size: 0.85rem;
+  margin-top: 5px;
+}
+
+.delivery-period {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #dee2e6;
+  color: #333;
+  font-size: 0.95rem;
 } 

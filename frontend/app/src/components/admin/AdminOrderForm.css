@@ -1,0 +1,43 @@
+.suggestions-list {
+  position: absolute;
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
+}
+
+.suggestion-item {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.suggestion-item:hover {
+  background-color: #f1f1f1;
+}
+
+.boxberry-address-block {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+}
+
+.boxberry-address-title {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.boxberry-address-text {
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.empty-select-option {
+  color: #6c757d;
+} 

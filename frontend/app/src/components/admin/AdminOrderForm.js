@@ -6,6 +6,8 @@ import { debounce } from 'lodash';
 import { formatPrice } from '../../utils/helpers';
 import { API_URLS } from '../../utils/constants';
 import axios from 'axios';
+import BoxberryPickupModal from '../cart/BoxberryPickupModal';
+import './AdminOrderForm.css';
 
 const AdminOrderForm = ({ onClose, onSuccess }) => {
   // Состояние формы
@@ -20,7 +22,6 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     status_id: 1, // По умолчанию первый статус (обычно "Новый")
     is_paid: false,
     delivery_type: '', // Убираем значение по умолчанию
-    boxberry_point_address: '',
     items: []
   });
 
@@ -49,6 +50,11 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   const [appliedPromoCode, setAppliedPromoCode] = useState(null);
   const [orderTotal, setOrderTotal] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
+  
+  // Состояния для BoxBerry и DaData
+  const [showBoxberryModal, setShowBoxberryModal] = useState(false);
+  const [addressOptions, setAddressOptions] = useState([]);
+  const [selectedPickupPoint, setSelectedPickupPoint] = useState(null);
   
   // Получаем методы из контекста заказов
   const { getOrderStatuses, createAdminOrder, checkPromoCode, calculateDiscount } = useOrders();
@@ -348,6 +354,84 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   // Вычисляем итоговую стоимость с учетом скидки
   const finalTotal = Math.max(0, orderTotal - discountAmount);
 
+  // Подсказки адресов DaData
+  const fetchAddressSuggestions = async (query) => {
+    if (!query || query.trim().length < 3) {
+      setAddressOptions([]);
+      return;
+    }
+    
+    try {
+      const { data } = await axios.post(
+        `${API_URLS.DELIVERY_SERVICE}/delivery/dadata/address`,
+        { query }
+      );
+      setAddressOptions(data.suggestions || []);
+    } catch(e) { 
+      console.error('DaData address error', e); 
+      setAddressOptions([]);
+    }
+  };
+
+  // Debounce для поиска адресов
+  const debouncedAddressSearch = useCallback(
+    debounce((query) => fetchAddressSuggestions(query), 300),
+    []
+  );
+
+  // Обработчик выбора адреса из подсказок
+  const handleSelectAddress = (address) => {
+    setFormData({
+      ...formData,
+      delivery_address: address.value
+    });
+    setAddressOptions([]);
+  };
+
+  // Обработчик изменения адреса
+  const handleAddressChange = (e) => {
+    const value = e.target.value;
+    setFormData({
+      ...formData,
+      delivery_address: value
+    });
+    
+    if (value.length >= 3) {
+      debouncedAddressSearch(value);
+    } else {
+      setAddressOptions([]);
+    }
+  };
+
+  // Обработчик выбора пункта выдачи BoxBerry
+  const handlePickupPointSelected = (point) => {
+    setSelectedPickupPoint(point);
+    setFormData({
+      ...formData,
+      delivery_address: point.Address
+    });
+  };
+
+  // Проверка, является ли выбранный способ доставки пунктом выдачи
+  const isPickupPoint = formData.delivery_type.includes('pickup_point');
+
+  // Обработчик изменения типа доставки
+  const handleDeliveryTypeChange = (e) => {
+    const { value } = e.target;
+    const isPickup = value.includes('pickup_point');
+    
+    // Если был выбран пункт выдачи и теперь выбрана курьерская доставка, 
+    // и адрес был от пункта выдачи, очищаем адрес
+    if (!isPickup && selectedPickupPoint) {
+      setSelectedPickupPoint(null);
+    }
+    
+    setFormData({
+      ...formData,
+      delivery_type: value
+    });
+  };
+
   // Обработчик отправки формы
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -369,9 +453,9 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
       return;
     }
     
-    // Для пунктов выдачи проверяем, что указан адрес
-    if (formData.delivery_type.includes('pickup_point') && !formData.boxberry_point_address) {
-      setError('Для выбранного способа доставки необходимо указать адрес пункта выдачи');
+    // Для пунктов выдачи проверяем, что выбран пункт
+    if (formData.delivery_type.includes('pickup_point') && !selectedPickupPoint) {
+      setError('Для выбранного способа доставки необходимо выбрать пункт выдачи');
       return;
     }
     
@@ -385,6 +469,11 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
         status_id: parseInt(formData.status_id, 10),
         is_paid: Boolean(formData.is_paid)
       };
+      
+      // Если тип доставки - пункт выдачи, копируем адрес доставки в поле boxberry_point_address
+      if (formData.delivery_type.includes('pickup_point')) {
+        orderData.boxberry_point_address = formData.delivery_address;
+      }
       
       // Обработка телефона
       if (orderData.phone) {
@@ -599,30 +688,16 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
             
             <h5 className="mb-3 mt-4">Адрес доставки</h5>
             <Row>
-              <Col md={12}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Адрес доставки*</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="delivery_address"
-                    value={formData.delivery_address}
-                    onChange={handleChange}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-            
-            <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Способ доставки*</Form.Label>
                   <Form.Select
                     name="delivery_type"
                     value={formData.delivery_type}
-                    onChange={handleChange}
+                    onChange={handleDeliveryTypeChange}
                     required
                   >
+                    <option value="">Выберите способ доставки</option>
                     <option value="boxberry_courier">Курьер Boxberry</option>
                     <option value="boxberry_pickup_point">Пункт выдачи Boxberry</option>
                     <option value="cdek_courier">Курьер СДЭК</option>
@@ -632,20 +707,49 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
               </Col>
               <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Адрес пункта выдачи</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="boxberry_point_address"
-                    value={formData.boxberry_point_address}
-                    onChange={handleChange}
-                    placeholder={formData.delivery_type.includes('pickup_point') ? 'Укажите адрес пункта выдачи' : 'Не требуется для курьерской доставки'}
-                    disabled={!formData.delivery_type.includes('pickup_point')}
-                    required={formData.delivery_type.includes('pickup_point')}
-                  />
+                  <Form.Label>Адрес доставки*</Form.Label>
+                  <div className="d-flex">
+                    <div className="position-relative flex-grow-1">
+                      <Form.Control
+                        type="text"
+                        name="delivery_address"
+                        value={formData.delivery_address}
+                        onChange={isPickupPoint ? undefined : handleAddressChange}
+                        required
+                        autoComplete="off"
+                        readOnly={isPickupPoint}
+                        className={isPickupPoint ? "bg-light" : ""}
+                      />
+                      {!isPickupPoint && addressOptions.length > 0 && (
+                        <div className="position-absolute start-0 w-100 shadow bg-white rounded z-index-1000" style={{ zIndex: 1000 }}>
+                          <ul className="list-group suggestions-list">
+                            {addressOptions.map((address, index) => (
+                              <li
+                                key={index}
+                                className="list-group-item list-group-item-action suggestion-item"
+                                onClick={() => handleSelectAddress(address)}
+                              >
+                                {address.value}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                    {formData.delivery_type === 'boxberry_pickup_point' && (
+                      <Button 
+                        variant="outline-primary"
+                        onClick={() => setShowBoxberryModal(true)}
+                        className="ms-2"
+                      >
+                        Выбрать пункт
+                      </Button>
+                    )}
+                  </div>
                   <Form.Text className="text-muted">
-                    {formData.delivery_type.includes('pickup_point') 
-                      ? 'Обязательно укажите адрес пункта выдачи' 
-                      : 'Для курьерской доставки не требуется'}
+                    {isPickupPoint 
+                      ? 'Для пункта выдачи адрес выбирается через кнопку "Выбрать пункт"' 
+                      : 'Укажите адрес доставки для курьера'}
                   </Form.Text>
                 </Form.Group>
               </Col>
@@ -857,6 +961,14 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
               </Button>
             </div>
           </Form>
+
+          {/* Модальное окно выбора пункта выдачи BoxBerry */}
+          <BoxberryPickupModal
+            show={showBoxberryModal}
+            onHide={() => setShowBoxberryModal(false)}
+            onPickupPointSelected={handlePickupPointSelected}
+            selectedAddress={formData.delivery_address}
+          />
     </Container>
   );
 };

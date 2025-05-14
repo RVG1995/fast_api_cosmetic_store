@@ -662,9 +662,22 @@ async def create_order_admin(
                 missing_digits = 12 - len(phone)
                 if missing_digits > 0:
                     phone = phone + '0' * missing_digits
-
+                    
+        # Проверяем тип доставки
+        if not order_data.delivery_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо выбрать способ доставки",
+            )
+            
+        # Для пунктов выдачи проверяем, что указан адрес пункта
+        if order_data.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not order_data.boxberry_point_address:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо указать адрес пункта выдачи",
+            )
+        
         # Преобразуем данные из AdminOrderCreate в OrderCreate
-
         create_data = OrderCreate(
             items=order_data.items,
             full_name=order_data.full_name,
@@ -673,7 +686,9 @@ async def create_order_admin(
             delivery_address=order_data.delivery_address,
             comment=order_data.comment,
             promo_code=promo_code,  # Используем обработанный промокод
-            personal_data_agreement=True  # Для админа всегда True
+            personal_data_agreement=True,  # Для админа всегда True
+            delivery_type=order_data.delivery_type,
+            boxberry_point_address=order_data.boxberry_point_address
         )
         
         # Проверяем наличие товаров

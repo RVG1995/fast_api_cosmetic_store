@@ -630,6 +630,10 @@ const AdminOrderDetail = () => {
   const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [updateData, setUpdateData] = useState({
+    delivery_type: '',
+    boxberry_point_address: ''
+  });
   
   // Загрузка деталей заказа и статусов
   useEffect(() => {
@@ -892,13 +896,13 @@ const AdminOrderDetail = () => {
     );
   }
   
-  // Если заказ не найден
+  // Если заказ всё ещё не загружен, показываем индикатор загрузки
   if (!order) {
     return (
-      <Container className="py-5">
-        <Alert variant="warning">
-          Заказ с ID {orderId} не найден
-        </Alert>
+      <Container className="py-5 text-center">
+        <Spinner animation="border" role="status">
+          <span className="visually-hidden">Загрузка данных заказа...</span>
+        </Spinner>
         <AdminBackButton 
           to="/admin/orders" 
           label="Вернуться к списку заказов" 
@@ -907,6 +911,24 @@ const AdminOrderDetail = () => {
       </Container>
     );
   }
+  
+  // Функция для форматирования типа доставки
+  const formatDeliveryType = (type) => {
+    if (!type) return 'Не указан';
+    
+    switch(type) {
+      case 'boxberry_pickup_point':
+        return 'Пункт выдачи BoxBerry';
+      case 'boxberry_courier':
+        return 'Курьер BoxBerry';
+      case 'cdek_pickup_point':
+        return 'Пункт выдачи СДЭК';
+      case 'cdek_courier':
+        return 'Курьер СДЭК';
+      default:
+        return type;
+    }
+  };
   
   return (
     <Container className="py-4">
@@ -1069,11 +1091,7 @@ const AdminOrderDetail = () => {
               <div className="mb-3">
                 <p>
                   <strong>Тип доставки:</strong>{' '}
-                  {order.delivery_type === 'boxberry' ? (
-                    <Badge bg="info">BoxBerry</Badge>
-                  ) : (
-                    <Badge bg="secondary">Стандартная доставка</Badge>
-                  )}
+                  {formatDeliveryType(order.delivery_type)}
                 </p>
                 
                 {/* Информация о пункте BoxBerry, если это доставка BoxBerry */}
@@ -1173,6 +1191,33 @@ const AdminOrderDetail = () => {
                     value={statusNote}
                     onChange={handleNoteChange}
                     placeholder="Добавьте примечание к изменению статуса"
+                  />
+                </Form.Group>
+                
+                <Form.Group className="mb-3">
+                  <Form.Label>Тип доставки</Form.Label>
+                  <Form.Select
+                    name="delivery_type"
+                    value={updateData.delivery_type || ''}
+                    onChange={(e) => setUpdateData({ ...updateData, delivery_type: e.target.value })}
+                  >
+                    <option value="" disabled>Выберите тип доставки</option>
+                    <option value="boxberry_courier">Курьер BoxBerry</option>
+                    <option value="boxberry_pickup_point">Пункт выдачи BoxBerry</option>
+                    <option value="cdek_courier">Курьер СДЭК</option>
+                    <option value="cdek_pickup_point">Пункт выдачи СДЭК</option>
+                  </Form.Select>
+                </Form.Group>
+                
+                <Form.Group className="mb-3">
+                  <Form.Label>Адрес пункта выдачи</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="boxberry_point_address"
+                    value={updateData.boxberry_point_address || ''}
+                    onChange={(e) => setUpdateData({ ...updateData, boxberry_point_address: e.target.value })}
+                    placeholder={updateData.delivery_type?.includes('pickup_point') ? 'Укажите адрес пункта выдачи' : 'Не требуется для курьерской доставки'}
+                    disabled={!updateData.delivery_type?.includes('pickup_point')}
                   />
                 </Form.Group>
                 

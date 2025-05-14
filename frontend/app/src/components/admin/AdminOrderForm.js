@@ -19,6 +19,8 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     promo_code: '',
     status_id: 1, // По умолчанию первый статус (обычно "Новый")
     is_paid: false,
+    delivery_type: '', // Убираем значение по умолчанию
+    boxberry_point_address: '',
     items: []
   });
 
@@ -361,6 +363,18 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
       return;
     }
     
+    // Проверка типа доставки
+    if (!formData.delivery_type) {
+      setError('Пожалуйста, выберите способ доставки');
+      return;
+    }
+    
+    // Для пунктов выдачи проверяем, что указан адрес
+    if (formData.delivery_type.includes('pickup_point') && !formData.boxberry_point_address) {
+      setError('Для выбранного способа доставки необходимо указать адрес пункта выдачи');
+      return;
+    }
+    
     try {
       setLoading(true);
       setError(null);
@@ -595,6 +609,44 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                     onChange={handleChange}
                     required
                   />
+                </Form.Group>
+              </Col>
+            </Row>
+            
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Способ доставки*</Form.Label>
+                  <Form.Select
+                    name="delivery_type"
+                    value={formData.delivery_type}
+                    onChange={handleChange}
+                    required
+                  >
+                    <option value="boxberry_courier">Курьер Boxberry</option>
+                    <option value="boxberry_pickup_point">Пункт выдачи Boxberry</option>
+                    <option value="cdek_courier">Курьер СДЭК</option>
+                    <option value="cdek_pickup_point">Пункт выдачи СДЭК</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Адрес пункта выдачи</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="boxberry_point_address"
+                    value={formData.boxberry_point_address}
+                    onChange={handleChange}
+                    placeholder={formData.delivery_type.includes('pickup_point') ? 'Укажите адрес пункта выдачи' : 'Не требуется для курьерской доставки'}
+                    disabled={!formData.delivery_type.includes('pickup_point')}
+                    required={formData.delivery_type.includes('pickup_point')}
+                  />
+                  <Form.Text className="text-muted">
+                    {formData.delivery_type.includes('pickup_point') 
+                      ? 'Обязательно укажите адрес пункта выдачи' 
+                      : 'Для курьерской доставки не требуется'}
+                  </Form.Text>
                 </Form.Group>
               </Col>
             </Row>

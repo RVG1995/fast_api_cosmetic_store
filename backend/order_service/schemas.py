@@ -90,10 +90,8 @@ class OrderCreate(BaseModel):
     comment: Optional[str] = None
     
     # Информация о типе доставки
-    delivery_type: str = Field("standard", description="Тип доставки: standard, boxberry")
-    boxberry_point_id: Optional[str] = Field(None, description="ID пункта выдачи BoxBerry")
-    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи BoxBerry")
-    boxberry_city_code: Optional[str] = Field(None, description="Код города BoxBerry")
+    delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
+    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
     
     # Поле для промокода
     promo_code: Optional[str] = Field(None, min_length=3, max_length=50)
@@ -196,6 +194,27 @@ class OrderCreate(BaseModel):
         
         return self
 
+    @field_validator('delivery_type')
+    def validate_delivery_type(cls, v):
+        """Валидирует тип доставки для создания заказа.
+        
+        Args:
+            v (str): Тип доставки для валидации
+            
+        Returns:
+            str: Валидный тип доставки
+            
+        Raises:
+            ValueError: Если тип доставки не соответствует допустимым значениям
+        """
+        if not v:
+            raise ValueError("Тип доставки обязателен. Выберите способ доставки")
+            
+        valid_types = ["boxberry_pickup_point", "boxberry_courier", "cdek_pickup_point", "cdek_courier"]
+        if v not in valid_types:
+            raise ValueError(f"Тип доставки должен быть одним из: {', '.join(valid_types)}")
+        return v
+
 class OrderStatusCreate(BaseModel):
     """Модель для создания статуса заказа."""
     name: str = Field(..., min_length=2, max_length=50)
@@ -239,10 +258,8 @@ class OrderUpdate(BaseModel):
     comment: Optional[str] = None
     
     # Информация о типе доставки
-    delivery_type: Optional[str] = Field(None, description="Тип доставки: standard, boxberry")
-    boxberry_point_id: Optional[str] = Field(None, description="ID пункта выдачи BoxBerry")
-    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи BoxBerry")
-    boxberry_city_code: Optional[str] = Field(None, description="Код города BoxBerry")
+    delivery_type: Optional[str] = Field(None, description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
+    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
     
     is_paid: Optional[bool] = None
     
@@ -268,6 +285,27 @@ class OrderUpdate(BaseModel):
         # Проверяем, что строка состоит только из цифр (кроме символа '+')
         if not all(c.isdigit() for c in v.replace('+', '')):
             raise ValueError('Телефон должен содержать только цифры')
+        return v
+
+    @field_validator('delivery_type')
+    def validate_delivery_type(cls, v):
+        """Валидирует тип доставки для обновления заказа.
+        
+        Args:
+            v (str): Тип доставки для валидации
+            
+        Returns:
+            str: Валидный тип доставки
+            
+        Raises:
+            ValueError: Если тип доставки не соответствует допустимым значениям
+        """
+        if v is None:
+            return v
+            
+        valid_types = ["boxberry_pickup_point", "boxberry_courier", "cdek_pickup_point", "cdek_courier"]
+        if v not in valid_types:
+            raise ValueError(f"Тип доставки должен быть одним из: {', '.join(valid_types)}")
         return v
 
 class OrderStatusUpdate(BaseModel):
@@ -407,10 +445,8 @@ class OrderResponse(BaseModel):
     comment: Optional[str] = None
     
     # Информация о типе доставки
-    delivery_type: str = Field("standard", description="Тип доставки: standard, boxberry")
-    boxberry_point_id: Optional[str] = None
+    delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_address: Optional[str] = None
-    boxberry_city_code: Optional[str] = None
     
     is_paid: bool
     personal_data_agreement: Optional[bool] = None
@@ -618,10 +654,8 @@ class AdminOrderCreate(BaseModel):
     comment: Optional[str] = None
     
     # Информация о типе доставки
-    delivery_type: str = Field("standard", description="Тип доставки: standard, boxberry")
-    boxberry_point_id: Optional[str] = Field(None, description="ID пункта выдачи BoxBerry")
-    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи BoxBerry")
-    boxberry_city_code: Optional[str] = Field(None, description="Код города BoxBerry")
+    delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
+    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
     
     # Поле для привязки к пользователю (опционально)
     user_id: Optional[int] = None
@@ -655,4 +689,25 @@ class AdminOrderCreate(BaseModel):
         # Проверяем, что строка состоит только из цифр (кроме символа '+')
         if not all(c.isdigit() for c in v.replace('+', '')):
             raise ValueError('Телефон должен содержать только цифры')
+        return v
+
+    @field_validator('delivery_type')
+    def validate_delivery_type(cls, v):
+        """Валидирует тип доставки для создания заказа администратором.
+        
+        Args:
+            v (str): Тип доставки для валидации
+            
+        Returns:
+            str: Валидный тип доставки
+            
+        Raises:
+            ValueError: Если тип доставки не соответствует допустимым значениям
+        """
+        if not v:
+            raise ValueError("Тип доставки обязателен. Выберите способ доставки")
+            
+        valid_types = ["boxberry_pickup_point", "boxberry_courier", "cdek_pickup_point", "cdek_courier"]
+        if v not in valid_types:
+            raise ValueError(f"Тип доставки должен быть одним из: {', '.join(valid_types)}")
         return v

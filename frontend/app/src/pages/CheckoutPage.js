@@ -44,6 +44,9 @@ const CheckoutPage = () => {
   const [isBoxberryDelivery, setIsBoxberryDelivery] = useState(false);
   const [boxberryCityCode, setBoxberryCityCode] = useState(null);
   
+  // Обновим состояние, убрав значение по умолчанию для типа доставки
+  const [deliveryType, setDeliveryType] = useState('');
+  
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
     // Если заказ успешно создан, не выполняем редирект даже при пустой корзине
@@ -187,9 +190,27 @@ const CheckoutPage = () => {
   // Обработчик отправки формы
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const form = e.currentTarget;
     
-    console.log("Форма отправляется, валидность:", form.checkValidity());
+    // Валидация формы
+    const form = e.currentTarget;
+    setValidated(true);
+    
+    if (!form.checkValidity()) {
+      e.stopPropagation();
+      return;
+    }
+    
+    // Проверяем, что выбран тип доставки
+    if (!deliveryType) {
+      alert('Пожалуйста, выберите способ доставки');
+      return;
+    }
+    
+    // Проверяем, что для пунктов выдачи указан адрес
+    if (deliveryType.includes('pickup_point') && !selectedPickupPoint) {
+      alert('Пожалуйста, выберите пункт выдачи');
+      return;
+    }
     
     // Дополнительная проверка обязательных полей
     const requiredFields = ["fullName", "phone", "delivery_address", "personalDataAgreement"];
@@ -215,72 +236,59 @@ const CheckoutPage = () => {
       return;
     }
     
-    // Проверка валидности формы
-    if (form.checkValidity() === false) {
-      e.stopPropagation();
-      setValidated(true);
-      console.log("Форма не валидна, проверьте все обязательные поля");
-      
-      // Вывод всех полей и их состояний валидности для отладки
-      console.log("Состояние полей формы:");
-      for (const key in formData) {
-        console.log(`${key}: '${formData[key]}', required: ${form.elements[key]?.required || false}`);
-      }
-      
-      return;
-    }
-    
-    setValidated(true);
-    
-    // Подготовка данных для заказа в новом формате
-    const orderData = {
-      items: cart.items.map(item => ({
-        product_id: item.product_id,
-        quantity: item.quantity
-      })),
-      full_name: formData.fullName,
-      email: formData.email,
-      phone: formData.phone,
-      delivery_address: formData.delivery_address,
-      comment: formData.comment || '',
-      personal_data_agreement: formData.personalDataAgreement,
-      promo_code: promoCode ? promoCode.code : undefined,
-      receive_notifications: !user ? formData.receiveNotifications : undefined, // Передаем только для неавторизованных пользователей
-      
-      // Информация о типе доставки
-      delivery_type: isBoxberryDelivery ? "boxberry" : "standard",
-      boxberry_point_id: isBoxberryDelivery && selectedPickupPoint ? selectedPickupPoint.Code : null,
-      boxberry_point_address: isBoxberryDelivery && selectedPickupPoint ? selectedPickupPoint.Address : null,
-      boxberry_city_code: isBoxberryDelivery && selectedPickupPoint ? boxberryCityCode : null
-    };
-    
-    // Логи состояния доставки BoxBerry
-    console.log("Состояние доставки BoxBerry:", {
-      isBoxberryDelivery,
-      selectedPickupPoint,
-      boxberryCityCode
-    });
-    
-    console.log("Отправляемые данные заказа:", orderData);
-    
     try {
+      // Подготовка данных для заказа в новом формате
+      const orderData = {
+        items: cart.items.map(item => ({
+          product_id: item.product.id,
+          quantity: item.quantity
+        })),
+        
+        // Данные покупателя
+        full_name: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        delivery_address: formData.delivery_address,
+        comment: formData.comment,
+        
+        // Информация о типе доставки
+        delivery_type: deliveryType,
+        boxberry_point_address: isBoxberryDelivery && selectedPickupPoint ? selectedPickupPoint.Address : null,
+        
+        // Промокод (если применен)
+        promo_code: promoCode ? promoCode.code : null,
+        
+        // Соглашения
+        personal_data_agreement: formData.personalDataAgreement,
+        receive_notifications: formData.receiveNotifications
+      };
+      
+      console.log("Отправляемые данные заказа:", orderData);
+      
       // Отправка заказа
       console.log("Начинаем создание заказа...");
-      const result = await createOrder(orderData);
-      console.log("Результат создания заказа:", result);
       
-      if (result) {
-        console.log("Заказ успешно создан с ID:", result.id);
+      // Отправка заказа на бэкенд
+      const response = await axios.post(
+        `${API_URLS.ORDER_SERVICE}/orders`,
+        orderData,
+        { withCredentials: true }
+      );
+      
+      console.log("Заказ успешно создан:", response.data);
+      
+      if (response.data) {
+        console.log("Заказ успешно создан с ID:", response.data.id);
         // Создаем номер заказа в формате "ID-ГОД" из даты создания заказа
         let orderYear;
-        if (result.created_at) {
+        if (response.data.created_at) {
           // Используем год из даты создания заказа
-          orderYear = new Date(result.created_at).getFullYear();
+          orderYear = new Date(response.data.created_at).getFullYear();
         } else {
           // Если дата создания недоступна, используем текущий год
           orderYear = new Date().getFullYear();
         }
-        const formattedOrderNumber = `${result.id}-${orderYear}`;
+        const formattedOrderNumber = `${response.data.id}-${orderYear}`;
         
         // Сразу очищаем корзину после успешного создания заказа
         console.log("Очищаем корзину после создания заказа");
@@ -432,19 +440,94 @@ const CheckoutPage = () => {
                   </Col>
                 </Row>
                 
-                {/* Опция выбора доставки в пункт выдачи BoxBerry */}
-                <Form.Group className="mb-3">
-                  <Form.Check
-                    type="checkbox"
-                    id="isBoxberryDelivery"
-                    name="isBoxberryDelivery"
-                    checked={isBoxberryDelivery}
-                    onChange={handleChange}
-                    label="Доставка в пункт выдачи BoxBerry"
-                  />
-                </Form.Group>
+                {/* В форме заказа добавим радиокнопки для выбора доставки */}
+                <div className="delivery-options-container">
+                  <div className="delivery-options-title">Способ доставки<span className="text-danger">*</span></div>
+                  
+                  <div className={`delivery-option ${deliveryType === 'boxberry_courier' ? 'selected' : ''}`}>
+                    <input
+                      className="form-check-input"
+                      type="radio"
+                      name="deliveryType"
+                      id="boxberry_courier"
+                      value="boxberry_courier"
+                      checked={deliveryType === 'boxberry_courier'}
+                      onChange={(e) => {
+                        setDeliveryType(e.target.value);
+                        setIsBoxberryDelivery(false);
+                      }}
+                      required
+                    />
+                    <label className="form-check-label" htmlFor="boxberry_courier">
+                      Курьер BoxBerry
+                    </label>
+                  </div>
+                  
+                  <div className={`delivery-option ${deliveryType === 'boxberry_pickup_point' ? 'selected' : ''}`}>
+                    <input
+                      className="form-check-input"
+                      type="radio"
+                      name="deliveryType"
+                      id="boxberry_pickup_point"
+                      value="boxberry_pickup_point"
+                      checked={deliveryType === 'boxberry_pickup_point'}
+                      onChange={(e) => {
+                        setDeliveryType(e.target.value);
+                        setIsBoxberryDelivery(true);
+                      }}
+                      required
+                    />
+                    <label className="form-check-label" htmlFor="boxberry_pickup_point">
+                      Пункт выдачи BoxBerry
+                    </label>
+                  </div>
+                  
+                  <div className={`delivery-option ${deliveryType === 'cdek_courier' ? 'selected' : ''}`}>
+                    <input
+                      className="form-check-input"
+                      type="radio"
+                      name="deliveryType"
+                      id="cdek_courier"
+                      value="cdek_courier"
+                      checked={deliveryType === 'cdek_courier'}
+                      onChange={(e) => {
+                        setDeliveryType(e.target.value);
+                        setIsBoxberryDelivery(false);
+                      }}
+                      required
+                    />
+                    <label className="form-check-label" htmlFor="cdek_courier">
+                      Курьер СДЭК
+                    </label>
+                  </div>
+                  
+                  <div className={`delivery-option ${deliveryType === 'cdek_pickup_point' ? 'selected' : ''}`}>
+                    <input
+                      className="form-check-input"
+                      type="radio"
+                      name="deliveryType"
+                      id="cdek_pickup_point"
+                      value="cdek_pickup_point"
+                      checked={deliveryType === 'cdek_pickup_point'}
+                      onChange={(e) => {
+                        setDeliveryType(e.target.value);
+                        setIsBoxberryDelivery(false);
+                      }}
+                      required
+                    />
+                    <label className="form-check-label" htmlFor="cdek_pickup_point">
+                      Пункт выдачи СДЭК
+                    </label>
+                  </div>
+                  
+                  {deliveryType === '' && validated && (
+                    <div className="delivery-error">
+                      Пожалуйста, выберите способ доставки
+                    </div>
+                  )}
+                </div>
                 
-                {/* Кнопка выбора пункта выдачи BoxBerry */}
+                {/* Опция выбора доставки в пункт выдачи BoxBerry */}
                 {isBoxberryDelivery && (
                   <div className="mb-3">
                     <Button 

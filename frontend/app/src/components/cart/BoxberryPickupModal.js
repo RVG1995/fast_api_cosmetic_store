@@ -233,12 +233,8 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
   // Обработчик подтверждения выбора
   const handleConfirm = () => {
     if (selectedPoint) {
-      // Добавляем код города в объект пункта выдачи, если он не существует
-      const pointWithCityCode = {
-        ...selectedPoint,
-        CityCode: cityCode // Добавляем код города в объект пункта выдачи
-      };
-      onPickupPointSelected(pointWithCityCode);
+      // Отправляем выбранный пункт выдачи в родительский компонент
+      onPickupPointSelected(selectedPoint);
       onHide();
     }
   };

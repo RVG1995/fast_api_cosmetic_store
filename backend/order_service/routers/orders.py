@@ -79,6 +79,20 @@ async def create_new_order(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Товары с ID {unavailable_products} недоступны для заказа",
             )
+            
+        # Проверяем тип доставки
+        if not order_data.delivery_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо выбрать способ доставки",
+            )
+            
+        # Для пунктов выдачи проверяем, что указан адрес пункта
+        if order_data.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not order_data.boxberry_point_address:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо указать адрес пункта выдачи",
+            )
         
         # Создаем заказ
         order = await create_order(
@@ -541,6 +555,7 @@ async def reorder_endpoint(
                 quantity=item.quantity
             ))
         
+        # Создаем данные для нового заказа, сохраняя настройки доставки
         new_order_data = OrderCreate(
             full_name=original_order.full_name,
             email=original_order.email,
@@ -548,8 +563,24 @@ async def reorder_endpoint(
             delivery_address=original_order.delivery_address,
             comment=f"Повторный заказ на основе заказа #{original_order.id}",
             personal_data_agreement=personal_data_agreement,
-            items=order_items
+            items=order_items,
+            delivery_type=original_order.delivery_type,
+            boxberry_point_address=original_order.boxberry_point_address
         )
+        
+        # Проверяем тип доставки
+        if not new_order_data.delivery_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо выбрать способ доставки"
+            )
+        
+        # Для пунктов выдачи проверяем, что указан адрес пункта
+        if new_order_data.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not new_order_data.boxberry_point_address:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо указать адрес пункта выдачи"
+            )
         
         # Создаем новый заказ
         new_order = await create_order(

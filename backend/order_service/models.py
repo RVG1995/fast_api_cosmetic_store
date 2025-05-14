@@ -95,10 +95,8 @@ class OrderModel(Base):
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Информация о типе доставки
-    delivery_type: Mapped[str] = mapped_column(String(50), nullable=False, default="standard")  # standard, boxberry
-    boxberry_point_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # ID пункта выдачи BoxBerry
+    delivery_type: Mapped[str] = mapped_column(String(50), nullable=False, default="boxberry_pickup_point")  # boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier
     boxberry_point_address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Адрес пункта выдачи
-    boxberry_city_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Код города BoxBerry
     
     is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     

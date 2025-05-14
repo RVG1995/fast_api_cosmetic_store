@@ -325,6 +325,24 @@ const OrderDetailPage = () => {
     }
   };
   
+  // Формат типа доставки
+  const formatDeliveryType = (type) => {
+    if (!type) return 'Не указан';
+    
+    switch(type) {
+      case 'boxberry_pickup_point':
+        return 'Пункт выдачи BoxBerry';
+      case 'boxberry_courier':
+        return 'Курьер BoxBerry';
+      case 'cdek_pickup_point':
+        return 'Пункт выдачи СДЭК';
+      case 'cdek_courier':
+        return 'Курьер СДЭК';
+      default:
+        return type;
+    }
+  };
+  
   // Отображение загрузки
   if (loading && !order) {
     return (
@@ -550,30 +568,21 @@ const OrderDetailPage = () => {
                 </p>
               </div>
               
-              {/* Информация о типе доставки */}
-              <div className="mt-3">
-                <h5>Способ доставки</h5>
-                <div className="delivery-type-item">
-                  <span className="delivery-type-label">Тип доставки:</span>
-                  <span className="delivery-type-value">
-                    {order.delivery_type === "boxberry" ? (
-                      <Badge bg="info">BoxBerry</Badge>
-                    ) : (
-                      <Badge bg="secondary">Стандартная доставка</Badge>
-                    )}
-                  </span>
+              {/* Информация о доставке */}
+              <h5 className="section-title mt-4">Информация о доставке</h5>
+              <div className="mb-3 delivery-info">
+                <div className="detail-field">
+                  <span className="detail-label">Способ доставки:</span>
+                  <span className="detail-value">{formatDeliveryType(order.delivery_type)}</span>
                 </div>
-                
-                {/* Информация о пункте выдачи BoxBerry */}
-                {order.delivery_type === "boxberry" && order.boxberry_point_address && (
-                  <div className="boxberry-info mt-2">
-                    <div className="boxberry-label">Пункт выдачи BoxBerry:</div>
-                    <div className="boxberry-address">{order.boxberry_point_address}</div>
-                    {order.boxberry_point_id && (
-                      <div className="boxberry-id">
-                        <small>Код пункта: {order.boxberry_point_id}</small>
-                      </div>
-                    )}
+                <div className="detail-field">
+                  <span className="detail-label">Адрес доставки:</span>
+                  <span className="detail-value">{order.delivery_address}</span>
+                </div>
+                {order.boxberry_point_address && (
+                  <div className="detail-field">
+                    <span className="detail-label">Адрес пункта выдачи:</span>
+                    <span className="detail-value">{order.boxberry_point_address}</span>
                   </div>
                 )}
               </div>

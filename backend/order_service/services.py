@@ -45,6 +45,16 @@ async def create_order(
         logger.error("Не найден статус заказа по умолчанию")
         raise ValueError("Не найден статус заказа по умолчанию")
     
+    # Проверяем, что указан тип доставки
+    if not order_data.delivery_type:
+        logger.error("Не указан способ доставки")
+        raise ValueError("Необходимо выбрать способ доставки")
+    
+    # Для пунктов выдачи проверяем, что указан адрес пункта
+    if order_data.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not order_data.boxberry_point_address:
+        logger.error("Не указан адрес пункта выдачи")
+        raise ValueError("Необходимо указать адрес пункта выдачи")
+    
     # Получаем информацию о товарах
     product_ids = [item.product_id for item in order_data.items]
     products_info = await get_products_info(product_ids)
@@ -116,11 +126,9 @@ async def create_order(
         is_paid=False,
         personal_data_agreement=order_data.personal_data_agreement,
         receive_notifications=order_data.receive_notifications,
-        # Добавляем поля для BoxBerry
-        delivery_type=order_data.delivery_type if hasattr(order_data, 'delivery_type') else "standard",
-        boxberry_point_id=order_data.boxberry_point_id if hasattr(order_data, 'boxberry_point_id') else None,
+        # Данные о доставке
+        delivery_type=order_data.delivery_type,
         boxberry_point_address=order_data.boxberry_point_address if hasattr(order_data, 'boxberry_point_address') else None,
-        boxberry_city_code=order_data.boxberry_city_code if hasattr(order_data, 'boxberry_city_code') else None
     )
     session.add(order)
     await session.flush()

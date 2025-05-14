@@ -58,10 +58,12 @@ class Settings(BaseSettings):
     RABBITMQ_PASS: str = "password"
 
     BOXBERRY_TOKEN: str = ""
+    BOXBERRY_COUNTRY_RUSSIA_CODE: str = "643"
+    BOXBERRY_API_URL: str = "https://api.boxberry.ru/json.php"
+    BOXBERRY_CACHE_TTL: int = 86400 
 
     # Настройки DaData API
     DADATA_TOKEN: str = ""
-    DADATA_API_KEY: str = ""
     DADATA_API_URL: str = "https://suggestions.dadata.ru/suggestions/api/4_1/rs"
     DADATA_CACHE_TTL: int = 86400
     

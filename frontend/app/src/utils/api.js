@@ -26,6 +26,7 @@ const productApi = createApiInstance(API_URLS.PRODUCT_SERVICE);
 const cartApi = createApiInstance(API_URLS.CART_SERVICE);
 const orderApi = createApiInstance(API_URLS.ORDER_SERVICE);
 const reviewApi = createApiInstance(API_URLS.REVIEW_SERVICE);
+const deliveryApi = createApiInstance(API_URLS.DELIVERY_SERVICE);
 
 // Интерцептор для обработки ошибок и отладки
 const setupInterceptors = (api, serviceName) => {
@@ -98,6 +99,7 @@ setupInterceptors(productApi, 'Product');
 setupInterceptors(cartApi, 'Cart');
 setupInterceptors(orderApi, 'Order');
 setupInterceptors(reviewApi, 'Review');
+setupInterceptors(deliveryApi, 'Delivery');
 
 // API для работы с аутентификацией
 export const authAPI = {
@@ -1116,6 +1118,65 @@ export const reviewAPI = {
   }
 };
 
+// API для работы с доставкой
+export const deliveryAPI = {
+  // Расчет стоимости доставки для корзины товаров
+  calculateDeliveryFromCart: async (data) => {
+    try {
+      console.log('Вызов API calculateDeliveryFromCart с данными:', data);
+      const response = await deliveryApi.post('/delivery/boxberry/calculate-from-cart', data);
+      console.log('API calculateDeliveryFromCart ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API calculateDeliveryFromCart:', error);
+      throw error;
+    }
+  },
+  
+  // Получение городов Boxberry
+  getBoxberryCities: async () => {
+    try {
+      console.log('Вызов API getBoxberryCities');
+      const response = await deliveryApi.get('/delivery/boxberry/cities');
+      console.log('API getBoxberryCities ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API getBoxberryCities:', error);
+      throw error;
+    }
+  },
+  
+  // Получение пунктов выдачи Boxberry для города
+  getBoxberryPickupPoints: async (cityCode) => {
+    try {
+      console.log(`Вызов API getBoxberryPickupPoints для города ${cityCode}`);
+      const response = await deliveryApi.get(`/delivery/boxberry/pickup-points`, {
+        params: { city_code: cityCode }
+      });
+      console.log('API getBoxberryPickupPoints ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API getBoxberryPickupPoints:', error);
+      throw error;
+    }
+  },
+  
+  // Поиск кода города Boxberry по названию
+  findBoxberryCityCode: async (cityName) => {
+    try {
+      console.log(`Вызов API findBoxberryCityCode для города ${cityName}`);
+      const response = await deliveryApi.get(`/delivery/boxberry/find-city-code`, {
+        params: { city_name: cityName }
+      });
+      console.log('API findBoxberryCityCode ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API findBoxberryCityCode:', error);
+      throw error;
+    }
+  }
+};
+
 // Экспортируем все API и инстансы для возможного прямого использования
 const apiExports = {
   authApi,
@@ -1131,7 +1192,8 @@ const apiExports = {
   productAPI,
   cartAPI,
   cartService,
-  reviewAPI
+  reviewAPI,
+  deliveryAPI
 };
 
 export default apiExports; 

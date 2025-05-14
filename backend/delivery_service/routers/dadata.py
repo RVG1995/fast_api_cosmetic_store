@@ -19,10 +19,6 @@ router = APIRouter(
     responses={400: {"description": "Bad Request"}, 500: {"description": "Server Error"}}
 )
 
-HEADERS = {
-    "Authorization": f"Token {settings.DADATA_TOKEN}",
-    "Content-Type": "application/json"
-}
 
 def normalize_obj(obj):
     """Нормализует объект для кэширования (приводит к нижнему регистру и сортирует ключи)."""

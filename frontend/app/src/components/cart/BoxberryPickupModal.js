@@ -233,6 +233,8 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
   // Обработчик подтверждения выбора
   const handleConfirm = () => {
     if (selectedPoint) {
+      console.log('Подтверждаем выбор пункта выдачи:', selectedPoint);
+      
       // Отправляем выбранный пункт выдачи в родительский компонент
       onPickupPointSelected(selectedPoint);
       onHide();

@@ -10,7 +10,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import setup_database
 from database import engine
-from routers.orders import router as orders_router, admin_router as orders_admin_router
+from routers.orders import router as orders_router
+from routers.service_router import router as service_orders_router
+from routers.admin_router import router as orders_admin_router
 from routers.order_statuses import router as order_statuses_router
 from routers.promo_codes import router as promo_codes_router, admin_router as promo_codes_admin_router
 from cache import close_redis, cache_service
@@ -79,6 +81,7 @@ app.add_middleware(
 # Подключение роутеров
 app.include_router(orders_router)
 app.include_router(orders_admin_router)
+app.include_router(service_orders_router)
 app.include_router(order_statuses_router)
 app.include_router(promo_codes_router)
 app.include_router(promo_codes_admin_router)

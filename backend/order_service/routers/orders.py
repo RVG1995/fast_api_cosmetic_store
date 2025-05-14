@@ -544,9 +544,6 @@ async def reorder_endpoint(
                 detail=f"Товары с ID {unavailable_products} больше недоступны для заказа"
             )
         
-        # Получаем информацию о товарах
-        products_info = await get_products_info(product_ids, token)
-        
         # Преобразуем товары в формат для создания заказа
         order_items = []
         for item in original_order.items:

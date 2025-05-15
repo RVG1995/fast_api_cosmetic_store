@@ -701,7 +701,9 @@ async def create_order_admin(
             promo_code=promo_code,  # Используем обработанный промокод
             personal_data_agreement=True,  # Для админа всегда True
             delivery_type=order_data.delivery_type,
-            boxberry_point_address=order_data.boxberry_point_address
+            boxberry_point_address=order_data.boxberry_point_address,
+            delivery_cost=order_data.delivery_cost,  # Добавляем стоимость доставки
+            is_payment_on_delivery=order_data.is_payment_on_delivery  # Добавляем флаг оплаты при получении
         )
         
         # Проверяем наличие товаров

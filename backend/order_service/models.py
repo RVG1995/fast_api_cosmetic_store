@@ -97,6 +97,10 @@ class OrderModel(Base):
     # Информация о типе доставки
     delivery_type: Mapped[str] = mapped_column(String(50), nullable=False, default="boxberry_pickup_point")  # boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier
     boxberry_point_address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Адрес пункта выдачи
+    delivery_cost: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Стоимость доставки
+    
+    # Информация о способе оплаты
+    is_payment_on_delivery: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # Оплата при получении
     
     is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     

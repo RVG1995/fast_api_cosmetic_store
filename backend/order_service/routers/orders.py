@@ -61,6 +61,8 @@ async def create_new_order(
     """
     try:
         logger.info("Получен запрос на создание заказа: %s", order_data)
+        logger.info("Поля запроса: %s", order_data.model_dump().keys())
+        logger.info("Стоимость доставки: %s", order_data.delivery_cost if hasattr(order_data, 'delivery_cost') else None)
         
         # Получаем ID пользователя из токена (если пользователь авторизован)
         user_id = current_user.get("user_id") if current_user else None

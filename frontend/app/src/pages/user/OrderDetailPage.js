@@ -486,6 +486,12 @@ const OrderDetailPage = () => {
                   ))}
                 </tbody>
                 <tfoot>
+                {order.delivery_cost !== null && order.delivery_cost !== undefined && (
+                    <tr>
+                      <td colSpan="3" className="text-end">Стоимость доставки:</td>
+                      <td className="text-end">{formatPrice(order.delivery_cost)}</td>
+                    </tr>
+                  )}
                   <tr>
                     <td colSpan="3" className="text-end fw-bold">Итого:</td>
                     <td className="text-end fw-bold order-total-price">
@@ -582,6 +588,13 @@ const OrderDetailPage = () => {
                     <span className="detail-value">{order.boxberry_point_address}</span>
                   </div>
                 )}
+                
+                <div className="detail-field mb-2">
+                  <span className="detail-label">Способ оплаты:</span>
+                  <span className="detail-value">
+                    {order.is_payment_on_delivery ? 'Оплата при получении' : 'Оплата на сайте'}
+                  </span>
+                </div>
               </div>
               
               <h5 className="section-title">Контактная информация</h5>

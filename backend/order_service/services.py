@@ -129,6 +129,9 @@ async def create_order(
         # Данные о доставке
         delivery_type=order_data.delivery_type,
         boxberry_point_address=order_data.boxberry_point_address if hasattr(order_data, 'boxberry_point_address') else None,
+        delivery_cost=order_data.delivery_cost if hasattr(order_data, 'delivery_cost') else None,
+        # Данные о способе оплаты
+        is_payment_on_delivery=order_data.is_payment_on_delivery if hasattr(order_data, 'is_payment_on_delivery') else True,
     )
     session.add(order)
     await session.flush()
@@ -179,6 +182,11 @@ async def create_order(
             user_id=user_id,
         )
         session.add(promo_code_usage)
+    
+    # Добавляем стоимость доставки к общей сумме заказа
+    if hasattr(order_data, 'delivery_cost') and order_data.delivery_cost:
+        total_price += order_data.delivery_cost
+        logger.info(f"Добавлена стоимость доставки {order_data.delivery_cost} к заказу, итоговая сумма: {total_price}")
     
     # Обновляем общую стоимость заказа и скидку
     order.total_price = total_price

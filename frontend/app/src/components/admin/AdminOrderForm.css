@@ -40,4 +40,22 @@
 
 .empty-select-option {
   color: #6c757d;
+}
+
+.delivery-cost-display {
+  display: flex;
+  align-items: center;
+}
+
+.delivery-cost-display .form-control {
+  background-color: #f8f9fa;
+  font-weight: 500;
+}
+
+.delivery-cost-display .text-danger {
+  color: #dc3545;
+}
+
+.delivery-cost-display .text-muted {
+  color: #6c757d;
 } 

@@ -340,7 +340,7 @@ const CheckoutPage = () => {
         
         // Информация о типе доставки
         delivery_type: deliveryType,
-        delivery_cost: deliveryCost, // Добавляем стоимость доставки
+        delivery_cost: deliveryCost, // Важно! Передаем стоимость доставки
         is_payment_on_delivery: isPaymentOnDelivery, // Информация о способе оплаты
         
         // Данные для BoxBerry
@@ -356,6 +356,9 @@ const CheckoutPage = () => {
       };
       
       console.log('Отправка данных заказа:', orderData);
+      console.log('Ключи объекта orderData:', Object.keys(orderData));
+      console.log('Стоимость доставки (deliveryCost):', deliveryCost);
+      console.log('Стоимость доставки в объекте (orderData.delivery_cost):', orderData.delivery_cost);
       
       // Создаем заказ через контекст заказов
       const response = await createOrder(orderData);

@@ -8,6 +8,7 @@ import { API_URLS } from '../../utils/constants';
 import axios from 'axios';
 import BoxberryPickupModal from '../cart/BoxberryPickupModal';
 import './AdminOrderForm.css';
+import { deliveryAPI } from '../../utils/api';
 
 const AdminOrderForm = ({ onClose, onSuccess }) => {
   // Состояние формы
@@ -22,6 +23,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     status_id: 1, // По умолчанию первый статус (обычно "Новый")
     is_paid: false,
     delivery_type: '', // Убираем значение по умолчанию
+    is_payment_on_delivery: true, // По умолчанию - оплата при получении
     items: []
   });
 
@@ -56,6 +58,12 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   const [addressOptions, setAddressOptions] = useState([]);
   const [selectedPickupPoint, setSelectedPickupPoint] = useState(null);
   
+  // Состояния для доставки
+  const [deliveryCost, setDeliveryCost] = useState(0);
+  const [calculatingDelivery, setCalculatingDelivery] = useState(false);
+  const [deliveryError, setDeliveryError] = useState(null);
+  const [deliveryPeriod, setDeliveryPeriod] = useState(0);
+
   // Получаем методы из контекста заказов
   const { getOrderStatuses, createAdminOrder, checkPromoCode, calculateDiscount } = useOrders();
 
@@ -403,6 +411,94 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     }
   };
 
+  // Функция для расчета стоимости доставки
+  const calculateDeliveryCost = async () => {
+    // Если нет выбранного типа доставки или товаров, не выполняем расчет
+    if (!formData.delivery_type || formData.items.length === 0) {
+      setDeliveryCost(0);
+      setDeliveryPeriod(0);
+      return;
+    }
+    
+    // Проверяем наличие необходимых данных для расчета
+    if (formData.delivery_type === 'boxberry_pickup_point') {
+      // Обязательно нужен выбранный пункт
+      if (!selectedPickupPoint) {
+        console.log('Не хватает данных для расчета: не выбран пункт выдачи');
+        return;
+      }
+    }
+    
+    try {
+      setCalculatingDelivery(true);
+      setDeliveryError(null);
+      
+      // Формируем предположительные данные о товарах для расчета
+      const cartItems = formData.items.map(item => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price: item.price,
+        weight: 500, // Используем 500г по умолчанию
+        height: 10,  // Используем 10см по умолчанию
+        width: 10,   // Используем 10см по умолчанию
+        depth: 10    // Используем 10см по умолчанию
+      }));
+      
+      // Данные для отправки на сервер
+      const deliveryData = {
+        items: cartItems,
+        delivery_type: formData.delivery_type,
+        is_payment_on_delivery: formData.is_payment_on_delivery
+      };
+      
+      // Если выбран пункт выдачи BoxBerry, добавляем его код
+      if (formData.delivery_type === 'boxberry_pickup_point' && selectedPickupPoint) {
+        deliveryData.pvz_code = selectedPickupPoint.Code;
+      }
+      
+      console.log('Отправляем запрос на расчет доставки:', deliveryData);
+      
+      // Вызываем API для расчета стоимости доставки
+      const result = await deliveryAPI.calculateDeliveryFromCart(deliveryData);
+      
+      // Устанавливаем полученную стоимость доставки
+      setDeliveryCost(result.price);
+      setDeliveryPeriod(result.delivery_period);
+      console.log('Рассчитана стоимость доставки:', result.price);
+      console.log('Срок доставки (дней):', result.delivery_period);
+      
+    } catch (err) {
+      console.error('Ошибка при расчете стоимости доставки:', err);
+      setDeliveryError('Не удалось рассчитать стоимость доставки');
+      setDeliveryCost(0);
+    } finally {
+      setCalculatingDelivery(false);
+    }
+  };
+
+  // Функция для склонения слова "день" в зависимости от числа
+  const getDeliveryPeriodText = (days) => {
+    const cases = [2, 0, 1, 1, 1, 2];
+    const titles = ['день', 'дня', 'дней'];
+    
+    if (days % 100 > 4 && days % 100 < 20) {
+      return titles[2];
+    } else {
+      return titles[cases[Math.min(days % 10, 5)]];
+    }
+  };
+  
+  // Вызываем расчет стоимости доставки при изменении типа доставки, пункта выдачи, способа оплаты, или товаров
+  useEffect(() => {
+    console.log('Изменились параметры для расчета доставки:', { 
+      deliveryType: formData.delivery_type, 
+      selectedPoint: selectedPickupPoint?.Code,
+      isPaymentOnDelivery: formData.is_payment_on_delivery,
+      itemsCount: formData.items.length
+    });
+    calculateDeliveryCost();
+  }, [formData.delivery_type, selectedPickupPoint, formData.is_payment_on_delivery, formData.items]);
+
   // Обработчик выбора пункта выдачи BoxBerry
   const handlePickupPointSelected = (point) => {
     setSelectedPickupPoint(point);
@@ -410,6 +506,9 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
       ...formData,
       delivery_address: point.Address
     });
+    
+    // Вызываем расчет доставки
+    calculateDeliveryCost();
   };
 
   // Проверка, является ли выбранный способ доставки пунктом выдачи
@@ -430,6 +529,10 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
       ...formData,
       delivery_type: value
     });
+    
+    // Обнуляем стоимость доставки при изменении типа
+    setDeliveryCost(0);
+    setDeliveryPeriod(0);
   };
 
   // Обработчик отправки формы
@@ -467,7 +570,9 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
       const orderData = {
         ...formData,
         status_id: parseInt(formData.status_id, 10),
-        is_paid: Boolean(formData.is_paid)
+        is_paid: Boolean(formData.is_paid),
+        delivery_cost: deliveryCost, // Используем рассчитанную стоимость доставки
+        is_payment_on_delivery: Boolean(formData.is_payment_on_delivery)
       };
       
       // Если тип доставки - пункт выдачи, копируем адрес доставки в поле boxberry_point_address
@@ -705,52 +810,102 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                   </Form.Select>
                 </Form.Group>
               </Col>
+
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Адрес доставки*</Form.Label>
-                  <div className="d-flex">
-                    <div className="position-relative flex-grow-1">
-                      <Form.Control
-                        type="text"
-                        name="delivery_address"
-                        value={formData.delivery_address}
-                        onChange={isPickupPoint ? undefined : handleAddressChange}
-                        required
-                        autoComplete="off"
-                        readOnly={isPickupPoint}
-                        className={isPickupPoint ? "bg-light" : ""}
-                      />
-                      {!isPickupPoint && addressOptions.length > 0 && (
-                        <div className="position-absolute start-0 w-100 shadow bg-white rounded z-index-1000" style={{ zIndex: 1000 }}>
-                          <ul className="list-group suggestions-list">
-                            {addressOptions.map((address, index) => (
-                              <li
-                                key={index}
-                                className="list-group-item list-group-item-action suggestion-item"
-                                onClick={() => handleSelectAddress(address)}
-                              >
-                                {address.value}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                    {formData.delivery_type === 'boxberry_pickup_point' && (
-                      <Button 
-                        variant="outline-primary"
-                        onClick={() => setShowBoxberryModal(true)}
-                        className="ms-2"
-                      >
-                        Выбрать пункт
-                      </Button>
+                  <div className="position-relative">
+                    <Form.Control
+                      type="text"
+                      name="delivery_address"
+                      value={formData.delivery_address}
+                      onChange={handleAddressChange}
+                      disabled={isPickupPoint && selectedPickupPoint}
+                      required
+                    />
+                    {addressOptions.length > 0 && (
+                      <div className="position-absolute start-0 w-100 shadow bg-white rounded z-index-1000" style={{ zIndex: 1000 }}>
+                        <ul className="list-group">
+                          {addressOptions.map((address, index) => (
+                            <li
+                              key={index}
+                              className="list-group-item list-group-item-action"
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => handleSelectAddress(address)}
+                            >
+                              {address.value}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
                   <Form.Text className="text-muted">
                     {isPickupPoint 
-                      ? 'Для пункта выдачи адрес выбирается через кнопку "Выбрать пункт"' 
+                      ? 'Для пункта выдачи адрес будет заполнен автоматически при выборе пункта' 
                       : 'Укажите адрес доставки для курьера'}
                   </Form.Text>
+                </Form.Group>
+              </Col>
+            </Row>
+            
+            {/* Отображение кнопки выбора пунктов выдачи в отдельном блоке */}
+            {isPickupPoint && (
+              <Row className="mb-3">
+                <Col md={12}>
+                  <Button 
+                    variant="outline-primary" 
+                    onClick={() => setShowBoxberryModal(true)}
+                    className="d-block mb-2"
+                  >
+                    {selectedPickupPoint ? "Изменить пункт выдачи" : "Выбрать пункт выдачи BoxBerry"}
+                  </Button>
+                  {selectedPickupPoint && (
+                    <div className="p-2 border rounded bg-light">
+                      <p className="mb-1"><strong>{selectedPickupPoint.Name}</strong></p>
+                      <p className="mb-1 small">{selectedPickupPoint.Address}</p>
+                      <p className="mb-0 small text-muted">График работы: {selectedPickupPoint.WorkShedule}</p>
+                    </div>
+                  )}
+                </Col>
+              </Row>
+            )}
+            
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Стоимость доставки</Form.Label>
+                  <div className="delivery-cost-display">
+                    {!formData.delivery_type ? (
+                      <span className="form-control text-muted">0 ₽</span>
+                    ) : calculatingDelivery ? (
+                      <div className="form-control d-flex align-items-center">
+                        <Spinner animation="border" size="sm" className="me-2" />
+                        <span>Расчет...</span>
+                      </div>
+                    ) : deliveryError ? (
+                      <span className="form-control text-danger">Не удалось рассчитать</span>
+                    ) : (
+                      <span className="form-control">{formatPrice(deliveryCost)} ₽</span>
+                    )}
+                  </div>
+                  {formData.delivery_type && !calculatingDelivery && !deliveryError && deliveryPeriod > 0 && (
+                    <Form.Text className="text-muted">
+                      Срок доставки: {deliveryPeriod} {getDeliveryPeriodText(deliveryPeriod)}
+                    </Form.Text>
+                  )}
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group className="mb-3 mt-2">
+                  <Form.Check
+                    type="checkbox"
+                    id="is_payment_on_delivery"
+                    name="is_payment_on_delivery"
+                    label="Оплата при получении"
+                    checked={formData.is_payment_on_delivery}
+                    onChange={handleChange}
+                  />
                 </Form.Group>
               </Col>
             </Row>
@@ -879,7 +1034,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <th colSpan="3">Итого:</th>
+                      <th colSpan="3">Итого товары:</th>
                       <th>
                         {appliedPromoCode && discountAmount > 0 ? (
                           <>
@@ -907,6 +1062,26 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                         <td></td>
                       </tr>
                     )}
+                    {deliveryCost > 0 && !calculatingDelivery && !deliveryError && (
+                      <tr>
+                        <td colSpan="3" className="text-end">
+                          <strong>Доставка:</strong>
+                        </td>
+                        <td>
+                          <strong>{formatPrice(deliveryCost)} ₽</strong>
+                        </td>
+                        <td></td>
+                      </tr>
+                    )}
+                    <tr>
+                      <td colSpan="3" className="text-end">
+                        <strong>Итого к оплате:</strong>
+                      </td>
+                      <td>
+                        <strong>{formatPrice(finalTotal + deliveryCost)} ₽</strong>
+                      </td>
+                      <td></td>
+                    </tr>
                   </tfoot>
                 </table>
               </div>

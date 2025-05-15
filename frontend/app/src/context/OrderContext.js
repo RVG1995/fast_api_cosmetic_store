@@ -236,6 +236,16 @@ export const OrderProvider = ({ children }) => {
         newOrderData.delivery_type = orderData.delivery_type;
       }
       
+      // Добавляем стоимость доставки
+      if (orderData.delivery_cost) {
+        newOrderData.delivery_cost = orderData.delivery_cost;
+      }
+      
+      // Добавляем информацию о способе оплаты
+      if (orderData.hasOwnProperty('is_payment_on_delivery')) {
+        newOrderData.is_payment_on_delivery = orderData.is_payment_on_delivery;
+      }
+      
       if (orderData.boxberry_point_id) {
         newOrderData.boxberry_point_id = orderData.boxberry_point_id;
       }
@@ -986,9 +996,22 @@ export const OrderProvider = ({ children }) => {
     setError(null);
     
     try {
+      // Преобразуем данные для отправки
+      const processedData = {
+        ...orderData,
+        items: orderData.items.map(item => ({
+          product_id: parseInt(item.product_id || item.product_id),
+          quantity: parseInt(item.quantity)
+        })),
+        // Добавляем корректную обработку стоимости доставки
+        delivery_cost: orderData.delivery_cost ? parseInt(orderData.delivery_cost) : null,
+        // Добавляем флаг способа оплаты
+        is_payment_on_delivery: Boolean(orderData.is_payment_on_delivery)
+      };
+      
       const response = await axios.post(
         `${ORDER_SERVICE_URL}/admin/orders`, 
-        orderData, 
+        processedData, 
         { withCredentials: true }
       );
       

@@ -93,6 +93,12 @@ class OrderCreate(BaseModel):
     delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
     
+    # Стоимость доставки
+    delivery_cost: Optional[int] = Field(None, description="Стоимость доставки")
+    
+    # Информация о способе оплаты
+    is_payment_on_delivery: Optional[bool] = Field(True, description="Оплата при получении")
+    
     # Поле для промокода
     promo_code: Optional[str] = Field(None, min_length=3, max_length=50)
 
@@ -447,6 +453,11 @@ class OrderResponse(BaseModel):
     # Информация о типе доставки
     delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_address: Optional[str] = None
+    boxberry_point_id: Optional[str] = None
+    delivery_cost: Optional[int] = None
+    
+    # Информация о способе оплаты
+    is_payment_on_delivery: Optional[bool] = True
     
     is_paid: bool
     personal_data_agreement: Optional[bool] = None
@@ -656,6 +667,12 @@ class AdminOrderCreate(BaseModel):
     # Информация о типе доставки
     delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
+    
+    # Стоимость доставки
+    delivery_cost: Optional[int] = Field(None, description="Стоимость доставки в рублях")
+    
+    # Информация о способе оплаты
+    is_payment_on_delivery: Optional[bool] = Field(True, description="Оплата при получении")
     
     # Поле для привязки к пользователю (опционально)
     user_id: Optional[int] = None

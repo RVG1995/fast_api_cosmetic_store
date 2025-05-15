@@ -1325,6 +1325,15 @@ const AdminOrderDetail = () => {
                     <p>
                       <strong>Адрес доставки:</strong> {order.delivery_address || "Не указан"}
                     </p>
+                    {order.delivery_cost !== null && order.delivery_cost !== undefined && (
+                      <p>
+                        <strong>Стоимость доставки:</strong> {formatPrice(order.delivery_cost)}
+                      </p>
+                    )}
+                    <p>
+                      <strong>Способ оплаты:</strong>{' '}
+                      {order.is_payment_on_delivery ? 'Оплата при получении' : 'Оплата на сайте'}
+                    </p>
                   </>
                 )}
               </div>

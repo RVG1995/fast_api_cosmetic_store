@@ -89,10 +89,19 @@ const CheckoutPage = () => {
   // Вычисляем итоговую сумму с учетом скидки и стоимости доставки
   const finalTotal = cartTotal - discountAmount + deliveryCost;
   
+  // Блокировка для предотвращения параллельных запросов
+  const [isCalculating, setIsCalculating] = useState(false);
+  
   // Функция для расчета стоимости доставки
   // Принимает параметр forcePaymentOnDelivery, который позволяет передать значение напрямую
   // вместо получения из состояния, которое может не успеть обновиться
   const calculateDeliveryCost = async (forcePaymentOnDelivery = null) => {
+    // Проверяем, нет ли уже запущенного расчета
+    if (isCalculating) {
+      console.log('Расчет доставки уже выполняется, запрос пропущен');
+      return;
+    }
+    
     // Используем параметр forcePaymentOnDelivery, если он передан, иначе берем из состояния
     const paymentOnDelivery = forcePaymentOnDelivery !== null ? forcePaymentOnDelivery : isPaymentOnDelivery;
     
@@ -144,6 +153,7 @@ const CheckoutPage = () => {
     }
     
     try {
+      setIsCalculating(true);
       setCalculatingDelivery(true);
       setDeliveryError(null);
       
@@ -205,6 +215,7 @@ const CheckoutPage = () => {
       setDeliveryCost(0);
     } finally {
       setCalculatingDelivery(false);
+      setIsCalculating(false);
     }
   };
   
@@ -359,10 +370,12 @@ const CheckoutPage = () => {
     
     // Обработка изменения способа оплаты
     if (name === 'paymentMethod') {
-      // Вызываем расчет с точным значением способа оплаты
-      calculateDeliveryCost(value === 'on_delivery');
-      // После расчета обновляем состояние
-      setIsPaymentOnDelivery(value === 'on_delivery');
+      const newPaymentOnDelivery = value === 'on_delivery';
+      // Вызываем расчет только если значение меняется
+      if (isPaymentOnDelivery !== newPaymentOnDelivery) {
+        calculateDeliveryCost(newPaymentOnDelivery);
+        setIsPaymentOnDelivery(newPaymentOnDelivery);
+      }
       return;
     }
     
@@ -833,10 +846,12 @@ const CheckoutPage = () => {
                   
                   <div className={`payment-option ${isPaymentOnDelivery ? 'selected' : ''}`}
                     onClick={() => {
-                      // Вызываем перерасчет доставки с точным значением
-                      calculateDeliveryCost(true);
-                      // После расчета делаем setState
-                      setIsPaymentOnDelivery(true);
+                      if (!isPaymentOnDelivery) {
+                        // Вызываем перерасчет доставки с точным значением только если значение меняется
+                        calculateDeliveryCost(true);
+                        // После расчета делаем setState
+                        setIsPaymentOnDelivery(true);
+                      }
                     }}>
                     <input
                       className="form-check-input"
@@ -844,11 +859,9 @@ const CheckoutPage = () => {
                       name="paymentMethod"
                       id="payment_on_delivery"
                       checked={isPaymentOnDelivery}
-                      onChange={() => {
-                        // Вызываем перерасчет доставки с точным значением
-                        calculateDeliveryCost(true);
-                        // После расчета делаем setState
-                        setIsPaymentOnDelivery(true);
+                      onChange={(e) => {
+                        // onChange срабатывает только при изменении через элемент формы
+                        // избегаем вызова здесь, так как onClick на родителе уже делает необходимые действия
                       }}
                       required
                     />
@@ -859,10 +872,12 @@ const CheckoutPage = () => {
                   
                   <div className={`payment-option ${!isPaymentOnDelivery ? 'selected' : ''}`}
                     onClick={() => {
-                      // Вызываем перерасчет доставки с точным значением
-                      calculateDeliveryCost(false);
-                      // После расчета делаем setState 
-                      setIsPaymentOnDelivery(false);
+                      if (isPaymentOnDelivery) {
+                        // Вызываем перерасчет доставки с точным значением только если значение меняется
+                        calculateDeliveryCost(false);
+                        // После расчета делаем setState 
+                        setIsPaymentOnDelivery(false);
+                      }
                     }}>
                     <input
                       className="form-check-input"
@@ -870,11 +885,9 @@ const CheckoutPage = () => {
                       name="paymentMethod"
                       id="payment_on_site"
                       checked={!isPaymentOnDelivery}
-                      onChange={() => {
-                        // Вызываем перерасчет доставки с точным значением
-                        calculateDeliveryCost(false);
-                        // После расчета делаем setState
-                        setIsPaymentOnDelivery(false);
+                      onChange={(e) => {
+                        // onChange срабатывает только при изменении через элемент формы
+                        // избегаем вызова здесь, так как onClick на родителе уже делает необходимые действия
                       }}
                       required
                     />

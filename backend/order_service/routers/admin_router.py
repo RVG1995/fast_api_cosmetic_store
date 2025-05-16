@@ -1412,11 +1412,11 @@ async def update_order_delivery_info(
                        order_id, order.is_payment_on_delivery)
         
         # Обновляем информацию о пункте выдачи BoxBerry
-        if "boxberry_point_id" in delivery_data and delivery_data["boxberry_point_id"] is not None:
-            order.boxberry_point_id = int(delivery_data["boxberry_point_id"])
+        if "boxberry_point_id" in delivery_data:
+            order.boxberry_point_id = int(delivery_data["boxberry_point_id"]) if delivery_data["boxberry_point_id"] is not None else None
             logger.info("Обновлен ID пункта выдачи BoxBerry для заказа %s: %s", order_id, order.boxberry_point_id)
         
-        if "boxberry_point_address" in delivery_data and delivery_data["boxberry_point_address"] is not None:
+        if "boxberry_point_address" in delivery_data:
             order.boxberry_point_address = delivery_data["boxberry_point_address"]
             logger.info("Обновлен адрес пункта выдачи BoxBerry для заказа %s: %s", order_id, order.boxberry_point_address)
         
@@ -1425,7 +1425,7 @@ async def update_order_delivery_info(
             order.boxberry_point_id = None
             order.boxberry_point_address = None
             order.boxberry_city_code = None
-            
+        
         # Если новый тип доставки - пункт выдачи BoxBerry, копируем адрес доставки в boxberry_point_address
         # Делаем это только если не указан явно адрес пункта выдачи
         if order.delivery_type == "boxberry_pickup_point" and "boxberry_point_address" not in delivery_data:

@@ -697,9 +697,12 @@ const AdminOrderDetail = () => {
     if (deliveryData.delivery_type === 'boxberry_courier' && suggestion.data.postal_code) {
       setTimeout(async () => {
         try {
+          setDeliveryLoading(true);
           await calculateDeliveryCostForUpdate();
         } catch (error) {
           console.error('Ошибка при расчете доставки после выбора адреса:', error);
+        } finally {
+          setDeliveryLoading(false);
         }
       }, 300);
     }
@@ -743,45 +746,6 @@ const AdminOrderDetail = () => {
     // Для курьерской доставки BoxBerry используем DaData
     if (deliveryData.delivery_type === 'boxberry_courier') {
       debouncedFetchAddressSuggestions(newAddress);
-    } else {
-      // Для других типов доставки - стандартное поведение
-      // Обновляем данные адреса
-      const addressParts = newAddress.split(',');
-      let postalCode = null;
-      
-      // Пытаемся извлечь почтовый индекс из адреса
-      for (const part of addressParts) {
-        const trimmed = part.trim();
-        if (/^\d{6}$/.test(trimmed)) { // Российский почтовый индекс имеет 6 цифр
-          postalCode = trimmed;
-          break;
-        }
-      }
-      
-      const newAddressData = {
-        postal_code: postalCode,
-        city: addressParts.length > 0 ? addressParts[0].trim() : '',
-        full_address: newAddress
-      };
-      
-      setSelectedAddressData(newAddressData);
-      
-      // Запускаем расчет стоимости доставки, если есть почтовый индекс
-      // и тип доставки - курьерская доставка Boxberry
-      if (postalCode && deliveryData.delivery_type === 'boxberry_courier') {
-        try {
-          // Небольшая задержка, чтобы избежать слишком частых вызовов API
-          setTimeout(async () => {
-            setDeliveryLoading(true);
-            const cost = await calculateDeliveryCostForUpdate();
-            setCalculatedDeliveryCost(cost);
-            setDeliveryLoading(false);
-          }, 800);
-        } catch (err) {
-          console.error('Ошибка при расчете стоимости доставки:', err);
-          setDeliveryLoading(false);
-        }
-      }
     }
   };
   
@@ -1235,6 +1199,11 @@ const AdminOrderDetail = () => {
       if (deliveryData.delivery_type === 'boxberry_pickup_point' && selectedPickupPoint) {
         updateData.boxberry_point_id = parseInt(selectedPickupPoint.Code);
         updateData.boxberry_point_address = selectedPickupPoint.Address;
+      } else if (deliveryData.delivery_type === 'boxberry_courier') {
+        // Для курьерской доставки явно устанавливаем boxberry_point_id в null,
+        // чтобы очистить его, если ранее был выбран пункт выдачи
+        updateData.boxberry_point_id = null;
+        updateData.boxberry_point_address = null;
       }
       
       console.log('Отправляем запрос на обновление доставки:', updateData);

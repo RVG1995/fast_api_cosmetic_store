@@ -60,34 +60,9 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
 
   // Извлекаем название города из адреса или показываем поле ввода города
   useEffect(() => {
-    if (!selectedAddress || selectedAddress.trim() === '') {
-      setShowCityInput(true);
-      setCityName('');
-      return;
-    }
-    
-    setShowCityInput(false);
-    
-    // Ищем название города в строке адреса
-    const addressParts = selectedAddress.split(',').map(part => part.trim());
-    // Обычно город идет в начале адреса или после региона
-    let cityCandidate = '';
-    
-    // Ищем часть адреса, которая может быть городом
-    for (const part of addressParts) {
-      if (part.toLowerCase().startsWith('г ') || part.toLowerCase().startsWith('г. ')) {
-        cityCandidate = part.replace(/^г\.?\s+/i, '');
-        break;
-      }
-    }
-    
-    // Если не нашли по "г.", берем вторую часть адреса как город
-    if (!cityCandidate && addressParts.length > 1) {
-      cityCandidate = addressParts[1];
-    }
-    
-    setCityName(cityCandidate);
-    console.log("Извлеченный город:", cityCandidate);
+    // Всегда показываем поле ввода города, независимо от адреса доставки
+    setShowCityInput(true);
+    setCityName('');
   }, [selectedAddress]);
 
   // Функция поиска города

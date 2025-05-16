@@ -1158,7 +1158,7 @@ const CheckoutPage = () => {
         show={showBoxberryModal}
         onHide={() => setShowBoxberryModal(false)}
         onPickupPointSelected={handlePickupPointSelected}
-        selectedAddress={formData.delivery_address}
+        selectedAddress=""
       />
     </div>
   );

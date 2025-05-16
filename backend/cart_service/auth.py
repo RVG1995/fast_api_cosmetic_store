@@ -2,12 +2,18 @@
 
 import logging
 import uuid
-from typing import Optional, Annotated
+from typing import Optional, Annotated, Dict, Any
+import httpx
+import json
+import asyncio
+import os
 
 from fastapi import Depends, HTTPException, status, Cookie, Request, Header
 from fastapi.security import OAuth2PasswordBearer
 import jwt
-
+from dependencies import _get_service_token
+from cache import cache_delete
+from sqlalchemy.exc import SQLAlchemyError
 from config import settings
 
 # Настраиваем логирование
@@ -201,3 +207,58 @@ async def get_current_admin_user(
         
     logger.info("get_current_admin_user: Пользователь %s успешно авторизован как администратор", current_user.id)
     return current_user
+
+
+async def get_user_info(user_id: int) -> Dict[str, Any]:
+    """
+    Получает информацию о пользователе из сервиса авторизации
+    """
+    try:
+        auth_service_url = os.environ.get("AUTH_SERVICE_URL", "http://localhost:8000")        
+        logger.info("Запрос информации о пользователе %d по URL: %s/admin/users/%d", user_id, auth_service_url, user_id)
+        backoffs = [0.5, 1, 2]        
+        async with httpx.AsyncClient() as client:
+            total = len(backoffs)
+            for attempt, delay in enumerate(backoffs, start=1):
+                logger.info("get_user_info: attempt %d/%d for user %d", attempt, total, user_id)
+                token = await _get_service_token()
+                headers = {"Authorization": f"Bearer {token}"}
+                try:
+                    response = await client.get(
+                        f"{auth_service_url}/admin/users/{user_id}",
+                        headers=headers,
+                        timeout=5.0
+                    )
+                except (httpx.RequestError, httpx.TimeoutException) as exc:
+                    logger.error("get_user_info: network error on attempt %d: %s", attempt, exc)
+                    if attempt < total:
+                        await asyncio.sleep(delay)
+                        continue
+                    break
+                logger.info("get_user_info: status=%d", response.status_code)
+                if response.status_code == 200:
+                    try:
+                        user_data = response.json()
+                    except (json.JSONDecodeError, ValueError) as parse_exc:
+                        logger.error("get_user_info: JSON parse error: %s", parse_exc)
+                        return {}
+                    if "first_name" not in user_data or "last_name" not in user_data:
+                        logger.warning("get_user_info: missing name fields in response: %s", user_data)
+                    return user_data
+                if response.status_code == 404:
+                    logger.warning("get_user_info: 404 Not Found on attempt %d, returning empty response", attempt)
+                    return {}
+                if response.status_code == 401:
+                    logger.warning("get_user_info: 401 Unauthorized on attempt %d, clearing cache and retry", attempt)
+                    await cache_delete("service_token")
+                    if attempt < total:
+                        await asyncio.sleep(delay)
+                        continue
+                    break
+                logger.error("get_user_info: unexpected status %d, body=%s", response.status_code, response.text)
+                return {}
+            logger.error("get_user_info: completing all attempts, returning empty response")
+            return {}
+    except (SQLAlchemyError, HTTPException, ValueError, TypeError, KeyError, AttributeError) as e:
+        logger.error("Ошибка при запросе информации о пользователе %d: %s", user_id, str(e))
+        return {}

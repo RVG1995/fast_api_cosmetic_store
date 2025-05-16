@@ -86,15 +86,6 @@ app.include_router(order_statuses_router)
 app.include_router(promo_codes_router)
 app.include_router(promo_codes_admin_router)
 
-# Маршрут для проверки работоспособности сервиса
-@app.get("/api/health", tags=["health"])
-async def health_check():
-    """
-    Проверка работоспособности сервиса.
-    Возвращает статус сервиса.
-    """
-    return {"status": "ok", "service": "order_service"}
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", port=8003, reload=True)

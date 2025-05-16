@@ -214,6 +214,7 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                 for city in courier_cities:
                     if city.get("City", "").lower() == city_name_lower:
                         city_found = True
+                        logger.info(f"Город {city_name} найден в списке городов с курьерской доставкой")
                         break
                 
                 if not city_found:
@@ -223,40 +224,60 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                         detail=f"Курьерская доставка в город {city_name} невозможна"
                     )
             
-            # Проверяем почтовый индекс через ZipCheck API
-            params = {
-                "token": settings.BOXBERRY_TOKEN,
-                "method": "ZipCheck",
-                "zip": cart_request.zip_code,
-                "CountryCode": settings.BOXBERRY_COUNTRY_RUSSIA_CODE
-            }
+            # Проверяем почтовый индекс через ListZips API
+            zips_cache_key = get_boxberry_cache_key("ListZips")
+            zip_codes_data = await get_cached_data(zips_cache_key)
             
-            async with httpx.AsyncClient() as client:
-                response = await client.get(settings.BOXBERRY_API_URL, params=params)
+            if not zip_codes_data:
+                # Если данных нет в кэше, запрашиваем их у API
+                params = {
+                    "token": settings.BOXBERRY_TOKEN,
+                    "method": "ListZips"
+                }
                 
-                if response.status_code == 200:
-                    zip_check_data = response.json()
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(settings.BOXBERRY_API_URL, params=params)
                     
-                    # Проверяем формат данных, API может вернуть объект или список
-                    if isinstance(zip_check_data, list) and zip_check_data:
-                        # Если вернулся список, берем первый элемент
-                        zip_check_data = zip_check_data[0]
-                    
-                    # Проверяем, возможна ли курьерская доставка по указанному индексу
-                    if not zip_check_data.get("ExpressDelivery", False):
-                        logger.warning(f"Курьерская доставка по индексу {cart_request.zip_code} невозможна")
+                    if response.status_code == 200:
+                        zip_codes_data = response.json()
+                        
+                        # Сохраняем в кэш на 12 часов (43200 секунд)
+                        await set_cached_data(zips_cache_key, zip_codes_data, 43200)
+                        logger.info("Сохраняю данные о почтовых индексах для курьерской доставки в кэш")
+                    else:
+                        logger.error("Ошибка при получении списка почтовых индексов: %s", response.text)
                         raise HTTPException(
-                            status_code=400,
-                            detail=f"Курьерская доставка по индексу {cart_request.zip_code} невозможна"
+                            status_code=response.status_code, 
+                            detail=f"Ошибка API Boxberry при получении списка почтовых индексов: {response.text}"
                         )
-                    
-                    logger.info(f"Курьерская доставка по индексу {cart_request.zip_code} возможна")
-                else:
-                    logger.error("Ошибка при проверке почтового индекса: %s", response.text)
-                    raise HTTPException(
-                        status_code=response.status_code, 
-                        detail=f"Ошибка API Boxberry при проверке почтового индекса: {response.text}"
-                    )
+            
+            # Проверяем наличие индекса в списке
+            user_zip_code = cart_request.zip_code
+            zip_found = False
+            zip_info = None
+            
+            for zip_item in zip_codes_data:
+                if zip_item.get("Zip") == user_zip_code:
+                    zip_found = True
+                    zip_info = zip_item
+                    break
+            
+            if not zip_found:
+                logger.warning(f"Почтовый индекс {user_zip_code} не найден в списке индексов с курьерской доставкой")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Курьерская доставка по индексу {user_zip_code} невозможна"
+                )
+            
+            # Проверяем, возможна ли курьерская доставка по указанному индексу
+            if not zip_info.get("ZoneExpressDelivery"):
+                logger.warning(f"Курьерская доставка по индексу {user_zip_code} невозможна (ZoneExpressDelivery не указана)")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Курьерская доставка по индексу {user_zip_code} невозможна"
+                )
+            
+            logger.info(f"Курьерская доставка по индексу {user_zip_code} возможна, город: {zip_info.get('City', 'не указан')}")
         
         # Рассчитываем общую стоимость заказа
         total_price = sum(item.price * item.quantity for item in cart_request.items)

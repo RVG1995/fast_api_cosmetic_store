@@ -1400,10 +1400,17 @@ async def update_order_delivery_info(
         order.delivery_type = delivery_data.get("delivery_type")
         order.delivery_address = delivery_data.get("delivery_address")
         
+        # Запоминаем старую стоимость доставки для пересчета
+        old_delivery_cost = order.delivery_cost or 0
+        
         # Обновляем стоимость доставки, если указана
         if "delivery_cost" in delivery_data and delivery_data["delivery_cost"] is not None:
             order.delivery_cost = float(delivery_data["delivery_cost"])
-            logger.info("Обновлена стоимость доставки для заказа %s: %s", order_id, order.delivery_cost)
+            # Пересчитываем полную стоимость заказа
+            # Если была старая стоимость доставки, вычитаем ее и добавляем новую
+            order.total_price = order.total_price - old_delivery_cost + order.delivery_cost
+            logger.info("Обновлена стоимость доставки для заказа %s: %s, новая полная стоимость: %s", 
+                      order_id, order.delivery_cost, order.total_price)
         
         # Обновляем способ оплаты, если указан
         if "is_payment_on_delivery" in delivery_data:

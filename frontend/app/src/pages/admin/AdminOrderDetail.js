@@ -650,6 +650,35 @@ const AdminOrderDetail = () => {
   const [calculatedDeliveryCost, setCalculatedDeliveryCost] = useState(null);
   const [isPaymentOnDelivery, setIsPaymentOnDelivery] = useState(true);
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
+  
+  // Эффект для автоматического расчета стоимости доставки при открытии формы
+  useEffect(() => {
+    // Если форма открыта и есть данные заказа
+    if (showDeliveryForm && order && deliveryData.delivery_type) {
+      // Проверяем, доступны ли данные для расчета
+      const canCalculate = (
+        (deliveryData.delivery_type === 'boxberry_pickup_point' && selectedPickupPoint) ||
+        (deliveryData.delivery_type === 'boxberry_courier' && selectedAddressData && selectedAddressData.postal_code)
+      );
+      
+      if (canCalculate) {
+        // Запускаем расчет стоимости доставки
+        setDeliveryLoading(true);
+        calculateDeliveryCostForUpdate()
+          .then(result => {
+            if (result) {
+              console.log('Автоматический расчет стоимости доставки при открытии формы:', result);
+            }
+          })
+          .catch(err => {
+            console.error('Ошибка при автоматическом расчете стоимости доставки:', err);
+          })
+          .finally(() => {
+            setDeliveryLoading(false);
+          });
+      }
+    }
+  }, [showDeliveryForm]);
   const [addressOptions, setAddressOptions] = useState([]); // Добавляем состояние для подсказок адресов DaData
   
   // Добавляем функцию получения подсказок адресов DaData
@@ -762,7 +791,9 @@ const AdminOrderDetail = () => {
     // Обновляем тип доставки
     setDeliveryData({
       ...deliveryData,
-      delivery_type: newDeliveryType
+      delivery_type: newDeliveryType,
+      boxberry_point_id: null,
+      boxberry_point_address: null
     });
     
     // Если выбран пункт выдачи BoxBerry и еще не выбран пункт,
@@ -774,15 +805,31 @@ const AdminOrderDetail = () => {
         setDeliveryData(prev => ({
           ...prev,
           delivery_type: newDeliveryType,
-          delivery_address: ''
+          delivery_address: '',
+          boxberry_point_id: null,
+          boxberry_point_address: null
         }));
+      } else {
+        // Если пункт выдачи уже выбран, пересчитываем стоимость доставки
+        setTimeout(async () => {
+          setDeliveryLoading(true);
+          try {
+            await calculateDeliveryCostForUpdate();
+          } catch (err) {
+            console.error('Ошибка при расчете стоимости доставки при смене типа на пункт выдачи:', err);
+          } finally {
+            setDeliveryLoading(false);
+          }
+        }, 300);
       }
     } else if (newDeliveryType === 'boxberry_courier') {
       // Если выбрана курьерская доставка, очищаем поле адреса и данные адреса
       setDeliveryData(prev => ({
         ...prev,
         delivery_type: newDeliveryType,
-        delivery_address: ''
+        delivery_address: '',
+        boxberry_point_id: null,
+        boxberry_point_address: null
       }));
       setSelectedAddressData(null);
       setAddressOptions([]);
@@ -790,6 +837,20 @@ const AdminOrderDetail = () => {
       
       // Показываем подсказку для выбора адреса
       setDeliveryError('Для курьерской доставки необходимо выбрать адрес из списка подсказок');
+      
+      // Если уже есть выбранный адрес с почтовым индексом, пересчитываем стоимость
+      if (selectedAddressData && selectedAddressData.postal_code) {
+        setTimeout(async () => {
+          setDeliveryLoading(true);
+          try {
+            await calculateDeliveryCostForUpdate();
+          } catch (err) {
+            console.error('Ошибка при расчете стоимости доставки при смене типа на курьерскую доставку:', err);
+          } finally {
+            setDeliveryLoading(false);
+          }
+        }, 300);
+      }
     } else {
       // Для других типов доставки сбрасываем данные BoxBerry
       setSelectedPickupPoint(null);
@@ -1381,7 +1442,16 @@ const AdminOrderDetail = () => {
                   <p><strong>ID пользователя:</strong> {order.user_id}</p>
                   <p><strong>Email:</strong> {order.email}</p>
                   <p><strong>Телефон:</strong> {order.phone || 'Не указан'}</p>
-                  <p><strong>Сумма заказа:</strong> {formatPrice(order.total_price)}</p>
+                  <p>
+  <strong>Сумма заказа:</strong> {formatPrice(
+    (calculatedDeliveryCost && deliveryData.delivery_type)
+      ? (order.total_price - (order.delivery_cost || 0) + calculatedDeliveryCost.price)
+      : order.total_price
+  )}
+  {calculatedDeliveryCost && deliveryData.delivery_type && (
+    <span className="text-muted small ms-1">(обновится после сохранения)</span>
+  )}
+</p>
                   {order.discount_amount > 0 && (
                     <p><strong>Скидка:</strong> {formatPrice(order.discount_amount)}</p>
                   )}
@@ -1452,7 +1522,20 @@ const AdminOrderDetail = () => {
                 <tfoot>
                   <tr>
                     <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
-                    <td><strong>{formatPrice(order.total_price || order.total_amount || 0)}</strong></td>
+                    <td>
+                      <strong>
+                        {formatPrice(
+                          (calculatedDeliveryCost && deliveryData.delivery_type)
+                            ? (order.total_price - (order.delivery_cost || 0) + calculatedDeliveryCost.price)
+                            : (order.total_price || order.total_amount || 0)
+                        )}
+                      </strong>
+                      {calculatedDeliveryCost && deliveryData.delivery_type && (
+                        <div className="text-muted small">
+                          (обновится после сохранения)
+                        </div>
+                      )}
+                    </td>
                   </tr>
                   {order.discount_amount > 0 && (
                     <tr>
@@ -1658,21 +1741,21 @@ const AdminOrderDetail = () => {
                           label="Оплата при получении"
                           checked={isPaymentOnDelivery}
                           onChange={() => {
+                            // Сразу запускаем пересчет, не дожидаясь обновления состояния
+                            setTimeout(async () => {
+                              setDeliveryLoading(true);
+                              try {
+                                // Передаем true явно вместо isPaymentOnDelivery
+                                await calculateDeliveryCostForUpdate(true);
+                              } catch (err) {
+                                console.error('Ошибка при пересчете доставки:', err);
+                              } finally {
+                                setDeliveryLoading(false);
+                              }
+                            }, 100);
+                            
+                            // Обновляем состояние после расчета
                             setIsPaymentOnDelivery(true);
-                            // При изменении способа оплаты пересчитываем стоимость доставки
-                            if (!isPaymentOnDelivery) {
-                              setTimeout(async () => {
-                                setDeliveryLoading(true);
-                                try {
-                                  // Передаем true явно вместо isPaymentOnDelivery
-                                  await calculateDeliveryCostForUpdate(true);
-                                } catch (err) {
-                                  console.error('Ошибка при пересчете доставки:', err);
-                                } finally {
-                                  setDeliveryLoading(false);
-                                }
-                              }, 300);
-                            }
                           }}
                           className="mb-2"
                         />
@@ -1683,21 +1766,21 @@ const AdminOrderDetail = () => {
                           label="Оплата на сайте"
                           checked={!isPaymentOnDelivery}
                           onChange={() => {
+                            // Сразу запускаем пересчет, не дожидаясь обновления состояния
+                            setTimeout(async () => {
+                              setDeliveryLoading(true);
+                              try {
+                                // Передаем false явно вместо isPaymentOnDelivery
+                                await calculateDeliveryCostForUpdate(false);
+                              } catch (err) {
+                                console.error('Ошибка при пересчете доставки:', err);
+                              } finally {
+                                setDeliveryLoading(false);
+                              }
+                            }, 100);
+                            
+                            // Обновляем состояние после расчета
                             setIsPaymentOnDelivery(false);
-                            // При изменении способа оплаты пересчитываем стоимость доставки
-                            if (isPaymentOnDelivery) {
-                              setTimeout(async () => {
-                                setDeliveryLoading(true);
-                                try {
-                                  // Передаем false явно вместо isPaymentOnDelivery
-                                  await calculateDeliveryCostForUpdate(false);
-                                } catch (err) {
-                                  console.error('Ошибка при пересчете доставки:', err);
-                                } finally {
-                                  setDeliveryLoading(false);
-                                }
-                              }, 300);
-                            }
                           }}
                         />
                       </div>

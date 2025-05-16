@@ -548,11 +548,11 @@ class OrderFilterParams(BaseModel):
 class OrderStatistics(BaseModel):
     """Модель статистики заказов."""
     total_orders: int
-    total_revenue: int
+    total_revenue: float
     average_order_value: float
     orders_by_status: Dict[str, int]
     orders_by_payment_method: Dict[str, int]
-    canceled_orders_revenue: int = 0  # Сумма отмененных заказов
+    canceled_orders_revenue: float = 0.0
     
     model_config = ConfigDict(from_attributes=True)
 

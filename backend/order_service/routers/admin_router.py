@@ -1351,6 +1351,10 @@ async def update_order_delivery_info(
     - **delivery_data**: Данные о доставке для обновления:
       - delivery_type: Тип доставки
       - delivery_address: Адрес доставки
+      - delivery_cost: Стоимость доставки (опционально)
+      - boxberry_point_id: ID пункта выдачи BoxBerry (опционально)
+      - boxberry_point_address: Адрес пункта выдачи BoxBerry (опционально)
+      - is_payment_on_delivery: Способ оплаты - при получении (true) или на сайте (false) (опционально)
     """
     try:
         logger.info("Запрос на обновление информации о доставке заказа. ID: %s, данные: %s", order_id, delivery_data)
@@ -1396,6 +1400,26 @@ async def update_order_delivery_info(
         order.delivery_type = delivery_data.get("delivery_type")
         order.delivery_address = delivery_data.get("delivery_address")
         
+        # Обновляем стоимость доставки, если указана
+        if "delivery_cost" in delivery_data and delivery_data["delivery_cost"] is not None:
+            order.delivery_cost = float(delivery_data["delivery_cost"])
+            logger.info("Обновлена стоимость доставки для заказа %s: %s", order_id, order.delivery_cost)
+        
+        # Обновляем способ оплаты, если указан
+        if "is_payment_on_delivery" in delivery_data:
+            order.is_payment_on_delivery = bool(delivery_data["is_payment_on_delivery"])
+            logger.info("Обновлен способ оплаты для заказа %s: оплата при получении = %s", 
+                       order_id, order.is_payment_on_delivery)
+        
+        # Обновляем информацию о пункте выдачи BoxBerry
+        if "boxberry_point_id" in delivery_data and delivery_data["boxberry_point_id"] is not None:
+            order.boxberry_point_id = int(delivery_data["boxberry_point_id"])
+            logger.info("Обновлен ID пункта выдачи BoxBerry для заказа %s: %s", order_id, order.boxberry_point_id)
+        
+        if "boxberry_point_address" in delivery_data and delivery_data["boxberry_point_address"] is not None:
+            order.boxberry_point_address = delivery_data["boxberry_point_address"]
+            logger.info("Обновлен адрес пункта выдачи BoxBerry для заказа %s: %s", order_id, order.boxberry_point_address)
+        
         # Если был изменен тип доставки с boxberry на другой, очищаем связанные поля
         if order.delivery_type and not order.delivery_type.startswith("boxberry_"):
             order.boxberry_point_id = None
@@ -1403,7 +1427,8 @@ async def update_order_delivery_info(
             order.boxberry_city_code = None
             
         # Если новый тип доставки - пункт выдачи BoxBerry, копируем адрес доставки в boxberry_point_address
-        if order.delivery_type == "boxberry_pickup_point":
+        # Делаем это только если не указан явно адрес пункта выдачи
+        if order.delivery_type == "boxberry_pickup_point" and "boxberry_point_address" not in delivery_data:
             order.boxberry_point_address = order.delivery_address
         
         session.add(order)

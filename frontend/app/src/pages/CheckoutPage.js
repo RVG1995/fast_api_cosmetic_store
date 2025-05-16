@@ -65,6 +65,9 @@ const CheckoutPage = () => {
   const [isPaymentOnDelivery, setIsPaymentOnDelivery] = useState(true); // По умолчанию оплата при получении
   const [deliveryPeriod, setDeliveryPeriod] = useState(0); // Добавляем состояние для срока доставки
   
+  // Состояния для адреса доставки (для курьерской доставки)
+  const [selectedAddressData, setSelectedAddressData] = useState(null);
+  
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
     // Если заказ успешно создан, не выполняем редирект даже при пустой корзине
@@ -87,7 +90,20 @@ const CheckoutPage = () => {
   const finalTotal = cartTotal - discountAmount + deliveryCost;
   
   // Функция для расчета стоимости доставки
-  const calculateDeliveryCost = async () => {
+  // Принимает параметр forcePaymentOnDelivery, который позволяет передать значение напрямую
+  // вместо получения из состояния, которое может не успеть обновиться
+  const calculateDeliveryCost = async (forcePaymentOnDelivery = null) => {
+    // Используем параметр forcePaymentOnDelivery, если он передан, иначе берем из состояния
+    const paymentOnDelivery = forcePaymentOnDelivery !== null ? forcePaymentOnDelivery : isPaymentOnDelivery;
+    
+    console.log('Запуск расчета доставки с параметрами:', {
+      deliveryType,
+      isPaymentOnDelivery: paymentOnDelivery,
+      currentStateValue: isPaymentOnDelivery,
+      hasPVZ: !!selectedPickupPoint,
+      hasAddressData: !!selectedAddressData
+    });
+    
     // Если нет выбранного типа доставки, не выполняем расчет
     if (!deliveryType) {
       setDeliveryCost(0);
@@ -111,8 +127,18 @@ const CheckoutPage = () => {
       }
     } else if (deliveryType === 'boxberry_courier') {
       // Для курьерской доставки Boxberry нужен адрес
-      if (!formData.delivery_address) {
-        console.log('Не хватает данных для расчета: не указан адрес доставки');
+      if (!formData.delivery_address || !selectedAddressData) {
+        console.log('Не хватает данных для расчета: не указан адрес доставки или нет данных адреса', {
+          address: formData.delivery_address,
+          addressData: selectedAddressData
+        });
+        return;
+      }
+      
+      // Проверяем, что у нас есть почтовый индекс, без которого невозможно рассчитать курьерскую доставку
+      if (!selectedAddressData.postal_code) {
+        console.log('Не удалось определить почтовый индекс для адреса');
+        setDeliveryError('Не удалось определить почтовый индекс для адреса. Выберите адрес из списка подсказок.');
         return;
       }
     }
@@ -136,12 +162,30 @@ const CheckoutPage = () => {
       const deliveryData = {
         items: cartItems,
         delivery_type: deliveryType,
-        is_payment_on_delivery: isPaymentOnDelivery
+        is_payment_on_delivery: paymentOnDelivery // Используем актуальное значение
       };
       
       // Если выбран пункт выдачи BoxBerry, добавляем его код
       if (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) {
         deliveryData.pvz_code = selectedPickupPoint.Code;
+      }
+      
+      // Если выбрана курьерская доставка и есть данные адреса, добавляем почтовый индекс
+      if (deliveryType === 'boxberry_courier' && selectedAddressData) {
+        // Почтовый индекс - ключевой параметр для расчета курьерской доставки
+        if (selectedAddressData.postal_code) {
+          deliveryData.zip_code = selectedAddressData.postal_code;
+        }
+        
+        // Дополнительно можно передать город (если почтовый индекс не удалось определить)
+        if (selectedAddressData.city) {
+          deliveryData.recipient_city = selectedAddressData.city;
+        }
+        
+        console.log('Данные адреса для расчета:', {
+          zip_code: selectedAddressData.postal_code, 
+          city: selectedAddressData.city
+        });
       }
       
       console.log('Отправляем запрос на расчет доставки:', deliveryData);
@@ -180,25 +224,32 @@ const CheckoutPage = () => {
     [deliveryType, isPaymentOnDelivery, cart]
   );
   
-  // Вызываем расчет стоимости доставки при изменении типа доставки, пункта выдачи или способа оплаты
+  // Вызываем расчет стоимости доставки только при изменении типа доставки, 
+  // пункта выдачи или данных адреса, но НЕ при изменении способа оплаты
   useEffect(() => {
+    // Расчет при изменении способа оплаты происходит в обработчиках
+    // событий радиокнопок, поэтому здесь не следим за isPaymentOnDelivery
+    
     console.log('Изменились параметры для расчета доставки:', { 
       deliveryType, 
       selectedPoint: selectedPickupPoint?.Code,
-      isPaymentOnDelivery,
+      postal_code: selectedAddressData?.postal_code,
       itemsCount: cart?.items?.length
     });
     
-    // Запускаем расчет, только если:
+    // Запускаем расчет в следующих случаях:
     // 1) Выбран пункт выдачи для Boxberry ПВЗ
-    // 2) Или выбран другой тип доставки (не Boxberry ПВЗ и не Boxberry курьер)
+    // 2) Выбрана курьерская доставка Boxberry и есть данные адреса с индексом
+    // 3) Выбран другой тип доставки (не Boxberry)
     if (
       (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) ||
+      (deliveryType === 'boxberry_courier' && selectedAddressData && selectedAddressData.postal_code) ||
       (!deliveryType.startsWith('boxberry_'))
     ) {
+      // Используем текущее значение isPaymentOnDelivery
       calculateDeliveryCost();
     }
-  }, [deliveryType, selectedPickupPoint, isPaymentOnDelivery, cart]);
+  }, [deliveryType, selectedPickupPoint, selectedAddressData, cart]); // Убрали isPaymentOnDelivery из зависимостей
   
   // Функция запроса подсказок FIO через axios с логами
   const fetchNameSuggestions = async (query) => {
@@ -231,6 +282,28 @@ const CheckoutPage = () => {
       );
       console.log('Dadata address resp:', data.suggestions);
       setAddressOptions(data.suggestions);
+      
+      // Если есть результаты и выбрана курьерская доставка BoxBerry, 
+      // используем первый (наиболее релевантный) результат
+      if (data.suggestions && data.suggestions.length > 0 && deliveryType === 'boxberry_courier') {
+        const bestMatch = data.suggestions[0];
+        
+        // Автоматически устанавливаем данные адреса из лучшего совпадения
+        // Это позволит выполнить расчет, даже если пользователь не выберет из выпадающего списка
+        setSelectedAddressData({
+          value: bestMatch.value,
+          postal_code: bestMatch.data.postal_code,
+          city: bestMatch.data.city,
+          street: bestMatch.data.street,
+          house: bestMatch.data.house
+        });
+        
+        console.log('Автоматически выбраны данные адреса:', {
+          value: bestMatch.value,
+          postal_code: bestMatch.data.postal_code,
+          city: bestMatch.data.city
+        });
+      }
     } catch(e) { 
       console.error('DaData address error', e); 
     }
@@ -243,22 +316,52 @@ const CheckoutPage = () => {
     // Обработка изменения типа доставки
     if (name === 'deliveryType') {
       const newDeliveryType = value;
+      const previousType = deliveryType;
+      
+      console.log('Изменение типа доставки:', { 
+        с: previousType, 
+        на: newDeliveryType, 
+        hasPickupPoint: !!selectedPickupPoint 
+      });
+      
+      // Установка нового типа доставки
       setDeliveryType(newDeliveryType);
       
-      // Если выбрана доставка в пункт выдачи BoxBerry
+      // Обработка переключения между типами доставки
       if (newDeliveryType === 'boxberry_pickup_point') {
+        // Включаем флаг BoxBerry доставки при выборе ПВЗ
         setIsBoxberryDelivery(true);
       } else {
+        // Отключаем флаг BoxBerry доставки
         setIsBoxberryDelivery(false);
+        
+        // Если переключаемся с ПВЗ на другой тип, очищаем выбранный пункт выдачи
+        if (selectedPickupPoint) {
+          console.log('Сброс выбранного пункта выдачи');
+          setSelectedPickupPoint(null);
+          setFormData(prev => ({...prev, delivery_address: ''}));
+        }
       }
       
-      // Сбрасываем стоимость доставки при смене типа
+      // Если переключаемся на что-то кроме курьерской доставки BoxBerry,
+      // сбрасываем данные адреса
+      if (newDeliveryType !== 'boxberry_courier') {
+        console.log('Сброс данных адреса при переключении с курьерской доставки');
+        setSelectedAddressData(null);
+      }
+      
+      // Сбрасываем стоимость доставки и период доставки при смене типа
       setDeliveryCost(0);
+      setDeliveryPeriod(0);
+      setDeliveryError(null);
       return;
     }
     
     // Обработка изменения способа оплаты
     if (name === 'paymentMethod') {
+      // Вызываем расчет с точным значением способа оплаты
+      calculateDeliveryCost(value === 'on_delivery');
+      // После расчета обновляем состояние
       setIsPaymentOnDelivery(value === 'on_delivery');
       return;
     }
@@ -294,6 +397,21 @@ const CheckoutPage = () => {
       const newValue = value;
       fetchAddressSuggestions(newValue);
       setFormData(prev => ({...prev, delivery_address: newValue}));
+      
+      // Для курьерской доставки BoxBerry сбрасываем данные адреса 
+      // только если новый ввод радикально отличается от текущего
+      if (deliveryType === 'boxberry_courier' && selectedAddressData) {
+        // Проверяем, что новый адрес не является уточнением уже выбранного
+        // Например, человек мог выбрать "ул. Ленина" и дописывает номер дома
+        const currentAddressStart = selectedAddressData.value.substring(0, Math.min(selectedAddressData.value.length, 10));
+        const newAddressStart = newValue.substring(0, Math.min(newValue.length, 10));
+        
+        if (!newValue.includes(currentAddressStart) && !currentAddressStart.includes(newAddressStart)) {
+          // Если это совершенно другой адрес, сбрасываем данные
+          console.log('Сброс данных адреса из-за существенного изменения ввода');
+          setSelectedAddressData(null);
+        }
+      }
       
       // Применяем debounce для расчета доставки при вводе адреса
       if (deliveryType === 'boxberry_courier') {
@@ -581,8 +699,13 @@ const CheckoutPage = () => {
                   
                   <div className={`delivery-option ${deliveryType === 'boxberry_courier' ? 'selected' : ''}`} 
                     onClick={() => {
-                      setDeliveryType('boxberry_courier');
-                      setIsBoxberryDelivery(false);
+                      // При клике на контейнер используем handleChange с синтетическим event объектом
+                      handleChange({
+                        target: {
+                          name: 'deliveryType',
+                          value: 'boxberry_courier'
+                        }
+                      });
                     }}>
                     <input
                       className="form-check-input"
@@ -591,10 +714,7 @@ const CheckoutPage = () => {
                       id="boxberry_courier"
                       value="boxberry_courier"
                       checked={deliveryType === 'boxberry_courier'}
-                      onChange={(e) => {
-                        setDeliveryType(e.target.value);
-                        setIsBoxberryDelivery(false);
-                      }}
+                      onChange={handleChange}
                       required
                     />
                     <label className="form-check-label" htmlFor="boxberry_courier">
@@ -604,8 +724,13 @@ const CheckoutPage = () => {
                   
                   <div className={`delivery-option ${deliveryType === 'boxberry_pickup_point' ? 'selected' : ''}`}
                     onClick={() => {
-                      setDeliveryType('boxberry_pickup_point');
-                      setIsBoxberryDelivery(true);
+                      // При клике на контейнер используем handleChange с синтетическим event объектом
+                      handleChange({
+                        target: {
+                          name: 'deliveryType',
+                          value: 'boxberry_pickup_point'
+                        }
+                      });
                     }}>
                     <input
                       className="form-check-input"
@@ -614,10 +739,7 @@ const CheckoutPage = () => {
                       id="boxberry_pickup_point"
                       value="boxberry_pickup_point"
                       checked={deliveryType === 'boxberry_pickup_point'}
-                      onChange={(e) => {
-                        setDeliveryType(e.target.value);
-                        setIsBoxberryDelivery(true);
-                      }}
+                      onChange={handleChange}
                       required
                     />
                     <label className="form-check-label" htmlFor="boxberry_pickup_point">
@@ -627,8 +749,13 @@ const CheckoutPage = () => {
                   
                   <div className={`delivery-option ${deliveryType === 'cdek_courier' ? 'selected' : ''}`}
                     onClick={() => {
-                      setDeliveryType('cdek_courier');
-                      setIsBoxberryDelivery(false);
+                      // При клике на контейнер используем handleChange с синтетическим event объектом
+                      handleChange({
+                        target: {
+                          name: 'deliveryType',
+                          value: 'cdek_courier'
+                        }
+                      });
                     }}>
                     <input
                       className="form-check-input"
@@ -637,10 +764,7 @@ const CheckoutPage = () => {
                       id="cdek_courier"
                       value="cdek_courier"
                       checked={deliveryType === 'cdek_courier'}
-                      onChange={(e) => {
-                        setDeliveryType(e.target.value);
-                        setIsBoxberryDelivery(false);
-                      }}
+                      onChange={handleChange}
                       required
                     />
                     <label className="form-check-label" htmlFor="cdek_courier">
@@ -650,8 +774,13 @@ const CheckoutPage = () => {
                   
                   <div className={`delivery-option ${deliveryType === 'cdek_pickup_point' ? 'selected' : ''}`}
                     onClick={() => {
-                      setDeliveryType('cdek_pickup_point');
-                      setIsBoxberryDelivery(false);
+                      // При клике на контейнер используем handleChange с синтетическим event объектом
+                      handleChange({
+                        target: {
+                          name: 'deliveryType',
+                          value: 'cdek_pickup_point'
+                        }
+                      });
                     }}>
                     <input
                       className="form-check-input"
@@ -660,10 +789,7 @@ const CheckoutPage = () => {
                       id="cdek_pickup_point"
                       value="cdek_pickup_point"
                       checked={deliveryType === 'cdek_pickup_point'}
-                      onChange={(e) => {
-                        setDeliveryType(e.target.value);
-                        setIsBoxberryDelivery(false);
-                      }}
+                      onChange={handleChange}
                       required
                     />
                     <label className="form-check-label" htmlFor="cdek_pickup_point">
@@ -706,14 +832,24 @@ const CheckoutPage = () => {
                   <div className="payment-options-title">Способ оплаты<span className="text-danger">*</span></div>
                   
                   <div className={`payment-option ${isPaymentOnDelivery ? 'selected' : ''}`}
-                    onClick={() => setIsPaymentOnDelivery(true)}>
+                    onClick={() => {
+                      // Вызываем перерасчет доставки с точным значением
+                      calculateDeliveryCost(true);
+                      // После расчета делаем setState
+                      setIsPaymentOnDelivery(true);
+                    }}>
                     <input
                       className="form-check-input"
                       type="radio"
                       name="paymentMethod"
                       id="payment_on_delivery"
                       checked={isPaymentOnDelivery}
-                      onChange={() => setIsPaymentOnDelivery(true)}
+                      onChange={() => {
+                        // Вызываем перерасчет доставки с точным значением
+                        calculateDeliveryCost(true);
+                        // После расчета делаем setState
+                        setIsPaymentOnDelivery(true);
+                      }}
                       required
                     />
                     <label className="form-check-label" htmlFor="payment_on_delivery">
@@ -722,14 +858,24 @@ const CheckoutPage = () => {
                   </div>
                   
                   <div className={`payment-option ${!isPaymentOnDelivery ? 'selected' : ''}`}
-                    onClick={() => setIsPaymentOnDelivery(false)}>
+                    onClick={() => {
+                      // Вызываем перерасчет доставки с точным значением
+                      calculateDeliveryCost(false);
+                      // После расчета делаем setState 
+                      setIsPaymentOnDelivery(false);
+                    }}>
                     <input
                       className="form-check-input"
                       type="radio"
                       name="paymentMethod"
                       id="payment_on_site"
                       checked={!isPaymentOnDelivery}
-                      onChange={() => setIsPaymentOnDelivery(false)}
+                      onChange={() => {
+                        // Вызываем перерасчет доставки с точным значением
+                        calculateDeliveryCost(false);
+                        // После расчета делаем setState
+                        setIsPaymentOnDelivery(false);
+                      }}
                       required
                     />
                     <label className="form-check-label" htmlFor="payment_on_site">
@@ -757,8 +903,22 @@ const CheckoutPage = () => {
                           key={i}
                           className="suggestion-item hover-bg-light"
                           onClick={() => {
+                            // Сохраняем полные данные о выбранном адресе для расчета доставки
+                            setSelectedAddressData({
+                              value: opt.value,
+                              postal_code: opt.data.postal_code,
+                              city: opt.data.city,
+                              street: opt.data.street,
+                              house: opt.data.house
+                            });
+                            
                             setFormData(prev => ({ ...prev, delivery_address: opt.value }));
                             setAddressOptions([]);
+                            
+                            // Если это курьерская доставка Boxberry, запускаем расчет
+                            if (deliveryType === 'boxberry_courier') {
+                              calculateDeliveryCost();
+                            }
                           }}
                         >
                           {opt.value}

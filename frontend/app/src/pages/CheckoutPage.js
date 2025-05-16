@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useOrders } from '../context/OrderContext';
@@ -94,11 +94,25 @@ const CheckoutPage = () => {
       return;
     }
     
+    // Проверяем, что выбран сервис Boxberry
+    const isBoxberry = deliveryType.startsWith('boxberry_');
+    if (!isBoxberry) {
+      // Для не-Boxberry сервисов не выполняем расчет
+      setDeliveryCost(0);
+      return;
+    }
+    
     // Проверяем наличие необходимых данных для расчета
     if (deliveryType === 'boxberry_pickup_point') {
-      // Обязательно нужен выбранный пункт
+      // Обязательно нужен выбранный пункт для Boxberry ПВЗ
       if (!selectedPickupPoint) {
         console.log('Не хватает данных для расчета: не выбран пункт выдачи');
+        return;
+      }
+    } else if (deliveryType === 'boxberry_courier') {
+      // Для курьерской доставки Boxberry нужен адрес
+      if (!formData.delivery_address) {
+        console.log('Не хватает данных для расчета: не указан адрес доставки');
         return;
       }
     }
@@ -150,6 +164,22 @@ const CheckoutPage = () => {
     }
   };
   
+  // Функция для отложенного выполнения расчета доставки
+  const debouncedCalculateDelivery = useCallback(
+    (() => {
+      let timer = null;
+      return (address) => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (address && address.length > 5 && deliveryType === 'boxberry_courier') {
+            calculateDeliveryCost();
+          }
+        }, 1000); // Задержка в 1 секунду
+      };
+    })(),
+    [deliveryType, isPaymentOnDelivery, cart]
+  );
+  
   // Вызываем расчет стоимости доставки при изменении типа доставки, пункта выдачи или способа оплаты
   useEffect(() => {
     console.log('Изменились параметры для расчета доставки:', { 
@@ -158,7 +188,16 @@ const CheckoutPage = () => {
       isPaymentOnDelivery,
       itemsCount: cart?.items?.length
     });
-    calculateDeliveryCost();
+    
+    // Запускаем расчет, только если:
+    // 1) Выбран пункт выдачи для Boxberry ПВЗ
+    // 2) Или выбран другой тип доставки (не Boxberry ПВЗ и не Boxberry курьер)
+    if (
+      (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) ||
+      (!deliveryType.startsWith('boxberry_'))
+    ) {
+      calculateDeliveryCost();
+    }
   }, [deliveryType, selectedPickupPoint, isPaymentOnDelivery, cart]);
   
   // Функция запроса подсказок FIO через axios с логами
@@ -252,8 +291,15 @@ const CheckoutPage = () => {
       // Если активирована доставка BoxBerry, не разрешаем менять поле адреса
       if (isBoxberryDelivery) return;
       
-      fetchAddressSuggestions(value);
-      setFormData(prev => ({...prev, delivery_address: value}));
+      const newValue = value;
+      fetchAddressSuggestions(newValue);
+      setFormData(prev => ({...prev, delivery_address: newValue}));
+      
+      // Применяем debounce для расчета доставки при вводе адреса
+      if (deliveryType === 'boxberry_courier') {
+        debouncedCalculateDelivery(newValue);
+      }
+      
       return;
     }
     

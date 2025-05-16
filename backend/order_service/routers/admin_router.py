@@ -1426,6 +1426,11 @@ async def update_order_delivery_info(
         if "boxberry_point_address" in delivery_data:
             order.boxberry_point_address = delivery_data["boxberry_point_address"]
             logger.info("Обновлен адрес пункта выдачи BoxBerry для заказа %s: %s", order_id, order.boxberry_point_address)
+            
+        # Обновляем номер отслеживания, если указан
+        if "tracking_number" in delivery_data:
+            order.tracking_number = delivery_data["tracking_number"]
+            logger.info("Обновлен трек-номер для заказа %s: %s", order_id, order.tracking_number)
         
         # Если был изменен тип доставки с boxberry на другой, очищаем связанные поля
         if order.delivery_type and not order.delivery_type.startswith("boxberry_"):

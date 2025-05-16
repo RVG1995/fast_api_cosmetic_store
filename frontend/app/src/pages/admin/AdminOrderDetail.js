@@ -613,14 +613,16 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
 const AdminOrderDetail = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const { 
+    loading: contextLoading, 
+    error: contextError, 
     getAdminOrderById, 
     updateOrderStatus,
     updateOrderPaymentStatus,
-    loading: contextLoading, 
-    error: contextError 
+    getOrderStatuses,
+    createBoxberryParcel
   } = useOrders();
-  const { user } = useAuth();
   
   const [order, setOrder] = useState(null);
   const [statuses, setStatuses] = useState([]);
@@ -650,6 +652,9 @@ const AdminOrderDetail = () => {
   const [calculatedDeliveryCost, setCalculatedDeliveryCost] = useState(null);
   const [isPaymentOnDelivery, setIsPaymentOnDelivery] = useState(true);
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
+  const [boxberryLoading, setBoxberryLoading] = useState(false);
+  const [boxberryResult, setBoxberryResult] = useState(null);
+  const [showBoxberryParcelModal, setShowBoxberryParcelModal] = useState(false);
   
   // Эффект для автоматического расчета стоимости доставки при открытии формы
   useEffect(() => {
@@ -1407,6 +1412,80 @@ const AdminOrderDetail = () => {
     }
   };
   
+  // Обработчик открытия модального окна для создания посылки
+  const handleOpenBoxberryModal = () => {
+    setShowBoxberryModal(true);
+    setBoxberryResult(null);
+  };
+  
+  // Обработчик закрытия модального окна для создания посылки
+  const handleCloseBoxberryModal = () => {
+    setShowBoxberryModal(false);
+  };
+  
+  // Обработчик подтверждения создания посылки
+  const handleConfirmBoxberryParcel = async () => {
+    try {
+      setBoxberryLoading(true);
+      setError(null);
+      
+      // Проверяем, что заказ подходит для создания посылки
+      if (!order.id) {
+        setError('Не удалось получить идентификатор заказа');
+        return;
+      }
+      
+      // Вызываем API для создания посылки
+      const result = await createBoxberryParcel(orderId);
+      setBoxberryResult(result);
+      
+      if (result && result.success) {
+        // Обновление данных заказа после создания посылки
+        const updatedOrder = await getAdminOrderById(orderId);
+        if (updatedOrder) {
+          setOrder(updatedOrder);
+          console.log("Успешно обновлен заказ с трек-номером:", updatedOrder.tracking_number);
+        } else {
+          console.error("Не удалось получить обновленные данные заказа");
+        }
+      }
+    } catch (err) {
+      console.error('Ошибка при создании посылки Boxberry:', err);
+      
+      if (err.response) {
+        console.error('Статус ошибки:', err.response.status);
+        console.error('Данные ошибки:', err.response.data);
+      }
+      
+      setError(err.message || 'Не удалось создать посылку Boxberry');
+      setBoxberryResult({
+        success: false,
+        error: err.message || 'Не удалось создать посылку Boxberry'
+      });
+    } finally {
+      setBoxberryLoading(false);
+    }
+  };
+  
+  // Обработчик открытия модального окна для создания посылки
+const handleOpenBoxberryParcelModal = () => {
+  setShowBoxberryParcelModal(true);
+  setBoxberryResult(null);
+};
+
+// Обработчик закрытия модального окна для создания посылки
+const handleCloseBoxberryParcelModal = () => {
+  setShowBoxberryParcelModal(false);
+  // Если была создана посылка, перезагружаем данные заказа
+  if (boxberryResult && boxberryResult.success) {
+    getAdminOrderById(orderId).then(updatedOrder => {
+      if (updatedOrder) {
+        setOrder(updatedOrder);
+      }
+    });
+  }
+};
+  
   return (
     <Container className="py-4">
       <AdminBackButton to="/admin/orders" label="Вернуться к списку заказов" />
@@ -1439,19 +1518,16 @@ const AdminOrderDetail = () => {
                   <p><strong>Статус:</strong> <OrderStatusBadge status={order.status} /></p>
                 </Col>
                 <Col md={6}>
-                  <p><strong>ID пользователя:</strong> {order.user_id}</p>
-                  <p><strong>Email:</strong> {order.email}</p>
-                  <p><strong>Телефон:</strong> {order.phone || 'Не указан'}</p>
                   <p>
-  <strong>Сумма заказа:</strong> {formatPrice(
-    (calculatedDeliveryCost && deliveryData.delivery_type)
-      ? (order.total_price - (order.delivery_cost || 0) + calculatedDeliveryCost.price)
-      : order.total_price
-  )}
-  {calculatedDeliveryCost && deliveryData.delivery_type && (
-    <span className="text-muted small ms-1">(обновится после сохранения)</span>
-  )}
-</p>
+                    <strong>Сумма заказа:</strong> {formatPrice(
+                      (calculatedDeliveryCost && deliveryData.delivery_type)
+                        ? (order.total_price - (order.delivery_cost || 0) + calculatedDeliveryCost.price)
+                        : order.total_price
+                    )}
+                    {calculatedDeliveryCost && deliveryData.delivery_type && (
+                      <span className="text-muted small ms-1">(обновится после сохранения)</span>
+                    )}
+                  </p>
                   {order.discount_amount > 0 && (
                     <p><strong>Скидка:</strong> {formatPrice(order.discount_amount)}</p>
                   )}
@@ -1467,137 +1543,8 @@ const AdminOrderDetail = () => {
                 </Col>
               </Row>
               
-              {order.comment && (
-                <div className="mt-3">
-                  <h6>Комментарий к заказу:</h6>
-                  <p className="bg-light p-2 rounded">{order.comment}</p>
-                </div>
-              )}
-            </Card.Body>
-          </Card>
-          
-          {/* Товары в заказе */}
-          <Card className="mb-4">
-            <Card.Header className="d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">Товары в заказе</h5>
-              {canEditItems() ? (
-                <OrderItemsEditor order={order} onOrderUpdated={setOrder} />
-              ) : (
-                <Badge bg="secondary">
-                  {order.is_paid && order.status && !['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'].includes(order.status.name) ? 
-                    "Редактирование недоступно для оплаченных заказов" : 
-                    `Редактирование недоступно для заказов в статусе "${order.status.name}"`}
-                </Badge>
-              )}
-            </Card.Header>
-            <Card.Body>
-              {!canEditItems() && (
-                <Alert variant="info" className="mb-3">
-                  {order.is_paid && order.status && !['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'].includes(order.status.name) ? 
-                    "Нельзя редактировать товары, так как заказ уже оплачен" : 
-                    `Нельзя редактировать товары для заказа в статусе "${order.status.name}"`}
-                </Alert>
-              )}
-              <Table responsive hover>
-                <thead>
-                  <tr>
-                    <th>ID товара</th>
-                    <th>Наименование</th>
-                    <th>Цена за ед.</th>
-                    <th>Кол-во</th>
-                    <th>Сумма</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {order.items.map(item => (
-                    <tr key={item.id}>
-                      <td>{item.product_id}</td>
-                      <td>{item.product_name}</td>
-                      <td>{formatPrice(item.unit_price || item.product_price || 0)}</td>
-                      <td>{item.quantity}</td>
-                      <td>{formatPrice((item.unit_price || item.product_price || 0) * item.quantity)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
-                    <td>
-                      <strong>
-                        {formatPrice(
-                          (calculatedDeliveryCost && deliveryData.delivery_type)
-                            ? (order.total_price - (order.delivery_cost || 0) + calculatedDeliveryCost.price)
-                            : (order.total_price || order.total_amount || 0)
-                        )}
-                      </strong>
-                      {calculatedDeliveryCost && deliveryData.delivery_type && (
-                        <div className="text-muted small">
-                          (обновится после сохранения)
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                  {order.discount_amount > 0 && (
-                    <tr>
-                      <td colSpan="4" className="text-end"><em>Скидка по промокоду {order.promo_code?.code && (
-                        <span>
-                          ({order.promo_code.code}
-                          {order.promo_code.discount_percent && <span> - {order.promo_code.discount_percent}%</span>})
-                        </span>
-                      )}:</em></td>
-                      <td>-{formatPrice(order.discount_amount)}</td>
-                    </tr>
-                  )}
-                </tfoot>
-              </Table>
-            </Card.Body>
-          </Card>
-          
-          {/* История статусов заказа */}
-          <Card className="mb-4">
-            <Card.Header>
-              <h5 className="mb-0">История статусов</h5>
-            </Card.Header>
-            <Card.Body>
-              <div className="status-timeline">
-                {order.status_history && order.status_history.length > 0 ? (
-                  order.status_history.map((statusChange, index) => (
-                    <div key={index} className="status-item mb-3">
-                      <div className="d-flex justify-content-between">
-                        <div>
-                          <OrderStatusBadge status={statusChange.status} />
-                        </div>
-                        <small className="text-muted">
-                          {formatDateTime(statusChange.changed_at || statusChange.timestamp)}
-                        </small>
-                      </div>
-                      {statusChange.notes || statusChange.note ? (
-                        <div className="status-note mt-1 bg-light p-2 rounded">
-                          {statusChange.notes || statusChange.note}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <p>История статусов отсутствует</p>
-                )}
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-        
-        {/* Боковая панель с адресом доставки и управлением статусом */}
-        <Col md={4}>
-          {/* Адрес доставки */}
-          <Card className="mb-4">
-            <Card.Header>
-              <h5 className="mb-0">Информация о получателе</h5>
-            </Card.Header>
-            <Card.Body>
-              <p><strong>Получатель:</strong> {order.full_name}</p>
-              
-              {/* Информация о типе доставки и адресе с возможностью редактирования */}
-              <div className="mb-3">
+              {/* Информация о доставке с возможностью редактирования */}
+              <div className="mt-4">
                 <div className="d-flex justify-content-between align-items-center mb-2">
                   <h6 className="mb-0">Информация о доставке</h6>
                   <Button 
@@ -1828,29 +1775,197 @@ const AdminOrderDetail = () => {
                     )}
                   </Form>
                 ) : (
-                  <>
-                    <p>
-                      <strong>Тип доставки:</strong>{' '}
-                      {formatDeliveryType(order.delivery_type)}
-                    </p>
-                    <p>
-                      <strong>Адрес доставки:</strong> {order.delivery_address || "Не указан"}
-                    </p>
-                    {order.delivery_cost !== null && order.delivery_cost !== undefined && (
-                      <p>
-                        <strong>Стоимость доставки:</strong> {formatPrice(order.delivery_cost)}
-                      </p>
+                  <div>
+                    <p><strong>Тип доставки:</strong> {formatDeliveryType(order.delivery_type)}</p>
+                    <p><strong>Адрес доставки:</strong> {order.delivery_address}</p>
+                    <p><strong>Стоимость доставки:</strong> {formatPrice(order.delivery_cost || 0)}</p>
+                    
+                    {/* Отображение информации о пункте выдачи Boxberry, если есть */}
+                    {order.delivery_type && order.delivery_type.includes('boxberry_pickup_point') && order.boxberry_point_address && (
+                      <p><strong>Пункт выдачи BoxBerry:</strong> {order.boxberry_point_address}</p>
                     )}
-                    <p>
-                      <strong>Способ оплаты:</strong>{' '}
-                      {order.is_payment_on_delivery ? 'Оплата при получении' : 'Оплата на сайте'}
-                    </p>
-                  </>
+                    
+                    {/* Отображение трек-номера и кнопки для Boxberry */}
+                    {order.delivery_type && order.delivery_type.includes('boxberry') && (
+                      <div className="mt-3 border-top pt-3">
+                        <div className="d-flex justify-content-between align-items-center">
+                          <div>
+                            <strong>Трек-номер:</strong> {order.tracking_number ? (
+                              <span>{order.tracking_number}</span>
+                            ) : (
+                              <span className="text-muted">Не создан</span>
+                            )}
+                          </div>
+                          
+                          <Button 
+                            variant="primary" 
+                            size="sm"
+                            onClick={handleOpenBoxberryParcelModal}
+                            disabled={boxberryLoading || loading}
+                          >
+                            {order.tracking_number ? "Обновить посылку" : "Выгрузить заказ в Boxberry"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
               
-              <p><strong>Телефон:</strong> {order.phone || "Не указан"}</p>
+              {order.comment && (
+                <div className="mt-3">
+                  <h6>Комментарий к заказу:</h6>
+                  <p className="bg-light p-2 rounded">{order.comment}</p>
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+          
+          {/* Товары в заказе */}
+          <Card className="mb-4">
+            <Card.Header className="d-flex justify-content-between align-items-center">
+              <h5 className="mb-0">Товары в заказе</h5>
+              {canEditItems() ? (
+                <OrderItemsEditor order={order} onOrderUpdated={setOrder} />
+              ) : (
+                <Badge bg="secondary">
+                  {order.is_paid && order.status && !['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'].includes(order.status.name) ? 
+                    "Редактирование недоступно для оплаченных заказов" : 
+                    `Редактирование недоступно для заказов в статусе "${order.status.name}"`}
+                </Badge>
+              )}
+            </Card.Header>
+            <Card.Body>
+              {!canEditItems() && (
+                <Alert variant="info" className="mb-3">
+                  {order.is_paid && order.status && !['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'].includes(order.status.name) ? 
+                    "Нельзя редактировать товары, так как заказ уже оплачен" : 
+                    `Нельзя редактировать товары для заказа в статусе "${order.status.name}"`}
+                </Alert>
+              )}
+              <Table responsive hover>
+                <thead>
+                  <tr>
+                    <th>ID товара</th>
+                    <th>Наименование</th>
+                    <th>Цена за ед.</th>
+                    <th>Кол-во</th>
+                    <th>Сумма</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {order.items.map(item => (
+                    <tr key={item.id}>
+                      <td>{item.product_id}</td>
+                      <td>{item.product_name}</td>
+                      <td>{formatPrice(item.unit_price || item.product_price || 0)}</td>
+                      <td>{item.quantity}</td>
+                      <td>{formatPrice((item.unit_price || item.product_price || 0) * item.quantity)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan="4" className="text-end"><strong>Стоимость товаров:</strong></td>
+                    <td>
+                      <strong>
+                        {formatPrice(
+                          order.items.reduce((total, item) => total + (item.unit_price || item.product_price || 0) * item.quantity, 0)
+                        )}
+                      </strong>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan="4" className="text-end"><strong>Стоимость доставки:</strong></td>
+                    <td>
+                      <strong>
+                        {formatPrice(calculatedDeliveryCost ? calculatedDeliveryCost.price : (order.delivery_cost || 0))}
+                      </strong>
+                      {calculatedDeliveryCost && deliveryData.delivery_type && (
+                        <div className="text-muted small">
+                          (обновится после сохранения)
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
+                    <td>
+                      <strong>
+                        {formatPrice(
+                          (calculatedDeliveryCost && deliveryData.delivery_type)
+                            ? (order.total_price - (order.delivery_cost || 0) + calculatedDeliveryCost.price)
+                            : (order.total_price || order.total_amount || 0)
+                        )}
+                      </strong>
+                      {calculatedDeliveryCost && deliveryData.delivery_type && (
+                        <div className="text-muted small">
+                          (обновится после сохранения)
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                  {order.discount_amount > 0 && (
+                    <tr>
+                      <td colSpan="4" className="text-end"><em>Скидка по промокоду {order.promo_code?.code && (
+                        <span>
+                          ({order.promo_code.code}
+                          {order.promo_code.discount_percent && <span> - {order.promo_code.discount_percent}%</span>})
+                        </span>
+                      )}:</em></td>
+                      <td>-{formatPrice(order.discount_amount)}</td>
+                    </tr>
+                  )}
+                </tfoot>
+              </Table>
+            </Card.Body>
+          </Card>
+          
+          {/* История статусов заказа */}
+          <Card className="mb-4">
+            <Card.Header>
+              <h5 className="mb-0">История статусов</h5>
+            </Card.Header>
+            <Card.Body>
+              <div className="status-timeline">
+                {order.status_history && order.status_history.length > 0 ? (
+                  order.status_history.map((statusChange, index) => (
+                    <div key={index} className="status-item mb-3">
+                      <div className="d-flex justify-content-between">
+                        <div>
+                          <OrderStatusBadge status={statusChange.status} />
+                        </div>
+                        <small className="text-muted">
+                          {formatDateTime(statusChange.changed_at || statusChange.timestamp)}
+                        </small>
+                      </div>
+                      {statusChange.notes || statusChange.note ? (
+                        <div className="status-note mt-1 bg-light p-2 rounded">
+                          {statusChange.notes || statusChange.note}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <p>История статусов отсутствует</p>
+                )}
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+        
+        {/* Боковая панель с адресом доставки и управлением статусом */}
+        <Col md={4}>
+          {/* Адрес доставки */}
+          <Card className="mb-4">
+            <Card.Header>
+              <h5 className="mb-0">Информация о получателе</h5>
+            </Card.Header>
+            <Card.Body>
+              <p><strong>Получатель:</strong> {order.full_name}</p>
+              <p><strong>ID пользователя:</strong> {order.user_id}</p>
               <p><strong>Email:</strong> {order.email}</p>
+              <p><strong>Телефон:</strong> {order.phone || 'Не указан'}</p>
               <p>
                 <strong>Согласие на обработку ПД:</strong>{' '}
                 {order.personal_data_agreement !== undefined ? (
@@ -1896,62 +2011,44 @@ const AdminOrderDetail = () => {
           </Card>
           
           {/* Управление статусом заказа */}
-          <Card>
+          <Card className="mb-4">
             <Card.Header>
-              <h5 className="mb-0">Изменить статус</h5>
+              <h5 className="mb-0">Управление статусом</h5>
             </Card.Header>
             <Card.Body>
               <Form>
                 <Form.Group className="mb-3">
-                  <Form.Label>Новый статус</Form.Label>
-                  <Form.Select
-                    value={selectedStatus}
+                  <Form.Label>Статус заказа</Form.Label>
+                  <Form.Select 
+                    value={selectedStatus || ''} 
                     onChange={handleStatusChange}
+                    disabled={loading}
                   >
                     <option value="">Выберите статус</option>
                     {statuses.map(status => (
-                      <option 
-                        key={status.id} 
-                        value={status.id.toString()}
-                        disabled={status.id.toString() === order.status.id.toString()}
-                      >
+                      <option key={status.id} value={status.id}>
                         {status.name}
                       </option>
                     ))}
                   </Form.Select>
                 </Form.Group>
-                
                 <Form.Group className="mb-3">
-                  <Form.Label>Примечание (необязательно)</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={3}
+                  <Form.Label>Комментарий к изменению статуса</Form.Label>
+                  <Form.Control 
+                    as="textarea" 
+                    rows={3} 
                     value={statusNote}
                     onChange={handleNoteChange}
-                    placeholder="Добавьте примечание к изменению статуса"
+                    placeholder="Укажите причину изменения статуса"
+                    disabled={loading}
                   />
                 </Form.Group>
-                
                 <Button 
                   variant="primary" 
-                  className="w-100"
-                  disabled={!selectedStatus || loading}
                   onClick={handleOpenModal}
+                  disabled={loading || !selectedStatus || selectedStatus === (order.status?.id || '').toString()}
                 >
-                  {loading ? (
-                    <>
-                      <Spinner
-                        as="span"
-                        animation="border"
-                        size="sm"
-                        role="status"
-                        aria-hidden="true"
-                      />
-                      <span className="ms-2">Обновление...</span>
-                    </>
-                  ) : (
-                    'Обновить статус'
-                  )}
+                  Обновить статус
                 </Button>
               </Form>
             </Card.Body>
@@ -2014,6 +2111,92 @@ const AdminOrderDetail = () => {
         onPickupPointSelected={handlePickupPointSelected}
         selectedAddress={deliveryData.delivery_address}
       />
+
+      {/* Модальное окно для создания посылки в Boxberry */}
+      <Modal 
+        show={showBoxberryParcelModal} 
+        onHide={handleCloseBoxberryParcelModal}
+        backdrop="static"
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Создание посылки в Boxberry</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {boxberryLoading ? (
+            <div className="text-center my-4">
+              <Spinner animation="border" role="status">
+                <span className="visually-hidden">Загрузка...</span>
+              </Spinner>
+              <p className="mt-3">Идет создание посылки в Boxberry...</p>
+            </div>
+          ) : boxberryResult ? (
+            // Отображаем результат создания посылки
+            <>
+              {boxberryResult.success ? (
+                <div>
+                  <Alert variant="success">
+                    Посылка успешно создана в системе Boxberry.
+                  </Alert>
+                  <p><strong>Трек-номер:</strong> {boxberryResult.trackingNumber}</p>
+                  {boxberryResult.label && (
+                    <p>
+                      <a 
+                        href={boxberryResult.label} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="btn btn-outline-primary btn-sm"
+                      >
+                        Скачать этикетку
+                      </a>
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <Alert variant="danger">
+                  {boxberryResult.error || "Произошла ошибка при создании посылки в Boxberry"}
+                </Alert>
+              )}
+            </>
+          ) : (
+            // Отображаем форму создания посылки
+            <>
+              <p>Вы уверены, что хотите создать посылку в Boxberry для этого заказа?</p>
+              
+              <Alert variant="info">
+                После создания посылки в системе Boxberry, заказу будет присвоен трек-номер для отслеживания.
+              </Alert>
+              
+              {error && (
+                <Alert variant="danger">
+                  {error}
+                </Alert>
+              )}
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          {boxberryResult ? (
+            <Button variant="secondary" onClick={handleCloseBoxberryParcelModal}>
+              Закрыть
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={handleCloseBoxberryParcelModal}>
+                Отмена
+              </Button>
+              <Button 
+                variant="primary" 
+                onClick={handleConfirmBoxberryParcel}
+                disabled={boxberryLoading}
+              >
+                Создать посылку
+              </Button>
+            </>
+          )}
+        </Modal.Footer>
+      </Modal>
+      
+      
     </Container>
   );
 };

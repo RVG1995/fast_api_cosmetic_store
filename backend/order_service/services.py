@@ -356,6 +356,9 @@ async def update_order(
         order.boxberry_point_id = order_data.boxberry_point_id
     if hasattr(order_data, 'is_paid') and order_data.is_paid is not None:
         order.is_paid = order_data.is_paid
+    if hasattr(order_data, 'tracking_number') and order_data.tracking_number is not None:
+        order.tracking_number = order_data.tracking_number
+        logger.info("Обновлен трек-номер для заказа %s: %s", order_id, order_data.tracking_number)
     
     order.updated_at = datetime.utcnow()
     await session.flush()

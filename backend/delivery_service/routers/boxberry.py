@@ -2,12 +2,17 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body, Depends
 import httpx
-logger = logging.getLogger("boxberry_router")
+
+# Импорты из локальных модулей
+from auth import require_admin
 from cache import get_cached_data, set_cached_data, get_boxberry_cache_key, calculate_dimensions
 from config import settings
-from schemas import  DeliveryCalculationResponse, CartDeliveryRequest
+from schemas import DeliveryCalculationResponse, CartDeliveryRequest
+
+# Настройка логирования
+logger = logging.getLogger("boxberry_router")
 
 router = APIRouter(
     prefix="/boxberry",
@@ -421,3 +426,206 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
         logger.exception("Ошибка при расчете стоимости доставки из корзины: %s", str(e))
         raise HTTPException(status_code=500, 
                            detail=f"Ошибка при расчете стоимости доставки из корзины: {str(e)}")
+
+@router.post("/create-parcel", response_model=dict, dependencies=[Depends(require_admin)])
+async def create_boxberry_parcel(
+    order_data: dict = Body(...),
+):
+    """
+    Создание заказа в системе Boxberry и получение трек-номера.
+    Доступно только для администраторов.
+    
+    - **order_data**: Данные заказа для создания посылки в Boxberry
+    """
+    try:
+        logger.info(f"Запрос на создание посылки Boxberry для заказа: {order_data.get('order_number', 'N/A')}")
+        
+        # Формируем базовые параметры запроса
+        parcel_data = {
+            "token": settings.BOXBERRY_TOKEN,
+            "method": "ParselCreate",
+            "sdata": {
+                "order_id": order_data.get("order_number"),
+                "price": str(order_data.get("price", 0)),
+                "payment_sum": str(order_data.get("payment_sum", 0)),
+                "delivery_sum": str(order_data.get("delivery_cost", 0)),
+                "vid": "1" if order_data.get("delivery_type") == "boxberry_pickup_point" else "2",  # 1 - до ПВЗ, 2 - КД
+                "shop": {"name": order_data.get("boxberry_point_id")},  # Код пункта поступления
+                "customer": {
+                    "fio": order_data.get("full_name", ""),
+                    "phone": order_data.get("phone", "").replace("+7", "").replace("8", "", 1),
+                    "email": order_data.get("email", "")
+                },
+                "items": [],
+                "weights": {
+                    "weight": "1000",  # в граммах
+                    "x": "20",         # длина в см
+                    "y": "20",         # ширина в см
+                    "z": "10"          # высота в см
+                }
+            }
+        }
+        
+        # Добавляем товары из заказа
+        if order_data.get("items"):
+            for item in order_data.get("items", []):
+                parcel_data["sdata"]["items"].append({
+                    "id": str(item.get("product_id", "")),
+                    "name": item.get("product_name", ""),
+                    "UnitName": "шт.",
+                    "price": str(item.get("product_price", 0)),
+                    "quantity": str(item.get("quantity", 1))
+                })
+        
+        # Устанавливаем габариты посылки, если они переданы
+        if order_data.get("dimensions"):
+            dims = order_data.get("dimensions")
+            parcel_data["sdata"]["weights"].update({
+                "weight": str(int(dims.get("weight", 1) * 1000)),  # переводим кг в граммы
+                "x": str(int(dims.get("width", 20))),
+                "y": str(int(dims.get("depth", 20))),
+                "z": str(int(dims.get("height", 10)))
+            })
+        
+        # Если не переданы габариты, но есть товары, рассчитываем их
+        elif order_data.get("items"):
+            # Создаем список товаров для расчета габаритов
+            cart_items = []
+            for item in order_data.get("items", []):
+                cart_items.append({
+                    "product_id": item.get("product_id"),
+                    "quantity": item.get("quantity", 1),
+                    "height": item.get("height", 10),
+                    "width": item.get("width", 10),
+                    "depth": item.get("depth", 10),
+                    "weight": item.get("weight", 500)
+                })
+                
+            if cart_items:
+                dimensions = calculate_dimensions(cart_items, package_multiplier=settings.PACKAGE_MULTIPLIER)
+                parcel_data["sdata"]["weights"].update({
+                    "weight": str(int(dimensions["weight"])),  # переводим кг в граммы
+                    "x": str(int(dimensions["width"])),
+                    "y": str(int(dimensions["depth"])),
+                    "z": str(int(dimensions["height"]))
+                })
+        
+        # Добавляем данные в зависимости от типа доставки
+        if order_data.get("delivery_type") == "boxberry_pickup_point":
+            # Доставка до ПВЗ
+            if order_data.get("boxberry_point_id"):
+                parcel_data["sdata"]["issue"] = "1"  # Выдать на ПВЗ
+                # Код ПВЗ Boxberry записываем в name пункта выдачи
+                parcel_data["sdata"]["shop"]["name"] = str(order_data.get("boxberry_point_id"))
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Не указан код пункта выдачи BoxBerry"
+                )
+                
+        elif order_data.get("delivery_type") == "boxberry_courier":
+            # Курьерская доставка
+            # Проверяем наличие адреса и почтового индекса
+            if not order_data.get("delivery_address"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Не указан адрес доставки"
+                )
+                
+            # Проверяем данные для курьерской доставки
+            if not order_data.get("address_data"):
+                # Если не переданы разобранные данные адреса, пытаемся использовать имеющиеся
+                kurddost_data = {
+                    "index": order_data.get("zip_code", ""),
+                    "citi": order_data.get("city_name", ""),
+                    "addressp": order_data.get("delivery_address", "")
+                }
+            else:
+                # Используем переданные разобранные данные адреса
+                address_data = order_data.get("address_data", {})
+                
+                # Формируем адрес для курьерской доставки
+                street = address_data.get("street_with_type", "")
+                house = address_data.get("house", "")
+                house_type = address_data.get("house_type_full", "дом")
+                flat = address_data.get("flat", "")
+                flat_type = address_data.get("flat_type_full", "кв.")
+                
+                # Собираем полный адрес: улица, дом, квартира (если есть)
+                address_parts = [f"{street}", f"{house_type} {house}"]
+                if flat:
+                    address_parts.append(f"{flat_type} {flat}")
+                
+                full_address = ", ".join(address_parts)
+                
+                kurddost_data = {
+                    "index": address_data.get("postal_code", ""),
+                    "citi": address_data.get("city", address_data.get("settlement", "")),
+                    "addressp": full_address
+                }
+                
+            # Добавляем информацию о курьерской доставке
+            parcel_data["sdata"]["kurdost"] = kurddost_data
+            
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Неподдерживаемый тип доставки. Поддерживаются только boxberry_pickup_point и boxberry_courier"
+            )
+        
+        # Выполняем запрос к API BoxBerry
+        logger.info(f"Отправка запроса на создание посылки в BoxBerry: {parcel_data}")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                settings.BOXBERRY_API_URL,
+                json=parcel_data,
+                timeout=30.0
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"Ответ от BoxBerry API: {result}")
+                
+                # Проверяем наличие ошибки в ответе
+                if isinstance(result, dict) and result.get("err"):
+                    error_message = result.get("err", "Неизвестная ошибка")
+                    logger.error(f"Ошибка при создании посылки в BoxBerry: {error_message}")
+                    raise HTTPException(status_code=400, detail=f"Ошибка BoxBerry API: {error_message}")
+                
+                # Проверяем наличие трек-номера
+                track_number = None
+                
+                # Проверяем успешность результата и структуру ответа
+                if isinstance(result, dict):
+                    track_number = result.get("track")
+                    logger.info(f"Получен трек-номер BoxBerry: {track_number}")
+                    
+                    # Возвращаем результат
+                    return {
+                        "success": True,
+                        "track_number": track_number,
+                        "response": result
+                    }
+                else:
+                    logger.warning(f"Неожиданный формат ответа от BoxBerry API: {result}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Неожиданный формат ответа от BoxBerry API"
+                    )
+            else:
+                logger.error(f"Ошибка запроса к BoxBerry API: HTTP {response.status_code}, {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Ошибка запроса к BoxBerry API: {response.text}"
+                )
+                
+    except HTTPException:
+        raise
+        
+    except Exception as e:
+        logger.exception(f"Ошибка при создании посылки в BoxBerry: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при создании посылки в BoxBerry: {str(e)}"
+        )

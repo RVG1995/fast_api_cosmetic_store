@@ -1176,6 +1176,19 @@ export const deliveryAPI = {
     }
   },
   
+  // Создание посылки в Boxberry
+  createBoxberryParcel: async (orderData) => {
+    try {
+      console.log(`Вызов API createBoxberryParcel для заказа:`, orderData);
+      const response = await deliveryApi.post('/delivery/boxberry/create-parcel', orderData);
+      console.log('API createBoxberryParcel ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API createBoxberryParcel:', error);
+      throw error;
+    }
+  },
+  
   // Получение подсказок адресов Dadata
   getDadataAddressSuggestions: async (query) => {
     try {

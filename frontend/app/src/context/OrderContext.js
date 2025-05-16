@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 import { API_URLS } from '../utils/constants';
+import { deliveryAPI } from '../utils/api';
 
 // URL сервиса заказов
 const ORDER_SERVICE_URL = API_URLS.ORDER_SERVICE;
@@ -1027,6 +1028,86 @@ export const OrderProvider = ({ children }) => {
     }
   };
 
+  // Создание посылки Boxberry для заказа
+  const createBoxberryParcel = async (orderId) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      console.log(`Запрос на создание посылки Boxberry для заказа: ${orderId}`);
+      
+      // Получаем текущий заказ, если его нет в состоянии
+      let orderData = currentOrder;
+      if (!orderData || orderData.id !== orderId) {
+        orderData = await getAdminOrderById(orderId);
+        if (!orderData) {
+          throw new Error('Не удалось получить данные заказа');
+        }
+      }
+      
+      // Формируем данные для создания посылки
+      const parcelData = {
+        order_number: orderData.order_number,
+        price: orderData.total_price - (orderData.delivery_cost || 0), // сумма товаров без доставки
+        payment_sum: orderData.is_payment_on_delivery ? orderData.total_price : 0, // если оплата при получении, то полная сумма, иначе 0
+        delivery_cost: orderData.delivery_cost || 0,
+        delivery_type: orderData.delivery_type,
+        boxberry_point_id: orderData.boxberry_point_id,
+        full_name: orderData.full_name,
+        phone: orderData.phone,
+        email: orderData.email,
+        items: orderData.items.map(item => ({
+          product_id: item.product_id,
+          product_name: item.product_name,
+          product_price: item.product_price,
+          quantity: item.quantity
+        })),
+        // Добавляем информацию о весе и габаритах в соответствии с API Boxberry
+        weights: {
+          weight: "500", // вес посылки в граммах
+          x: "12",       // габариты в см
+          y: "12",
+          z: "12"
+        }
+      };
+      
+      // Используем функцию из deliveryAPI вместо прямого запроса
+      const response = await deliveryAPI.createBoxberryParcel(parcelData);
+      
+      // Если получен трек-номер, обновляем заказ
+      if (response && (response.track_number || response.tracking_number)) {
+        const trackingNumber = response.track_number || response.tracking_number;
+        
+        // Обновляем заказ с трек-номером
+        await axios.put(
+          `${ORDER_SERVICE_URL}/admin/orders/${orderId}`,
+          { tracking_number: trackingNumber },
+          { withCredentials: true }
+        );
+        
+        // Обновляем текущий заказ
+        const updatedOrder = await getAdminOrderById(orderId);
+        setCurrentOrder(updatedOrder);
+        
+        return {
+          success: true,
+          trackingNumber,
+          label: response.response?.label,
+          message: "Посылка успешно создана и трек-номер сохранен"
+        };
+      } else {
+        throw new Error('Не удалось получить трек-номер');
+      }
+    } catch (err) {
+      console.error('Ошибка при создании посылки Boxberry:', err);
+      const errorMsg = err.response?.data?.detail || err.message || 'Ошибка при создании посылки Boxberry';
+      setError(errorMsg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Значение контекста
   const contextValue = {
     orders,
@@ -1052,7 +1133,8 @@ export const OrderProvider = ({ children }) => {
     checkPromoCode,
     clearPromoCode,
     calculateDiscount,
-    createAdminOrder
+    createAdminOrder,
+    createBoxberryParcel
   };
 
   return (

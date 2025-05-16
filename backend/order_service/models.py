@@ -99,6 +99,8 @@ class OrderModel(Base):
     boxberry_point_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # ID пункта выдачи
     boxberry_point_address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Адрес пункта выдачи
     delivery_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=False)  # Стоимость доставки
+
+    tracking_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Номер отслеживания
     
     # Информация о способе оплаты
     is_payment_on_delivery: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # Оплата при получении

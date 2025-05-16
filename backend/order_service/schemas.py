@@ -269,6 +269,9 @@ class OrderUpdate(BaseModel):
     boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
     boxberry_point_id: Optional[int] = Field(None, description="ID пункта выдачи BoxBerry")
     
+    # Трек-номер для отслеживания посылки
+    tracking_number: Optional[str] = Field(None, description="Номер отслеживания посылки")
+    
     is_paid: Optional[bool] = None
     
     @field_validator('phone')
@@ -457,6 +460,8 @@ class OrderResponse(BaseModel):
     boxberry_point_address: Optional[str] = None
     boxberry_point_id: Optional[int] = None
     delivery_cost: Optional[float] = None
+    
+    tracking_number: Optional[str] = None
     
     # Информация о способе оплаты
     is_payment_on_delivery: Optional[bool] = True
@@ -669,6 +674,9 @@ class AdminOrderCreate(BaseModel):
     # Информация о типе доставки
     delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
+    boxberry_point_id: Optional[int] = None
+    
+    tracking_number: Optional[str] = Field(None, description="Номер отслеживания")
     
     # Стоимость доставки
     delivery_cost: Optional[float] = Field(None, description="Стоимость доставки в рублях")

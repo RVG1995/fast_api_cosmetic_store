@@ -257,6 +257,8 @@
   margin-bottom: 8px;
   border-radius: 6px;
   transition: background-color 0.2s ease;
+  cursor: pointer;
+  border: 1px solid #dee2e6;
 }
 
 .delivery-option:hover {
@@ -272,6 +274,8 @@
   cursor: pointer;
   font-weight: 400;
   color: #495057;
+  width: 100%;
+  height: 100%;
 }
 
 .delivery-option.selected {
@@ -300,6 +304,8 @@
   display: flex;
   align-items: center;
   transition: all 0.2s ease;
+  cursor: pointer;
+  border: 1px solid #dee2e6;
 }
 
 .payment-option.selected {
@@ -311,9 +317,11 @@
   margin-left: 10px;
   margin-bottom: 0;
   cursor: pointer;
+  width: 100%;
+  height: 100%;
 }
 
-/* Delivery and payment options */
+/* Delivery and payment options - убираем дубликаты */
 .delivery-options-container,
 .payment-options-container {
   margin-bottom: 20px;
@@ -323,34 +331,6 @@
 .payment-options-title {
   font-weight: 600;
   margin-bottom: 10px;
-}
-
-.delivery-option,
-.payment-option {
-  display: flex;
-  align-items: center;
-  padding: 10px;
-  margin-bottom: 5px;
-  border: 1px solid #e0e0e0;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.delivery-option:hover,
-.payment-option:hover {
-  background-color: #f8f9fa;
-}
-
-.delivery-option.selected,
-.payment-option.selected {
-  border-color: #0d6efd;
-  background-color: #f0f7ff;
-}
-
-.delivery-option input,
-.payment-option input {
-  margin-right: 10px;
 }
 
 .delivery-error {

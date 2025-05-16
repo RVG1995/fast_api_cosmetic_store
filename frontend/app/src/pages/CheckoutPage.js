@@ -218,6 +218,12 @@ const CheckoutPage = () => {
       return;
     }
     
+    // Обработка изменения способа оплаты
+    if (name === 'paymentMethod') {
+      setIsPaymentOnDelivery(value === 'on_delivery');
+      return;
+    }
+    
     // Если включается BoxBerry, сбрасываем адрес доставки
     if (name === 'isBoxberryDelivery') {
       setIsBoxberryDelivery(checked);
@@ -527,7 +533,11 @@ const CheckoutPage = () => {
                 <div className="delivery-options-container">
                   <div className="delivery-options-title">Способ доставки<span className="text-danger">*</span></div>
                   
-                  <div className={`delivery-option ${deliveryType === 'boxberry_courier' ? 'selected' : ''}`}>
+                  <div className={`delivery-option ${deliveryType === 'boxberry_courier' ? 'selected' : ''}`} 
+                    onClick={() => {
+                      setDeliveryType('boxberry_courier');
+                      setIsBoxberryDelivery(false);
+                    }}>
                     <input
                       className="form-check-input"
                       type="radio"
@@ -546,7 +556,11 @@ const CheckoutPage = () => {
                     </label>
                   </div>
                   
-                  <div className={`delivery-option ${deliveryType === 'boxberry_pickup_point' ? 'selected' : ''}`}>
+                  <div className={`delivery-option ${deliveryType === 'boxberry_pickup_point' ? 'selected' : ''}`}
+                    onClick={() => {
+                      setDeliveryType('boxberry_pickup_point');
+                      setIsBoxberryDelivery(true);
+                    }}>
                     <input
                       className="form-check-input"
                       type="radio"
@@ -565,7 +579,11 @@ const CheckoutPage = () => {
                     </label>
                   </div>
                   
-                  <div className={`delivery-option ${deliveryType === 'cdek_courier' ? 'selected' : ''}`}>
+                  <div className={`delivery-option ${deliveryType === 'cdek_courier' ? 'selected' : ''}`}
+                    onClick={() => {
+                      setDeliveryType('cdek_courier');
+                      setIsBoxberryDelivery(false);
+                    }}>
                     <input
                       className="form-check-input"
                       type="radio"
@@ -584,7 +602,11 @@ const CheckoutPage = () => {
                     </label>
                   </div>
                   
-                  <div className={`delivery-option ${deliveryType === 'cdek_pickup_point' ? 'selected' : ''}`}>
+                  <div className={`delivery-option ${deliveryType === 'cdek_pickup_point' ? 'selected' : ''}`}
+                    onClick={() => {
+                      setDeliveryType('cdek_pickup_point');
+                      setIsBoxberryDelivery(false);
+                    }}>
                     <input
                       className="form-check-input"
                       type="radio"
@@ -637,7 +659,8 @@ const CheckoutPage = () => {
                 <div className="payment-options-container mb-4">
                   <div className="payment-options-title">Способ оплаты<span className="text-danger">*</span></div>
                   
-                  <div className={`payment-option ${isPaymentOnDelivery ? 'selected' : ''}`}>
+                  <div className={`payment-option ${isPaymentOnDelivery ? 'selected' : ''}`}
+                    onClick={() => setIsPaymentOnDelivery(true)}>
                     <input
                       className="form-check-input"
                       type="radio"
@@ -652,7 +675,8 @@ const CheckoutPage = () => {
                     </label>
                   </div>
                   
-                  <div className={`payment-option ${!isPaymentOnDelivery ? 'selected' : ''}`}>
+                  <div className={`payment-option ${!isPaymentOnDelivery ? 'selected' : ''}`}
+                    onClick={() => setIsPaymentOnDelivery(false)}>
                     <input
                       className="form-check-input"
                       type="radio"

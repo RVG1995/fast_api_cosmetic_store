@@ -707,7 +707,7 @@ async def get_cart_summary(
             total_price=0
         )
 
-@router.delete("/", response_model=CartResponseSchema, tags=["Корзина"])
+@router.delete("", response_model=CartResponseSchema, tags=["Корзина"])
 async def clear_cart(
     user: Optional[User] = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)

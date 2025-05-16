@@ -188,6 +188,97 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
     Возвращает стоимость доставки и срок доставки.
     """
     try:
+        # Проверяем, выбрана ли курьерская доставка
+        if cart_request.delivery_type == 'boxberry_courier':
+            # Проверяем наличие почтового индекса для курьерской доставки
+            if not cart_request.zip_code:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Для курьерской доставки необходимо указать почтовый индекс"
+                )
+            
+            # Проверяем, есть ли город в списке городов с курьерской доставкой
+            # Запрашиваем список городов с курьерской доставкой
+            courier_cities_cache_key = get_cache_key("CourierListCities")
+            courier_cities = await get_cached_data(courier_cities_cache_key)
+            
+            if not courier_cities:
+                # Если данных нет в кэше, запрашиваем их у API
+                params = {
+                    "token": settings.BOXBERRY_TOKEN,
+                    "method": "CourierListCities"
+                }
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(settings.BOXBERRY_API_URL, params=params)
+                    
+                    if response.status_code == 200:
+                        courier_cities = response.json()
+                        
+                        # Сохраняем в кэш на 3 часа (10800 секунд)
+                        await set_cached_data(courier_cities_cache_key, courier_cities, 10800)
+                        logger.info("Сохраняю данные о городах с курьерской доставкой в кэш")
+                    else:
+                        logger.error("Ошибка при получении списка городов с курьерской доставкой: %s", response.text)
+                        raise HTTPException(
+                            status_code=response.status_code, 
+                            detail=f"Ошибка API Boxberry при получении списка городов: {response.text}"
+                        )
+            
+            # Проверяем, есть ли город в списке городов с курьерской доставкой
+            city_name = cart_request.city_name if hasattr(cart_request, 'city_name') else None
+            
+            if city_name:
+                city_name_lower = city_name.lower().strip()
+                city_found = False
+                
+                for city in courier_cities:
+                    if city.get("City", "").lower() == city_name_lower:
+                        city_found = True
+                        break
+                
+                if not city_found:
+                    logger.warning(f"Город {city_name} не найден в списке городов с курьерской доставкой")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Курьерская доставка в город {city_name} невозможна"
+                    )
+            
+            # Проверяем почтовый индекс через ZipCheck API
+            params = {
+                "token": settings.BOXBERRY_TOKEN,
+                "method": "ZipCheck",
+                "zip": cart_request.zip_code,
+                "CountryCode": settings.BOXBERRY_COUNTRY_RUSSIA_CODE
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.get(settings.BOXBERRY_API_URL, params=params)
+                
+                if response.status_code == 200:
+                    zip_check_data = response.json()
+                    
+                    # Проверяем формат данных, API может вернуть объект или список
+                    if isinstance(zip_check_data, list) and zip_check_data:
+                        # Если вернулся список, берем первый элемент
+                        zip_check_data = zip_check_data[0]
+                    
+                    # Проверяем, возможна ли курьерская доставка по указанному индексу
+                    if not zip_check_data.get("ExpressDelivery", False):
+                        logger.warning(f"Курьерская доставка по индексу {cart_request.zip_code} невозможна")
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Курьерская доставка по индексу {cart_request.zip_code} невозможна"
+                        )
+                    
+                    logger.info(f"Курьерская доставка по индексу {cart_request.zip_code} возможна")
+                else:
+                    logger.error("Ошибка при проверке почтового индекса: %s", response.text)
+                    raise HTTPException(
+                        status_code=response.status_code, 
+                        detail=f"Ошибка API Boxberry при проверке почтового индекса: {response.text}"
+                    )
+        
         # Рассчитываем общую стоимость заказа
         total_price = sum(item.price * item.quantity for item in cart_request.items)
         
@@ -327,147 +418,6 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
         logger.exception("Ошибка при расчете стоимости доставки из корзины: %s", str(e))
         raise HTTPException(status_code=500, 
                            detail=f"Ошибка при расчете стоимости доставки из корзины: {str(e)}")
-
-@router.post("/calculate", response_model=DeliveryCalculationResponse)
-async def calculate_delivery(calculation_request: DeliveryCalculationRequest):
-    """
-    Расчет стоимости доставки с помощью API Boxberry.
-    
-    Принимает вес посылки, город отправления, город назначения, стоимость заказа
-    и другие опциональные параметры для расчета стоимости доставки.
-    
-    Возвращает стоимость доставки и срок доставки.
-    """
-    try:
-        # Формируем параметры запроса к API
-        params = {
-            "token": settings.BOXBERRY_TOKEN,
-            "method": "DeliveryCalculation",
-            "OrderSum": calculation_request.order_sum,
-        }
-        
-        # Определяем тип доставки
-        if calculation_request.delivery_type == 'boxberry_pickup_point':
-            params["DeliveryType"] = "1"  # Доставка до ПВЗ
-        elif calculation_request.delivery_type == 'boxberry_courier':
-            params["DeliveryType"] = "2"  # Курьерская доставка
-        
-        # PaySum зависит от способа оплаты
-        # Если оплата при получении, то PaySum = OrderSum
-        # Если оплата на сайте, то PaySum = 0
-        params["PaySum"] = calculation_request.order_sum if calculation_request.is_payment_on_delivery else 0
-        
-        # Используем значения из запроса или значения по умолчанию
-        weight = calculation_request.weight or 500
-        height = calculation_request.height or 10
-        width = calculation_request.width or 10
-        depth = calculation_request.depth or 10
-        
-        # Создаем массив BoxSizes с габаритами
-        params["BoxSizes"] = [
-            {
-                "Weight": weight,
-                "Height": height,
-                "Width": width,
-                "Depth": depth
-            }
-        ]
-        
-        # Добавляем опциональные параметры, если они указаны
-        if calculation_request.pvz_code:
-            params["TargetStop"] = calculation_request.pvz_code  # Код пункта выдачи
-            
-            # Логируем информацию о параметрах доставки до ПВЗ
-            logger.info(f"Расчет доставки до пункта выдачи BoxBerry. " 
-                        f"Код ПВЗ: {calculation_request.pvz_code}")
-            
-        if calculation_request.delivery_sum:
-            params["DeliverySum"] = calculation_request.delivery_sum
-            
-        if calculation_request.zip_code:
-            params["Zip"] = calculation_request.zip_code
-            logger.info(f"Добавлен почтовый индекс для курьерской доставки: {calculation_request.zip_code}")
-        
-        # Выполняем запрос к API
-        async with httpx.AsyncClient() as client:
-            # Логируем запрос для отладки
-            logger.info(f"Запрос к Boxberry API: {params}")
-            
-            try:
-                response = await client.post(
-                    settings.BOXBERRY_API_URL, 
-                    json=params,
-                    timeout=10.0  # Устанавливаем таймаут запроса в 10 секунд
-                )
-                
-                # Дополнительная информация о запросе для отладки
-                logger.debug(f"URL запроса к Boxberry API: {response.request.url}")
-                
-                if response.status_code == 200:
-                    try:
-                        delivery_data = response.json()
-                        logger.debug(f"Ответ Boxberry API: {delivery_data}")
-                        
-                        # Проверяем на наличие ошибки в ответе
-                        if isinstance(delivery_data, dict) and delivery_data.get("error", False):
-                            error_message = delivery_data.get("message", "Неизвестная ошибка")
-                            logger.error(f"Ошибка Boxberry API: {error_message}")
-                            raise HTTPException(status_code=400, detail=f"Ошибка Boxberry API: {error_message}")
-                        
-                        # Обрабатываем успешный ответ, результат находится в поле result.DeliveryCosts
-                        if "result" in delivery_data and "DeliveryCosts" in delivery_data["result"] and delivery_data["result"]["DeliveryCosts"]:
-                            # Берем первый вариант доставки
-                            delivery_costs = delivery_data["result"]["DeliveryCosts"][0]
-                            
-                            # Форматируем ответ
-                            result = {
-                                "price": float(delivery_costs.get("TotalPrice", 0)),
-                                "price_base": float(delivery_costs.get("PriceBase", 0)),
-                                "price_service": float(delivery_costs.get("PriceService", 0)),
-                                "delivery_period": int(delivery_costs.get("DeliveryPeriod", 0))
-                            }
-                            
-                            # Логируем результат
-                            logger.info(f"Получена стоимость доставки: {result}")
-                            
-                            return result
-                        else:
-                            # Если нет данных о доставке, возвращаем пустые данные
-                            logger.warning("Получен пустой результат расчета доставки")
-                            logger.debug(f"Полный ответ API: {delivery_data}")
-                            result = {
-                                "price": 0.0,
-                                "price_base": 0.0,
-                                "price_service": 0.0,
-                                "delivery_period": 0
-                            }
-                        
-                            return result
-                    except ValueError as e:
-                        logger.error(f"Ошибка парсинга JSON ответа от Boxberry API: {e}")
-                        logger.debug(f"Тело ответа: {response.text[:1000]}")  # Логируем первые 1000 символов
-                        raise HTTPException(status_code=500, detail=f"Ошибка обработки ответа Boxberry API: {str(e)}")
-                else:
-                    logger.error(f"Ошибка при расчете стоимости доставки: HTTP {response.status_code}, {response.text}")
-                    raise HTTPException(status_code=response.status_code, 
-                                       detail=f"Ошибка API Boxberry: HTTP {response.status_code}, {response.text}")
-            
-            except httpx.TimeoutException:
-                logger.error("Превышено время ожидания ответа от Boxberry API")
-                raise HTTPException(status_code=504, detail="Превышено время ожидания ответа от API Boxberry")
-            
-            except httpx.RequestError as e:
-                logger.error(f"Ошибка сетевого соединения с Boxberry API: {str(e)}")
-                raise HTTPException(status_code=503, detail=f"Ошибка соединения с API Boxberry: {str(e)}")
-    
-    except HTTPException:
-        # Передаем HTTPException дальше
-        raise
-    
-    except Exception as e:
-        logger.exception("Ошибка при расчете стоимости доставки: %s", str(e))
-        raise HTTPException(status_code=500, 
-                           detail=f"Ошибка при расчете стоимости доставки: {str(e)}")
 
 def calculate_dimensions(items: List[CartItemModel]) -> Dict[str, int]:
     """

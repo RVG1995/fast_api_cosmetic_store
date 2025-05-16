@@ -641,9 +641,9 @@ const AdminOrderDetail = () => {
     delivery_type: '',
     delivery_address: ''
   });
-  const [updateDeliveryLoading, setUpdateDeliveryLoading] = useState(false);
-  const [updateDeliverySuccess, setUpdateDeliverySuccess] = useState(false);
-  const [updateDeliveryError, setUpdateDeliveryError] = useState(null);
+  const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [deliverySuccess, setDeliverySuccess] = useState(false);
+  const [deliveryError, setDeliveryError] = useState(null);
   const [showBoxberryModal, setShowBoxberryModal] = useState(false);
   const [selectedPickupPoint, setSelectedPickupPoint] = useState(null);
   
@@ -966,80 +966,58 @@ const AdminOrderDetail = () => {
     }
   };
   
+  // Обработчик обновления информации о доставке
   const handleUpdateDelivery = async () => {
-    setUpdateDeliveryLoading(true);
-    setUpdateDeliveryError(null);
-    
     try {
-      console.log("Начинаем обновление информации о доставке заказа ID:", order?.id);
+      setDeliveryLoading(true);
+      setDeliveryError(null);
       
-      // Формируем данные для запроса
+      // Данные для обновления
       const updateData = {
         delivery_type: deliveryData.delivery_type,
         delivery_address: deliveryData.delivery_address
       };
       
-      // Проверяем, есть ли изменения
-      const hasChanges = 
-        updateData.delivery_type !== order.delivery_type ||
-        updateData.delivery_address !== order.delivery_address;
-      
-      if (!hasChanges) {
-        setUpdateDeliveryError("Нет изменений для сохранения");
-        setUpdateDeliveryLoading(false);
-        return;
+      // Если выбран пункт BoxBerry, добавляем его код
+      if (deliveryData.delivery_type === 'boxberry_pickup_point' && selectedPickupPoint) {
+        updateData.boxberry_point_id = selectedPickupPoint.Code;
       }
       
-      // Проверяем, что все обязательные поля заполнены
-      if (!updateData.delivery_type) {
-        setUpdateDeliveryError("Выберите тип доставки");
-        setUpdateDeliveryLoading(false);
-        return;
-      }
+      // Вызываем API для обновления данных о доставке
+      const response = await adminAPI.updateOrderDeliveryInfo(orderId, updateData);
       
-      if (!updateData.delivery_address) {
-        setUpdateDeliveryError("Укажите адрес доставки");
-        setUpdateDeliveryLoading(false);
-        return;
-      }
-      
-      // Дополнительно проверяем, что для доставки в пункт выдачи BoxBerry выбран пункт
-      if (updateData.delivery_type === 'boxberry_pickup_point' && !selectedPickupPoint) {
-        setUpdateDeliveryError("Выберите пункт выдачи BoxBerry");
-        setUpdateDeliveryLoading(false);
-        return;
-      }
-      
-      console.log("Отправляем обновления:", updateData);
-      
-      // Отправляем запрос
-      const result = await adminAPI.updateOrderDeliveryInfo(order?.id, updateData);
-      console.log("Получен результат обновления:", result);
-      
-      // Обновляем заказ в компоненте
-      if (result) {
-        // Запрашиваем актуальное состояние заказа после обновления
-        const updatedOrder = await adminAPI.getOrderById(order?.id);
-        if (updatedOrder) {
-          setOrder(updatedOrder);
-        }
+      if (response) {
+        setDeliverySuccess(true);
+        setTimeout(() => setDeliverySuccess(false), 3000);
         
-        // Очищаем состояние
+        // Обновляем данные заказа
+        const updatedOrder = await adminAPI.getOrderById(orderId);
+        setOrder(updatedOrder);
+        
+        // Закрываем форму редактирования
         setShowDeliveryForm(false);
-        setUpdateDeliverySuccess(true);
-        setTimeout(() => setUpdateDeliverySuccess(false), 3000);
       }
     } catch (err) {
-      console.error("Ошибка при обновлении информации о доставке:", err);
+      console.error('Ошибка при обновлении информации о доставке:', err);
       
-      if (err.response) {
-        console.error("Ответ сервера:", err.response.data);
-        setUpdateDeliveryError(err.response.data?.detail || "Ошибка при обновлении информации о доставке");
+      // Проверяем наличие детальной информации об ошибке от API
+      if (err.response && err.response.data && err.response.data.detail) {
+        // Устанавливаем текст ошибки из ответа API
+        setDeliveryError(err.response.data.detail);
+        
+        // Если ошибка связана с невозможностью курьерской доставки
+        const errorText = err.response.data.detail.toLowerCase();
+        if (errorText.includes('курьерская доставка') && errorText.includes('невозможна')) {
+          console.log('Курьерская доставка невозможна по указанному адресу/индексу');
+          
+          // Можно предложить выбрать другой способ доставки
+          // или оставить с ошибкой, чтобы админ выбрал другое
+        }
       } else {
-        setUpdateDeliveryError(err.message || "Произошла ошибка при обновлении информации о доставке");
+        setDeliveryError('Не удалось обновить информацию о доставке');
       }
     } finally {
-      setUpdateDeliveryLoading(false);
+      setDeliveryLoading(false);
     }
   };
   
@@ -1291,9 +1269,9 @@ const AdminOrderDetail = () => {
                         variant="primary" 
                         size="sm" 
                         onClick={handleUpdateDelivery}
-                        disabled={updateDeliveryLoading}
+                        disabled={deliveryLoading}
                       >
-                        {updateDeliveryLoading ? (
+                        {deliveryLoading ? (
                           <>
                             <Spinner as="span" animation="border" size="sm" />
                             <span className="ms-2">Сохранение...</span>
@@ -1304,15 +1282,15 @@ const AdminOrderDetail = () => {
                       </Button>
                     </div>
                     
-                    {updateDeliverySuccess && (
+                    {deliverySuccess && (
                       <Alert variant="success" className="mt-3">
                         Информация о доставке успешно обновлена
                       </Alert>
                     )}
                     
-                    {updateDeliveryError && (
+                    {deliveryError && (
                       <Alert variant="danger" className="mt-3">
-                        {updateDeliveryError}
+                        {deliveryError}
                       </Alert>
                     )}
                   </Form>

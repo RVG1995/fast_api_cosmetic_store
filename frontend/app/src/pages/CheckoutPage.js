@@ -68,6 +68,12 @@ const CheckoutPage = () => {
   // Состояния для адреса доставки (для курьерской доставки)
   const [selectedAddressData, setSelectedAddressData] = useState(null);
   
+  // Блокировка для предотвращения параллельных запросов
+  const [isCalculating, setIsCalculating] = useState(false);
+  
+  // Состояние для отслеживания недоступных типов доставки
+  const [disabledDeliveryTypes, setDisabledDeliveryTypes] = useState([]);
+  
   // Проверяем наличие товаров в корзине и вычисляем общую стоимость
   useEffect(() => {
     // Если заказ успешно создан, не выполняем редирект даже при пустой корзине
@@ -88,9 +94,6 @@ const CheckoutPage = () => {
   
   // Вычисляем итоговую сумму с учетом скидки и стоимости доставки
   const finalTotal = cartTotal - discountAmount + deliveryCost;
-  
-  // Блокировка для предотвращения параллельных запросов
-  const [isCalculating, setIsCalculating] = useState(false);
   
   // Функция для расчета стоимости доставки
   // Принимает параметр forcePaymentOnDelivery, который позволяет передать значение напрямую
@@ -187,9 +190,9 @@ const CheckoutPage = () => {
           deliveryData.zip_code = selectedAddressData.postal_code;
         }
         
-        // Дополнительно можно передать город (если почтовый индекс не удалось определить)
+        // Добавляем название населенного пункта (город или поселок)
         if (selectedAddressData.city) {
-          deliveryData.recipient_city = selectedAddressData.city;
+          deliveryData.city_name = selectedAddressData.city;
         }
         
         console.log('Данные адреса для расчета:', {
@@ -211,7 +214,31 @@ const CheckoutPage = () => {
       
     } catch (err) {
       console.error('Ошибка при расчете стоимости доставки:', err);
-      setDeliveryError('Не удалось рассчитать стоимость доставки');
+      // Проверяем наличие детальной информации об ошибке от API
+      if (err.response && err.response.data && err.response.data.detail) {
+        // Устанавливаем текст ошибки из ответа API
+        setDeliveryError(err.response.data.detail);
+        
+        // Если ошибка связана с невозможностью курьерской доставки
+        const errorText = err.response.data.detail.toLowerCase();
+        if (errorText.includes('курьерская доставка') && errorText.includes('невозможна')) {
+          console.log('Курьерская доставка невозможна по указанному адресу/индексу');
+          
+          // Блокируем выбор курьерской доставки, если она невозможна по указанному адресу
+          if (deliveryType === 'boxberry_courier') {
+            // Добавляем тип доставки в список недоступных
+            setDisabledDeliveryTypes(prev => [...prev.filter(type => type !== 'boxberry_courier'), 'boxberry_courier']);
+            
+            // Сбрасываем тип доставки на пустой
+            setDeliveryType('');
+            
+            // Показываем конкретное сообщение об ошибке
+            setDeliveryError(`Курьерская доставка невозможна по указанному адресу/индексу. Пожалуйста, выберите другой способ доставки или адрес.`);
+          }
+        }
+      } else {
+        setDeliveryError('Не удалось рассчитать стоимость доставки');
+      }
       setDeliveryCost(0);
     } finally {
       setCalculatingDelivery(false);
@@ -304,7 +331,8 @@ const CheckoutPage = () => {
         setSelectedAddressData({
           value: bestMatch.value,
           postal_code: bestMatch.data.postal_code,
-          city: bestMatch.data.city,
+          city: bestMatch.data.city || bestMatch.data.settlement, // Используем название поселка, если город не указан
+          settlement: bestMatch.data.settlement,
           street: bestMatch.data.street,
           house: bestMatch.data.house
         });
@@ -312,7 +340,8 @@ const CheckoutPage = () => {
         console.log('Автоматически выбраны данные адреса:', {
           value: bestMatch.value,
           postal_code: bestMatch.data.postal_code,
-          city: bestMatch.data.city
+          city: bestMatch.data.city || bestMatch.data.settlement, // Добавляем логирование поселка
+          settlement: bestMatch.data.settlement
         });
       }
     } catch(e) { 
@@ -334,6 +363,13 @@ const CheckoutPage = () => {
         на: newDeliveryType, 
         hasPickupPoint: !!selectedPickupPoint 
       });
+      
+      // Проверяем, не выбран ли недоступный тип доставки
+      if (disabledDeliveryTypes.includes(newDeliveryType)) {
+        console.log(`Тип доставки ${newDeliveryType} недоступен`);
+        setDeliveryError(`Курьерская доставка невозможна по указанному адресу. Пожалуйста, выберите другой способ доставки или измените адрес.`);
+        return;
+      }
       
       // Установка нового типа доставки
       setDeliveryType(newDeliveryType);
@@ -410,6 +446,18 @@ const CheckoutPage = () => {
       const newValue = value;
       fetchAddressSuggestions(newValue);
       setFormData(prev => ({...prev, delivery_address: newValue}));
+      
+      // При существенном изменении адреса сбрасываем недоступные типы доставки
+      if (selectedAddressData && selectedAddressData.postal_code) {
+        const currentAddressStart = selectedAddressData.value.substring(0, Math.min(selectedAddressData.value.length, 10));
+        const newAddressStart = newValue.substring(0, Math.min(newValue.length, 10));
+        
+        if (!newValue.includes(currentAddressStart) && !currentAddressStart.includes(newAddressStart)) {
+          // Если это существенно новый адрес, сбрасываем ограничения доставки
+          setDisabledDeliveryTypes([]);
+          setDeliveryError(null);
+        }
+      }
       
       // Для курьерской доставки BoxBerry сбрасываем данные адреса 
       // только если новый ввод радикально отличается от текущего
@@ -503,6 +551,12 @@ const CheckoutPage = () => {
     // Проверяем, что для пунктов выдачи указан адрес
     if (deliveryType === 'boxberry_pickup_point' && !selectedPickupPoint) {
       setError('Пожалуйста, выберите пункт выдачи BoxBerry');
+      return;
+    }
+    
+    // Проверяем, не является ли выбранный тип доставки недоступным
+    if (disabledDeliveryTypes.includes(deliveryType)) {
+      setError(`Курьерская доставка невозможна по указанному адресу. Пожалуйста, выберите другой способ доставки.`);
       return;
     }
     
@@ -712,6 +766,11 @@ const CheckoutPage = () => {
                   
                   <div className={`delivery-option ${deliveryType === 'boxberry_courier' ? 'selected' : ''}`} 
                     onClick={() => {
+                      // Проверяем, не является ли тип доставки недоступным
+                      if (disabledDeliveryTypes.includes('boxberry_courier')) {
+                        return;
+                      }
+                      
                       // При клике на контейнер используем handleChange с синтетическим event объектом
                       handleChange({
                         target: {
@@ -728,10 +787,14 @@ const CheckoutPage = () => {
                       value="boxberry_courier"
                       checked={deliveryType === 'boxberry_courier'}
                       onChange={handleChange}
+                      disabled={disabledDeliveryTypes.includes('boxberry_courier')}
                       required
                     />
                     <label className="form-check-label" htmlFor="boxberry_courier">
                       Курьер BoxBerry
+                      {disabledDeliveryTypes.includes('boxberry_courier') && (
+                        <span className="text-danger ms-2">(недоступно для указанного адреса)</span>
+                      )}
                     </label>
                   </div>
                   
@@ -920,7 +983,8 @@ const CheckoutPage = () => {
                             setSelectedAddressData({
                               value: opt.value,
                               postal_code: opt.data.postal_code,
-                              city: opt.data.city,
+                              city: opt.data.city || opt.data.settlement, // Используем название поселка, если город не указан
+                              settlement: opt.data.settlement,
                               street: opt.data.street,
                               house: opt.data.house
                             });

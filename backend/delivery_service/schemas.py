@@ -44,5 +44,6 @@ class CartDeliveryRequest(BaseModel):
     items: List[CartItemModel] = Field(..., description="Список товаров в корзине")
     pvz_code: Optional[str] = Field(None, description="Код ПВЗ (если доставка до ПВЗ)")
     zip_code: Optional[str] = Field(None, description="Почтовый индекс для курьерской доставки")
+    city_name: Optional[str] = Field(None, description="Название города для курьерской доставки")
     delivery_type: str = Field(..., description="Тип доставки (boxberry_pickup_point или boxberry_courier)")
     is_payment_on_delivery: bool = Field(True, description="Оплата при получении (True) или на сайте (False)")

@@ -1,14 +1,12 @@
 """Роутер для интеграции с API DaData для подсказок адресов и ФИО с кэшированием."""
 
 import logging
-import json
-import hashlib
 from typing import Union
 
 from fastapi import APIRouter, HTTPException
 import httpx
 logger = logging.getLogger("dadata_router")
-from cache import get_cached_data, set_cached_data, get_cached_data_by_pattern
+from cache import set_cached_data, get_dadata_cache_key, smart_dadata_cache_lookup
 from config import settings
 
 DADATA_CACHE_TTL = settings.DADATA_CACHE_TTL
@@ -18,169 +16,6 @@ router = APIRouter(
     tags=["dadata"],
     responses={400: {"description": "Bad Request"}, 500: {"description": "Server Error"}}
 )
-
-
-def normalize_obj(obj):
-    """Нормализует объект для кэширования (приводит к нижнему регистру и сортирует ключи)."""
-    if isinstance(obj, str):
-        return obj.strip().lower()
-    if isinstance(obj, list):
-        return [normalize_obj(i) for i in obj]
-    if isinstance(obj, dict):
-        # Для словаря с query нормализуем и само значение query
-        if "query" in obj and isinstance(obj["query"], str):
-            obj_copy = obj.copy()
-            obj_copy["query"] = obj_copy["query"].strip().lower()
-            return {k: normalize_obj(obj_copy[k]) for k in sorted(obj_copy)}
-        return {k: normalize_obj(obj[k]) for k in sorted(obj)}
-    return obj
-
-def get_cache_key(obj_type, query):
-    """Генерирует ключ для кэша с учетом регистра."""
-    if isinstance(query, dict) and "query" in query:
-        # Для запросов в формате словаря нормализуем запрос
-        query_dict = query.copy()
-        query_dict["query"] = query_dict["query"].lower().strip()
-        # Создаем строку JSON из словаря с отсортированными ключами
-        key_str = json.dumps(query_dict, ensure_ascii=False, sort_keys=True)
-    else:
-        # Для строковых запросов приводим к нижнему регистру
-        key_str = str(query).lower().strip()
-    
-    # Хешируем для создания короткого ключа
-    hash_obj = hashlib.md5(key_str.encode('utf-8'))
-    hash_key = hash_obj.hexdigest()
-    
-    return f"dadata:{obj_type}:{hash_key}"
-
-def trim_query(query):
-    """Обрезает запрос, чтобы получить подзапрос для поиска в кэше."""
-    if isinstance(query, dict) and "query" in query:
-        return query.copy()
-    
-    if isinstance(query, str):
-        if len(query) <= 3:
-            return query.lower().strip()  # Маленькие запросы возвращаем как есть
-        
-        # Обрезаем запрос до последнего пробела
-        query_lower = query.lower().strip()
-        last_space = query_lower.rfind(" ")
-        if last_space > 0:
-            # Если есть пробел, возвращаем строку до последнего пробела
-            return query_lower[:last_space]
-        # Если пробела нет, возвращаем первые несколько символов
-        return query_lower[:3]
-            
-    return query  # Если запрос не строка и не словарь, возвращаем как есть
-
-async def smart_cache_lookup(obj_type, query):
-    """
-    Умный поиск в кэше: проверяет не только точное совпадение, но и кеш от более коротких запросов.
-    Для подсказок по адресам и ФИО имеет смысл использовать кеш от более короткого запроса.
-    
-    Args:
-        obj_type: Тип объекта (address/fio)
-        query: Запрос для поиска
-        
-    Returns:
-        Данные из кэша или None, если ничего не найдено
-    """
-    # Нормализуем запрос перед поиском в кэше
-    if isinstance(query, dict):
-        # Для запросов в формате словаря (address)
-        if "query" in query:
-            original_query = query.get("query", "").lower().strip()
-            
-            # Сначала ищем точное совпадение, используя get_cache_key
-            exact_key = get_cache_key(obj_type, query)
-            cached = await get_cached_data(exact_key)
-            
-            if cached:
-                # Если нашли точное совпадение, возвращаем его
-                logger.info("Точное попадание в кэш %s для запроса: %s", obj_type, original_query)
-                return cached
-                
-            # Если точного совпадения нет, ищем частичное
-            pattern = f"dadata:{obj_type}:*"
-            cached_keys = await get_cached_data_by_pattern(pattern)
-            
-            # Фильтруем полученные результаты
-            if cached_keys:
-                # Ищем подходящие подсказки для нашего запроса
-                prefix = original_query.lower().strip()
-                
-                if len(prefix) >= 3:  # Проверяем только если префикс достаточно длинный
-                    for key, value in cached_keys.items():
-                        # Проверяем, содержит ли кэшированный результат подходящие подсказки
-                        if value and isinstance(value, dict) and "suggestions" in value:
-                            # Фильтруем подсказки
-                            filtered_suggestions = []
-                            for suggestion in value.get("suggestions", []):
-                                if "value" in suggestion:
-                                    cached_value = suggestion.get("value", "").lower()
-                                    # Проверяем, соответствует ли подсказка текущему запросу
-                                    if prefix in cached_value or cached_value.startswith(prefix):
-                                        filtered_suggestions.append(suggestion)
-                            
-                            if filtered_suggestions:
-                                # Создаем новый результат с отфильтрованными подсказками
-                                filtered_result = value.copy()
-                                filtered_result["suggestions"] = filtered_suggestions
-                                logger.info("Частичное попадание в кэш %s для запроса: %s (найдено %d подсказок)", 
-                                          obj_type, original_query, len(filtered_suggestions))
-                                return filtered_result
-                
-                logger.info("Частичное попадание в кэш %s, но нет релевантных подсказок для запроса: %s", 
-                          obj_type, original_query)
-    
-    else:
-        # Для запросов в формате строки (fio)
-        original_query = str(query).lower().strip()
-        
-        # Сначала ищем точное совпадение, используя get_cache_key
-        exact_key = get_cache_key(obj_type, query)
-        cached = await get_cached_data(exact_key)
-        
-        if cached:
-            # Если нашли точное совпадение, возвращаем его
-            logger.info("Точное попадание в кэш %s для запроса: %s", obj_type, original_query)
-            return cached
-            
-        # Если точного совпадения нет, ищем в кэше по шаблону
-        pattern = f"dadata:{obj_type}:*"
-        cached_keys = await get_cached_data_by_pattern(pattern)
-        
-        # Фильтруем полученные результаты
-        if cached_keys:
-            # Ищем подходящие подсказки для нашего запроса
-            prefix = original_query.lower().strip()
-            
-            if len(prefix) >= 3:  # Проверяем только если префикс достаточно длинный
-                for key, value in cached_keys.items():
-                    if value and isinstance(value, dict) and "suggestions" in value:
-                        # Фильтруем подсказки
-                        filtered_suggestions = []
-                        for suggestion in value.get("suggestions", []):
-                            if "value" in suggestion:
-                                cached_value = suggestion.get("value", "").lower()
-                                # Проверяем, соответствует ли подсказка текущему запросу
-                                if prefix in cached_value or cached_value.startswith(prefix):
-                                    filtered_suggestions.append(suggestion)
-                        
-                        if filtered_suggestions:
-                            # Создаем новый результат с отфильтрованными подсказками
-                            filtered_result = value.copy()
-                            filtered_result["suggestions"] = filtered_suggestions
-                            logger.info("Частичное попадание в кэш %s для запроса: %s (найдено %d подсказок)", 
-                                      obj_type, original_query, len(filtered_suggestions))
-                            return filtered_result
-            
-            logger.info("Частичное попадание в кэш %s, но нет релевантных подсказок для запроса: %s", 
-                      obj_type, original_query)
-    
-    # Если ничего не нашли в кэше
-    logger.info("Промах кэша подсказок %s, отправляю запрос к API", obj_type)
-    return None
 
 @router.post("/address")
 async def suggest_address(query: dict):
@@ -202,8 +37,8 @@ async def suggest_address(query: dict):
         if not query_text:
             return {"suggestions": []}
         
-        # Проверяем кэш по нормализованному запросу
-        cached_result = await smart_cache_lookup("address", query_dict)
+        # Проверяем кэш по нормализованному запросу, используя функцию из cache.py
+        cached_result = await smart_dadata_cache_lookup("address", query_dict)
         
         # Проверяем количество результатов
         should_refresh = False
@@ -252,7 +87,7 @@ async def suggest_address(query: dict):
                 result = response.json()
                 
                 # Сохраняем результат в кэш, но с нормализованным запросом
-                cache_key = get_cache_key("address", query_dict)
+                cache_key = get_dadata_cache_key("address", query_dict)
                 await set_cached_data(cache_key, result, DADATA_CACHE_TTL)
                 logger.info("Сохраняю в кэш подсказки адресов, ключ=%s, ttl=%s", cache_key, DADATA_CACHE_TTL)
                 
@@ -287,8 +122,8 @@ async def suggest_fio(query: Union[str, dict]):
         if not query_text:
             return {"suggestions": []}
         
-        # Проверяем кэш по нормализованному запросу
-        cached_result = await smart_cache_lookup("fio", query_dict)
+        # Проверяем кэш по нормализованному запросу, используя функцию из cache.py
+        cached_result = await smart_dadata_cache_lookup("fio", query_dict)
         
         # Проверяем количество результатов
         should_refresh = False
@@ -343,7 +178,7 @@ async def suggest_fio(query: Union[str, dict]):
                 result = response.json()
                 
                 # Сохраняем результат в кэш с нормализованным ключом
-                cache_key = get_cache_key("fio", query_dict)
+                cache_key = get_dadata_cache_key("fio", query_dict)
                 await set_cached_data(cache_key, result, DADATA_CACHE_TTL)
                 logger.info("Сохраняю в кэш подсказки ФИО, ключ=%s, ttl=%s", cache_key, DADATA_CACHE_TTL)
                 

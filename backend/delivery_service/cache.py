@@ -1,9 +1,11 @@
 """Модуль для работы с кэшированием данных в Redis."""
 
-from typing import Any, Optional, Dict, Union, Callable, List
+from typing import Any, Optional, Dict, Union, List
 import logging
 import hashlib
-from functools import wraps
+# Импорты для функций выше
+import json
+from typing import List, Dict
 
 import pickle
 import redis.asyncio as redis
@@ -507,3 +509,277 @@ async def get_cached_promo_code_check(email: str, phone: str, promo_code_id: int
 async def invalidate_reports_cache() -> None:
     """Инвалидирует кэш отчетов заказов"""
     await invalidate_cache(f"{CacheKeys.ORDER_REPORTS_PREFIX}*")
+
+# Специфичные функции кэширования для разных сервисов
+
+# Функции для Boxberry
+def get_boxberry_cache_key(method: str, params: Optional[Dict] = None) -> str:
+    """Генерирует ключ для кэша Boxberry на основе метода и параметров."""
+    key_parts = [method]
+    
+    if params:
+        # Сортируем параметры для стабильного ключа
+        for key in sorted(params.keys()):
+            if params[key]:
+                key_parts.append(f"{key}={params[key]}")
+    
+    key_str = ":".join(key_parts)
+    # Хешируем для создания короткого ключа
+    hash_obj = hashlib.md5(key_str.encode('utf-8'))
+    hash_key = hash_obj.hexdigest()
+    
+    return f"boxberry:{hash_key}"
+
+
+# Функции для DaData
+def normalize_obj(obj):
+    """Нормализует объект для кэширования (приводит к нижнему регистру и сортирует ключи)."""
+    if isinstance(obj, str):
+        return obj.strip().lower()
+    if isinstance(obj, list):
+        return [normalize_obj(i) for i in obj]
+    if isinstance(obj, dict):
+        # Для словаря с query нормализуем и само значение query
+        if "query" in obj and isinstance(obj["query"], str):
+            obj_copy = obj.copy()
+            obj_copy["query"] = obj_copy["query"].strip().lower()
+            return {k: normalize_obj(obj_copy[k]) for k in sorted(obj_copy)}
+        return {k: normalize_obj(obj[k]) for k in sorted(obj)}
+    return obj
+
+def get_dadata_cache_key(obj_type, query):
+    """Генерирует ключ для кэша DaData с учетом регистра."""
+    if isinstance(query, dict) and "query" in query:
+        # Для запросов в формате словаря нормализуем запрос
+        query_dict = query.copy()
+        query_dict["query"] = query_dict["query"].lower().strip()
+        # Создаем строку JSON из словаря с отсортированными ключами
+        key_str = json.dumps(query_dict, ensure_ascii=False, sort_keys=True)
+    else:
+        # Для строковых запросов приводим к нижнему регистру
+        key_str = str(query).lower().strip()
+    
+    # Хешируем для создания короткого ключа
+    hash_obj = hashlib.md5(key_str.encode('utf-8'))
+    hash_key = hash_obj.hexdigest()
+    
+    return f"dadata:{obj_type}:{hash_key}"
+
+def trim_dadata_query(query):
+    """Обрезает запрос DaData, чтобы получить подзапрос для поиска в кэше."""
+    if isinstance(query, dict) and "query" in query:
+        return query.copy()
+    
+    if isinstance(query, str):
+        if len(query) <= 3:
+            return query.lower().strip()  # Маленькие запросы возвращаем как есть
+        
+        # Обрезаем запрос до последнего пробела
+        query_lower = query.lower().strip()
+        last_space = query_lower.rfind(" ")
+        if last_space > 0:
+            # Если есть пробел, возвращаем строку до последнего пробела
+            return query_lower[:last_space]
+        # Если пробела нет, возвращаем первые несколько символов
+        return query_lower[:3]
+            
+    return query  # Если запрос не строка и не словарь, возвращаем как есть
+
+async def smart_dadata_cache_lookup(obj_type, query):
+    """
+    Умный поиск в кэше DaData: проверяет не только точное совпадение, но и кеш от более коротких запросов.
+    Для подсказок по адресам и ФИО имеет смысл использовать кэш от более короткого запроса.
+    
+    Args:
+        obj_type: Тип объекта (address/fio)
+        query: Запрос для поиска
+        
+    Returns:
+        Данные из кэша или None, если ничего не найдено
+    """
+    # Нормализуем запрос перед поиском в кэше
+    if isinstance(query, dict):
+        # Для запросов в формате словаря (address)
+        if "query" in query:
+            original_query = query.get("query", "").lower().strip()
+            
+            # Сначала ищем точное совпадение, используя get_cache_key
+            exact_key = get_dadata_cache_key(obj_type, query)
+            cached = await get_cached_data(exact_key)
+            
+            if cached:
+                # Если нашли точное совпадение, возвращаем его
+                logger.info("Точное попадание в кэш %s для запроса: %s", obj_type, original_query)
+                return cached
+                
+            # Если точного совпадения нет, ищем частичное
+            pattern = f"dadata:{obj_type}:*"
+            cached_keys = await get_cached_data_by_pattern(pattern)
+            
+            # Фильтруем полученные результаты
+            if cached_keys:
+                # Ищем подходящие подсказки для нашего запроса
+                prefix = original_query.lower().strip()
+                
+                if len(prefix) >= 3:  # Проверяем только если префикс достаточно длинный
+                    for key, value in cached_keys.items():
+                        # Проверяем, содержит ли кэшированный результат подходящие подсказки
+                        if value and isinstance(value, dict) and "suggestions" in value:
+                            # Фильтруем подсказки
+                            filtered_suggestions = []
+                            for suggestion in value.get("suggestions", []):
+                                if "value" in suggestion:
+                                    cached_value = suggestion.get("value", "").lower()
+                                    # Проверяем, соответствует ли подсказка текущему запросу
+                                    if prefix in cached_value or cached_value.startswith(prefix):
+                                        filtered_suggestions.append(suggestion)
+                            
+                            if filtered_suggestions:
+                                # Создаем новый результат с отфильтрованными подсказками
+                                filtered_result = value.copy()
+                                filtered_result["suggestions"] = filtered_suggestions
+                                logger.info("Частичное попадание в кэш %s для запроса: %s (найдено %d подсказок)", 
+                                          obj_type, original_query, len(filtered_suggestions))
+                                return filtered_result
+                
+                logger.info("Частичное попадание в кэш %s, но нет релевантных подсказок для запроса: %s", 
+                          obj_type, original_query)
+    
+    else:
+        # Для запросов в формате строки (fio)
+        original_query = str(query).lower().strip()
+        
+        # Сначала ищем точное совпадение, используя get_cache_key
+        exact_key = get_dadata_cache_key(obj_type, query)
+        cached = await get_cached_data(exact_key)
+        
+        if cached:
+            # Если нашли точное совпадение, возвращаем его
+            logger.info("Точное попадание в кэш %s для запроса: %s", obj_type, original_query)
+            return cached
+            
+        # Если точного совпадения нет, ищем в кэше по шаблону
+        pattern = f"dadata:{obj_type}:*"
+        cached_keys = await get_cached_data_by_pattern(pattern)
+        
+        # Фильтруем полученные результаты
+        if cached_keys:
+            # Ищем подходящие подсказки для нашего запроса
+            prefix = original_query.lower().strip()
+            
+            if len(prefix) >= 3:  # Проверяем только если префикс достаточно длинный
+                for key, value in cached_keys.items():
+                    if value and isinstance(value, dict) and "suggestions" in value:
+                        # Фильтруем подсказки
+                        filtered_suggestions = []
+                        for suggestion in value.get("suggestions", []):
+                            if "value" in suggestion:
+                                cached_value = suggestion.get("value", "").lower()
+                                # Проверяем, соответствует ли подсказка текущему запросу
+                                if prefix in cached_value or cached_value.startswith(prefix):
+                                    filtered_suggestions.append(suggestion)
+                        
+                        if filtered_suggestions:
+                            # Создаем новый результат с отфильтрованными подсказками
+                            filtered_result = value.copy()
+                            filtered_result["suggestions"] = filtered_suggestions
+                            logger.info("Частичное попадание в кэш %s для запроса: %s (найдено %d подсказок)", 
+                                      obj_type, original_query, len(filtered_suggestions))
+                            return filtered_result
+            
+            logger.info("Частичное попадание в кэш %s, но нет релевантных подсказок для запроса: %s", 
+                      obj_type, original_query)
+    
+    # Если ничего не нашли в кэше
+    logger.info("Промах кэша подсказок %s, отправляю запрос к API", obj_type)
+    return None
+
+# Функции для расчета габаритов заказов
+def calculate_dimensions(items: List, weight_field='weight', height_field='height', 
+                        width_field='width', depth_field='depth', 
+                        package_multiplier=1.2) -> Dict[str, int]:
+    """
+    Рассчитывает оптимальные габариты упаковки для группы товаров.
+    Учитывает количество товаров и их габариты.
+    
+    Args:
+        items: Список товаров с полями quantity и габаритами
+        weight_field: Название поля с весом
+        height_field: Название поля с высотой
+        width_field: Название поля с шириной
+        depth_field: Название поля с глубиной
+        package_multiplier: Коэффициент для учета упаковки
+        
+    Returns:
+        Dict[str, int]: Словарь с оптимальными габаритами
+    """
+    # Инициализация
+    total_weight = 0
+    total_volume = 0
+    max_side = 0
+    
+    # Собираем все товары с учетом количества
+    all_items = []
+    for item in items:
+        quantity = getattr(item, 'quantity', 1)
+        for _ in range(quantity):
+            all_items.append({
+                'weight': getattr(item, weight_field, 500),
+                'height': getattr(item, height_field, 10),
+                'width': getattr(item, width_field, 10),
+                'depth': getattr(item, depth_field, 10)
+            })
+    
+    # Сортируем товары по убыванию объема
+    all_items.sort(key=lambda x: x['height'] * x['width'] * x['depth'], reverse=True)
+    
+    # Рассчитываем общий вес
+    total_weight = sum(item['weight'] for item in all_items)
+    
+    if not all_items:
+        return {
+            'weight': 500,
+            'height': 10,
+            'width': 10,
+            'depth': 10
+        }
+    
+    # Если товар один, возвращаем его габариты с учетом упаковки
+    if len(all_items) == 1:
+        return {
+            'weight': total_weight,
+            'height': int(all_items[0]['height'] * package_multiplier),
+            'width': int(all_items[0]['width'] * package_multiplier),
+            'depth': int(all_items[0]['depth'] * package_multiplier)
+        }
+    
+    # Для нескольких товаров используем алгоритм упаковки
+    # 1. Находим максимальную сторону среди всех товаров
+    max_side = max(
+        max(item['height'] for item in all_items),
+        max(item['width'] for item in all_items),
+        max(item['depth'] for item in all_items)
+    )
+    
+    # 2. Рассчитываем общий объем
+    total_volume = sum(
+        item['height'] * item['width'] * item['depth'] 
+        for item in all_items
+    )
+    
+    # 3. Добавляем коэффициент упаковки
+    total_volume *= package_multiplier
+    
+    # 4. Рассчитываем оптимальные габариты
+    # Берем кубический корень из объема и округляем вверх
+    side = int(total_volume ** (1/3)) + 1
+    
+    # Проверяем, что ни одна сторона не меньше максимальной стороны товара с учетом упаковки
+    side = max(side, int(max_side * package_multiplier))
+    
+    return {
+        'weight': total_weight,
+        'height': side,
+        'width': side,
+        'depth': side
+    }

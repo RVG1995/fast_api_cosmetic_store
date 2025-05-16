@@ -92,9 +92,10 @@ class OrderCreate(BaseModel):
     # Информация о типе доставки
     delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
+    boxberry_point_id: Optional[int] = Field(None, description="ID пункта выдачи BoxBerry")
     
     # Стоимость доставки
-    delivery_cost: Optional[int] = Field(None, description="Стоимость доставки")
+    delivery_cost: Optional[float] = Field(None, description="Стоимость доставки")
     
     # Информация о способе оплаты
     is_payment_on_delivery: Optional[bool] = Field(True, description="Оплата при получении")
@@ -266,6 +267,7 @@ class OrderUpdate(BaseModel):
     # Информация о типе доставки
     delivery_type: Optional[str] = Field(None, description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
+    boxberry_point_id: Optional[int] = Field(None, description="ID пункта выдачи BoxBerry")
     
     is_paid: Optional[bool] = None
     
@@ -393,8 +395,8 @@ class OrderItemResponse(OrderItemBase):
     id: int
     order_id: int
     product_name: str
-    product_price: int
-    total_price: int
+    product_price: float
+    total_price: float
     created_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True)
@@ -437,11 +439,11 @@ class OrderResponse(BaseModel):
     status: OrderStatusResponse
     created_at: datetime
     updated_at: datetime
-    total_price: int
+    total_price: float
     
     # Данные о промокоде и скидке
     promo_code_id: Optional[int] = None
-    discount_amount: Optional[int] = None
+    discount_amount: Optional[float] = None
     
     # Данные о клиенте и доставке
     full_name: str
@@ -453,8 +455,8 @@ class OrderResponse(BaseModel):
     # Информация о типе доставки
     delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_address: Optional[str] = None
-    boxberry_point_id: Optional[str] = None
-    delivery_cost: Optional[int] = None
+    boxberry_point_id: Optional[int] = None
+    delivery_cost: Optional[float] = None
     
     # Информация о способе оплаты
     is_payment_on_delivery: Optional[bool] = True
@@ -669,7 +671,7 @@ class AdminOrderCreate(BaseModel):
     boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
     
     # Стоимость доставки
-    delivery_cost: Optional[int] = Field(None, description="Стоимость доставки в рублях")
+    delivery_cost: Optional[float] = Field(None, description="Стоимость доставки в рублях")
     
     # Информация о способе оплаты
     is_payment_on_delivery: Optional[bool] = Field(True, description="Оплата при получении")

@@ -581,7 +581,7 @@ const CheckoutPage = () => {
         is_payment_on_delivery: isPaymentOnDelivery, // Информация о способе оплаты
         
         // Данные для BoxBerry
-        boxberry_point_id: (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) ? selectedPickupPoint.Code : null,
+        boxberry_point_id: (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) ? parseInt(selectedPickupPoint.Code) : null,
         boxberry_point_address: (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) ? selectedPickupPoint.Address : null,
         
         // Промокод (если применен)

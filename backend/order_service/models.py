@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional, List, Tuple
 
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import Integer, String, ForeignKey, CheckConstraint, DateTime, Boolean, Text, func, select
+from sqlalchemy import Integer, Float, String, ForeignKey, CheckConstraint, DateTime, Boolean, Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
@@ -81,11 +81,11 @@ class OrderModel(Base):
     status_id: Mapped[int] = mapped_column(ForeignKey("order_statuses.id", ondelete="RESTRICT"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
-    total_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_price: Mapped[float] = mapped_column(Float, nullable=False)
     
     # Новое поле для связи с промокодом
     promo_code_id: Mapped[Optional[int]] = mapped_column(ForeignKey("promo_codes.id", ondelete="SET NULL"), nullable=True)
-    discount_amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)  # Сумма скидки
+    discount_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=0)  # Сумма скидки
     
     # Данные о клиенте и доставке
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -95,9 +95,10 @@ class OrderModel(Base):
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Информация о типе доставки
-    delivery_type: Mapped[str] = mapped_column(String(50), nullable=False, default="boxberry_pickup_point")  # boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier
+    delivery_type: Mapped[str] = mapped_column(String(50), nullable=False)  # boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier
+    boxberry_point_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # ID пункта выдачи
     boxberry_point_address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Адрес пункта выдачи
-    delivery_cost: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Стоимость доставки
+    delivery_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=False)  # Стоимость доставки
     
     # Информация о способе оплаты
     is_payment_on_delivery: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # Оплата при получении
@@ -299,7 +300,7 @@ class OrderItemModel(Base):
     product_name: Mapped[str] = mapped_column(String(100), nullable=False)  # Название товара на момент заказа
     product_price: Mapped[int] = mapped_column(Integer, nullable=False)  # Цена товара на момент заказа
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
-    total_price: Mapped[int] = mapped_column(Integer, nullable=False)  # Общая цена (quantity * product_price)
+    total_price: Mapped[float] = mapped_column(Float, nullable=False)  # Общая цена (quantity * product_price)
     
     # Связь с заказом
     order = relationship("OrderModel", back_populates="items")

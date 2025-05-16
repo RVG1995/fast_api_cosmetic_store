@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
+from sqlalchemy import exc as sqlalchemy_exc
 
 from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel, PromoCodeUsageModel
 from schemas import OrderCreate, OrderUpdate, OrderStatusHistoryCreate, OrderFilterParams, OrderStatistics
@@ -129,6 +130,7 @@ async def create_order(
         # Данные о доставке
         delivery_type=order_data.delivery_type,
         boxberry_point_address=order_data.boxberry_point_address if hasattr(order_data, 'boxberry_point_address') else None,
+        boxberry_point_id=order_data.boxberry_point_id if hasattr(order_data, 'boxberry_point_id') else None,
         delivery_cost=order_data.delivery_cost if hasattr(order_data, 'delivery_cost') else None,
         # Данные о способе оплаты
         is_payment_on_delivery=order_data.is_payment_on_delivery if hasattr(order_data, 'is_payment_on_delivery') else True,
@@ -335,23 +337,24 @@ async def update_order(
         
         order.status_id = order_data.status_id
     
-    # Обновляем данные заказа
-    if order_data.full_name is not None:
+    # Обновляем поля заказа
+    if hasattr(order_data, 'full_name') and order_data.full_name is not None:
         order.full_name = order_data.full_name
-    
-    if order_data.email is not None:
+    if hasattr(order_data, 'email') and order_data.email is not None:
         order.email = order_data.email
-    
-    if order_data.phone is not None:
+    if hasattr(order_data, 'phone') and order_data.phone is not None:
         order.phone = order_data.phone
-    
-    if order_data.delivery_address is not None:
+    if hasattr(order_data, 'delivery_address') and order_data.delivery_address is not None:
         order.delivery_address = order_data.delivery_address
-    
-    if order_data.comment is not None:
+    if hasattr(order_data, 'comment') and order_data.comment is not None:
         order.comment = order_data.comment
-    
-    if order_data.is_paid is not None:
+    if hasattr(order_data, 'delivery_type') and order_data.delivery_type is not None:
+        order.delivery_type = order_data.delivery_type
+    if hasattr(order_data, 'boxberry_point_address') and order_data.boxberry_point_address is not None:
+        order.boxberry_point_address = order_data.boxberry_point_address
+    if hasattr(order_data, 'boxberry_point_id') and order_data.boxberry_point_id is not None:
+        order.boxberry_point_id = order_data.boxberry_point_id
+    if hasattr(order_data, 'is_paid') and order_data.is_paid is not None:
         order.is_paid = order_data.is_paid
     
     order.updated_at = datetime.utcnow()
@@ -643,7 +646,7 @@ async def update_order_items(
         logger.info("Получен результат запроса с отключенным кэшированием для заказа %s", order_id)
         return result.scalar_one_or_none()
         
-    except (sqlalchemy.exc.SQLAlchemyError, ValueError, RuntimeError) as e:
+    except (sqlalchemy_exc.SQLAlchemyError, ValueError, RuntimeError) as e:
         logger.error("Ошибка при обновлении элементов заказа %s: %s", order_id, str(e))
         await session.rollback()
         return None
@@ -1038,8 +1041,8 @@ async def check_promo_code(
 
 async def calculate_discount(
     promo_code: PromoCodeModel,
-    total_price: int
-) -> int:
+    total_price: float
+) -> float:
     """
     Расчет скидки на основе промокода
     
@@ -1048,16 +1051,16 @@ async def calculate_discount(
         total_price: Общая стоимость заказа
     
     Returns:
-        int: Сумма скидки в рублях
+        float: Сумма скидки в рублях
     """
     if promo_code.discount_percent is not None:
         # Расчет скидки в процентах
-        discount = int(total_price * promo_code.discount_percent / 100)
+        discount = total_price * promo_code.discount_percent / 100
     elif promo_code.discount_amount is not None:
         # Фиксированная скидка
-        discount = min(promo_code.discount_amount, total_price)  # Скидка не может быть больше стоимости заказа
+        discount = min(float(promo_code.discount_amount), total_price)  # Скидка не может быть больше стоимости заказа
     else:
         # На всякий случай
-        discount = 0
+        discount = 0.0
     
     return discount 

@@ -1,40 +1,19 @@
 """Роутер для интеграции с API Boxberry для получения пунктов выдачи заказов с кэшированием."""
 
 import logging
-import hashlib
-from typing import Dict, Optional, List
-from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, HTTPException
 import httpx
 logger = logging.getLogger("boxberry_router")
-from cache import get_cached_data, set_cached_data
+from cache import get_cached_data, set_cached_data, get_boxberry_cache_key, calculate_dimensions
 from config import settings
-from schemas import DeliveryCalculationRequest, DeliveryCalculationResponse, CartDeliveryRequest, CartItemModel
+from schemas import  DeliveryCalculationResponse, CartDeliveryRequest
 
 router = APIRouter(
     prefix="/boxberry",
     tags=["boxberry"],
     responses={400: {"description": "Bad Request"}, 500: {"description": "Server Error"}}
 )
-
-
-def get_cache_key(method: str, params: Optional[Dict] = None) -> str:
-    """Генерирует ключ для кэша на основе метода и параметров."""
-    key_parts = [method]
-    
-    if params:
-        # Сортируем параметры для стабильного ключа
-        for key in sorted(params.keys()):
-            if params[key]:
-                key_parts.append(f"{key}={params[key]}")
-    
-    key_str = ":".join(key_parts)
-    # Хешируем для создания короткого ключа
-    hash_obj = hashlib.md5(key_str.encode('utf-8'))
-    hash_key = hash_obj.hexdigest()
-    
-    return f"boxberry:{hash_key}"
 
 @router.get("/cities")
 async def get_cities(country_code: str = settings.BOXBERRY_COUNTRY_RUSSIA_CODE):
@@ -43,7 +22,7 @@ async def get_cities(country_code: str = settings.BOXBERRY_COUNTRY_RUSSIA_CODE):
     """
     try:
         # Проверяем кэш
-        cache_key = get_cache_key("ListCitiesFull", {"CountryCode": country_code})
+        cache_key = get_boxberry_cache_key("ListCitiesFull", {"CountryCode": country_code})
         cached_data = await get_cached_data(cache_key)
         
         if cached_data:
@@ -86,7 +65,7 @@ async def find_city_code(city_name: str, country_code: str = settings.BOXBERRY_C
     """
     try:
         # Получаем данные о городах (из кэша или API)
-        cache_key = get_cache_key("ListCitiesFull", {"CountryCode": country_code})
+        cache_key = get_boxberry_cache_key("ListCitiesFull", {"CountryCode": country_code})
         cities_data = await get_cached_data(cache_key)
         
         if not cities_data:
@@ -119,7 +98,7 @@ async def get_pickup_points(city_code: str, country_code: str = settings.BOXBERR
     """
     try:
         # Проверяем кэш
-        cache_key = get_cache_key("ListPoints", {
+        cache_key = get_boxberry_cache_key("ListPoints", {
             "CountryCode": country_code,
             "CityCode": city_code,
             "prepaid": "1"
@@ -199,7 +178,7 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
             
             # Проверяем, есть ли город в списке городов с курьерской доставкой
             # Запрашиваем список городов с курьерской доставкой
-            courier_cities_cache_key = get_cache_key("CourierListCities")
+            courier_cities_cache_key = get_boxberry_cache_key("CourierListCities")
             courier_cities = await get_cached_data(courier_cities_cache_key)
             
             if not courier_cities:
@@ -282,8 +261,11 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
         # Рассчитываем общую стоимость заказа
         total_price = sum(item.price * item.quantity for item in cart_request.items)
         
-        # Рассчитываем оптимальные габариты
-        dimensions = calculate_dimensions(cart_request.items)
+        # Рассчитываем оптимальные габариты с помощью функции из cache.py
+        dimensions = calculate_dimensions(
+            cart_request.items,
+            package_multiplier=settings.PACKAGE_MULTIPLIER
+        )
         
         # Проверяем ограничения
         is_pvz = cart_request.delivery_type == 'boxberry_pickup_point'
@@ -418,78 +400,3 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
         logger.exception("Ошибка при расчете стоимости доставки из корзины: %s", str(e))
         raise HTTPException(status_code=500, 
                            detail=f"Ошибка при расчете стоимости доставки из корзины: {str(e)}")
-
-def calculate_dimensions(items: List[CartItemModel]) -> Dict[str, int]:
-    """
-    Рассчитывает оптимальные габариты упаковки для группы товаров.
-    Учитывает количество товаров и их габариты.
-    """
-    # Инициализация
-    total_weight = 0
-    total_volume = 0
-    max_side = 0
-    
-    # Собираем все товары с учетом количества
-    all_items = []
-    for item in items:
-        for _ in range(item.quantity):
-            all_items.append({
-                'weight': item.weight or 500,
-                'height': item.height or 10,
-                'width': item.width or 10,
-                'depth': item.depth or 10
-            })
-    
-    # Сортируем товары по убыванию объема
-    all_items.sort(key=lambda x: x['height'] * x['width'] * x['depth'], reverse=True)
-    
-    # Рассчитываем общий вес
-    total_weight = sum(item['weight'] for item in all_items)
-    
-    if not all_items:
-        return {
-            'weight': 500,
-            'height': 10,
-            'width': 10,
-            'depth': 10
-        }
-    
-    # Если товар один, возвращаем его габариты с учетом упаковки
-    if len(all_items) == 1:
-        return {
-            'weight': total_weight,
-            'height': int(all_items[0]['height'] * settings.PACKAGE_MULTIPLIER),
-            'width': int(all_items[0]['width'] * settings.PACKAGE_MULTIPLIER),
-            'depth': int(all_items[0]['depth'] * settings.PACKAGE_MULTIPLIER)
-        }
-    
-    # Для нескольких товаров используем алгоритм упаковки
-    # 1. Находим максимальную сторону среди всех товаров
-    max_side = max(
-        max(item['height'] for item in all_items),
-        max(item['width'] for item in all_items),
-        max(item['depth'] for item in all_items)
-    )
-    
-    # 2. Рассчитываем общий объем
-    total_volume = sum(
-        item['height'] * item['width'] * item['depth'] 
-        for item in all_items
-    )
-    
-    # 3. Добавляем коэффициент упаковки
-    total_volume *= settings.PACKAGE_MULTIPLIER
-    
-    # 4. Рассчитываем оптимальные габариты
-    # Берем кубический корень из объема и округляем вверх
-    side = int(total_volume ** (1/3)) + 1
-    
-    # Проверяем, что ни одна сторона не меньше максимальной стороны товара с учетом упаковки
-    side = max(side, int(max_side * settings.PACKAGE_MULTIPLIER))
-    
-    return {
-        'weight': total_weight,
-        'height': side,
-        'width': side,
-        'depth': side
-    }

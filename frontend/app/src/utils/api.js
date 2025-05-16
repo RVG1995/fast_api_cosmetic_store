@@ -1174,6 +1174,19 @@ export const deliveryAPI = {
       console.error('Ошибка в API findBoxberryCityCode:', error);
       throw error;
     }
+  },
+  
+  // Получение подсказок адресов Dadata
+  getDadataAddressSuggestions: async (query) => {
+    try {
+      console.log(`Вызов API getDadataAddressSuggestions для запроса:`, query);
+      const response = await deliveryApi.post('/delivery/dadata/address', { query });
+      console.log('API getDadataAddressSuggestions ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API getDadataAddressSuggestions:', error);
+      throw error;
+    }
   }
 };
 

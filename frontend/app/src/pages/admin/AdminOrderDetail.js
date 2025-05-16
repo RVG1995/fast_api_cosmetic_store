@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Row, Col, Table, Badge, Button, Form, Alert, Spinner, Modal, Container } from 'react-bootstrap';
 import { useOrders } from '../../context/OrderContext';
@@ -7,10 +7,11 @@ import { formatDateTime } from '../../utils/dateUtils';
 import { formatPrice } from '../../utils/helpers';
 import OrderStatusBadge from '../../components/OrderStatusBadge';
 import axios from 'axios';
-import { API_URLS } from '../../utils/constants';
-import AdminBackButton from '../../components/common/AdminBackButton';
 import { adminAPI, deliveryAPI } from '../../utils/api';
 import BoxberryPickupModal from '../../components/cart/BoxberryPickupModal';
+import debounce from 'lodash/debounce';
+import AdminBackButton from '../../components/common/AdminBackButton';
+import { API_URLS } from '../../utils/constants';
 
 // Компонент для редактирования товаров в заказе
 const OrderItemsEditor = ({ order, onOrderUpdated }) => {
@@ -645,10 +646,70 @@ const AdminOrderDetail = () => {
   const [deliveryError, setDeliveryError] = useState(null);
   const [showBoxberryModal, setShowBoxberryModal] = useState(false);
   const [selectedPickupPoint, setSelectedPickupPoint] = useState(null);
-  const [selectedAddressData, setSelectedAddressData] = useState(null);
+  const [selectedAddressData, setSelectedAddressData] = useState(null); // Данные выбранного адреса DaData
   const [calculatedDeliveryCost, setCalculatedDeliveryCost] = useState(null);
   const [isPaymentOnDelivery, setIsPaymentOnDelivery] = useState(true);
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
+  const [addressOptions, setAddressOptions] = useState([]); // Добавляем состояние для подсказок адресов DaData
+  
+  // Добавляем функцию получения подсказок адресов DaData
+  const fetchAddressSuggestions = async (query) => {
+    console.log('Dadata address fetch:', query);
+    if (!query) {
+      setAddressOptions([]);
+      return;
+    }
+    try {
+      const data = await deliveryAPI.getDadataAddressSuggestions(query);
+      console.log('Dadata address resp:', data.suggestions);
+      setAddressOptions(data.suggestions);
+      
+      // Убираем автоматический выбор лучшего совпадения,
+      // теперь пользователь должен явно выбрать адрес из списка
+    } catch(e) { 
+      console.error('DaData address error', e); 
+    }
+  };
+  
+  // Функция для выбора адреса из выпадающего списка
+  const handleSelectAddress = (suggestion) => {
+    console.log('Выбран адрес:', suggestion);
+    
+    setAddressOptions([]); // Закрываем выпадающий список
+    
+    // Устанавливаем данные выбранного адреса
+    setSelectedAddressData({
+      value: suggestion.value,
+      postal_code: suggestion.data.postal_code,
+      city: suggestion.data.city || suggestion.data.settlement,
+      settlement: suggestion.data.settlement,
+      street: suggestion.data.street,
+      house: suggestion.data.house
+    });
+    
+    // Обновляем адрес доставки
+    setDeliveryData(prev => ({
+      ...prev,
+      delivery_address: suggestion.value
+    }));
+    
+    // Запускаем расчет стоимости доставки, если тип доставки - курьерская BoxBerry и есть индекс
+    if (deliveryData.delivery_type === 'boxberry_courier' && suggestion.data.postal_code) {
+      setTimeout(async () => {
+        try {
+          await calculateDeliveryCostForUpdate();
+        } catch (error) {
+          console.error('Ошибка при расчете доставки после выбора адреса:', error);
+        }
+      }, 300);
+    }
+  };
+  
+  // Используем debounce для ввода адреса
+  const debouncedFetchAddressSuggestions = useMemo(
+    () => debounce((query) => fetchAddressSuggestions(query), 300),
+    [fetchAddressSuggestions]
+  );
   
   // Обработчик выбора пункта выдачи BoxBerry
   const handlePickupPointSelected = (point) => {
@@ -679,76 +740,95 @@ const AdminOrderDetail = () => {
       delivery_address: newAddress
     });
     
-    // Обновляем данные адреса
-    const addressParts = newAddress.split(',');
-    let postalCode = null;
-    
-    // Пытаемся извлечь почтовый индекс из адреса
-    for (const part of addressParts) {
-      const trimmed = part.trim();
-      if (/^\d{6}$/.test(trimmed)) { // Российский почтовый индекс имеет 6 цифр
-        postalCode = trimmed;
-        break;
+    // Для курьерской доставки BoxBerry используем DaData
+    if (deliveryData.delivery_type === 'boxberry_courier') {
+      debouncedFetchAddressSuggestions(newAddress);
+    } else {
+      // Для других типов доставки - стандартное поведение
+      // Обновляем данные адреса
+      const addressParts = newAddress.split(',');
+      let postalCode = null;
+      
+      // Пытаемся извлечь почтовый индекс из адреса
+      for (const part of addressParts) {
+        const trimmed = part.trim();
+        if (/^\d{6}$/.test(trimmed)) { // Российский почтовый индекс имеет 6 цифр
+          postalCode = trimmed;
+          break;
+        }
       }
-    }
-    
-    const newAddressData = {
-      postal_code: postalCode,
-      city: addressParts.length > 0 ? addressParts[0].trim() : '',
-      full_address: newAddress
-    };
-    
-    setSelectedAddressData(newAddressData);
-    
-    // Запускаем расчет стоимости доставки, если есть почтовый индекс
-    // и тип доставки - курьерская доставка Boxberry
-    if (postalCode && deliveryData.delivery_type === 'boxberry_courier') {
-      try {
-        // Небольшая задержка, чтобы избежать слишком частых вызовов API
-        setTimeout(async () => {
-          setDeliveryLoading(true);
-          const cost = await calculateDeliveryCostForUpdate();
-          setCalculatedDeliveryCost(cost);
+      
+      const newAddressData = {
+        postal_code: postalCode,
+        city: addressParts.length > 0 ? addressParts[0].trim() : '',
+        full_address: newAddress
+      };
+      
+      setSelectedAddressData(newAddressData);
+      
+      // Запускаем расчет стоимости доставки, если есть почтовый индекс
+      // и тип доставки - курьерская доставка Boxberry
+      if (postalCode && deliveryData.delivery_type === 'boxberry_courier') {
+        try {
+          // Небольшая задержка, чтобы избежать слишком частых вызовов API
+          setTimeout(async () => {
+            setDeliveryLoading(true);
+            const cost = await calculateDeliveryCostForUpdate();
+            setCalculatedDeliveryCost(cost);
+            setDeliveryLoading(false);
+          }, 800);
+        } catch (err) {
+          console.error('Ошибка при расчете стоимости доставки:', err);
           setDeliveryLoading(false);
-        }, 800);
-      } catch (err) {
-        console.error('Ошибка при расчете стоимости доставки:', err);
-        setDeliveryLoading(false);
+        }
       }
     }
   };
   
   // Обработчик изменения типа доставки
   const handleDeliveryTypeChange = (e) => {
-    const newType = e.target.value;
+    const newDeliveryType = e.target.value;
     
-    // Если тип доставки изменился, сбрасываем рассчитанную стоимость и данные пунктов выдачи
-    if (newType !== deliveryData.delivery_type) {
-      setCalculatedDeliveryCost(null);
-      
-      // Если выбран новый тип доставки "Пункт выдачи BoxBerry", сбрасываем адрес
-      if (newType === 'boxberry_pickup_point') {
-        setSelectedPickupPoint(null);
-        setDeliveryData({
-          delivery_type: newType,
+    // Если тип доставки меняется, сбрасываем расчет стоимости
+    setCalculatedDeliveryCost(null);
+    
+    // Сбрасываем ошибки доставки при изменении типа
+    setDeliveryError(null);
+    
+    // Обновляем тип доставки
+    setDeliveryData({
+      ...deliveryData,
+      delivery_type: newDeliveryType
+    });
+    
+    // Если выбран пункт выдачи BoxBerry и еще не выбран пункт,
+    // предлагаем выбрать пункт выдачи
+    if (newDeliveryType === 'boxberry_pickup_point') {
+      // Если нет выбранного пункта, показываем сообщение
+      if (!selectedPickupPoint) {
+        // Сбрасываем адрес доставки
+        setDeliveryData(prev => ({
+          ...prev,
+          delivery_type: newDeliveryType,
           delivery_address: ''
-        });
-      } else {
-        // Для других типов доставки сохраняем введенный адрес
-        setDeliveryData({
-          ...deliveryData,
-          delivery_type: newType
-        });
+        }));
       }
+    } else if (newDeliveryType === 'boxberry_courier') {
+      // Если выбрана курьерская доставка, очищаем поле адреса и данные адреса
+      setDeliveryData(prev => ({
+        ...prev,
+        delivery_type: newDeliveryType,
+        delivery_address: ''
+      }));
+      setSelectedAddressData(null);
+      setAddressOptions([]);
+      setSelectedPickupPoint(null);
       
-      // Если выбрана курьерская доставка и есть почтовый индекс, запускаем расчет
-      if (newType === 'boxberry_courier' && selectedAddressData?.postal_code) {
-        setTimeout(async () => {
-          setDeliveryLoading(true);
-          await calculateDeliveryCostForUpdate();
-          setDeliveryLoading(false);
-        }, 300);
-      }
+      // Показываем подсказку для выбора адреса
+      setDeliveryError('Для курьерской доставки необходимо выбрать адрес из списка подсказок');
+    } else {
+      // Для других типов доставки сбрасываем данные BoxBerry
+      setSelectedPickupPoint(null);
     }
   };
   
@@ -1124,6 +1204,22 @@ const AdminOrderDetail = () => {
       setDeliveryLoading(true);
       setDeliveryError(null);
       
+      // Проверяем возможность доставки в зависимости от типа
+      if (deliveryData.delivery_type === 'boxberry_courier') {
+        // Для курьерской доставки нужно рассчитать стоимость (проверяет доступность)
+        const deliveryCalculation = await calculateDeliveryCostForUpdate();
+        
+        // Если расчет вернул null (например, из-за недоступности доставки),
+        // то прерываем обновление
+        if (!deliveryCalculation) {
+          // Если есть ошибка доставки, она уже установлена в calculateDeliveryCostForUpdate
+          if (!deliveryError) {
+            setDeliveryError('Не удалось рассчитать стоимость доставки. Возможно, курьерская доставка недоступна в выбранном городе.');
+          }
+          return;
+        }
+      }
+      
       // Получаем стоимость доставки из рассчитанного значения или текущего заказа
       let deliveryCost = calculatedDeliveryCost ? calculatedDeliveryCost.price : (order.delivery_cost || 0);
       
@@ -1200,27 +1296,32 @@ const AdminOrderDetail = () => {
           return null;
         }
       } else if (deliveryData.delivery_type === 'boxberry_courier') {
-        // Для курьерской доставки BoxBerry нужен почтовый индекс
+        // Для курьерской доставки нужен адрес и почтовый индекс
+        if (!deliveryData.delivery_address) {
+          setDeliveryError('Для расчета стоимости доставки необходимо указать адрес');
+          return null;
+        }
+        
         if (!selectedAddressData || !selectedAddressData.postal_code) {
-          setDeliveryError('Для расчета курьерской доставки необходим почтовый индекс');
+          setDeliveryError('Для расчета стоимости курьерской доставки необходим почтовый индекс. Выберите адрес из списка подсказок.');
           return null;
         }
       }
       
-      // Формируем предположительные данные о товарах для расчета
-      const cartItems = order.items.map(item => ({
-        product_id: item.product_id,
-        quantity: item.quantity,
-        price: item.product_price || item.unit_price,
-        weight: 500, // Используем 500г по умолчанию
-        height: 10,  // Используем 10см по умолчанию
-        width: 10,   // Используем 10см по умолчанию
-        depth: 10    // Используем 10см по умолчанию
+      // Собираем данные о товарах для расчета
+      const items = order.items.map(item => ({
+        product_id: item.product_id, // Добавляем обязательное поле product_id
+        weight: item.product_weight || 500, // вес в граммах
+        width: item.product_width || 10,    // ширина в см
+        height: item.product_height || 10,  // высота в см
+        depth: item.product_depth || 10,    // глубина в см
+        price: item.product_price,
+        quantity: item.quantity
       }));
       
-      // Данные для отправки на сервер
-      const requestData = {
-        items: cartItems,
+      // Определяем данные для запроса в зависимости от типа доставки
+      let requestData = {
+        items: items,
         delivery_type: deliveryData.delivery_type,
         is_payment_on_delivery: forcedPaymentOnDelivery !== null ? forcedPaymentOnDelivery : isPaymentOnDelivery
       };
@@ -1230,44 +1331,48 @@ const AdminOrderDetail = () => {
         requestData.pvz_code = selectedPickupPoint.Code;
       }
       
-      // Если выбрана курьерская доставка BoxBerry и есть данные адреса
+      // Для курьерской доставки добавляем почтовый индекс
       if (deliveryData.delivery_type === 'boxberry_courier' && selectedAddressData) {
-        // Добавляем почтовый индекс, если он есть
-        if (selectedAddressData.postal_code) {
-          requestData.zip_code = selectedAddressData.postal_code;
-        }
-        
-        // Дополнительно можно передать город
-        if (selectedAddressData.city) {
-          requestData.recipient_city = selectedAddressData.city;
-        }
+        requestData.zip_code = selectedAddressData.postal_code;
+        requestData.city_name = selectedAddressData.city || '';
       }
       
-      console.log('Отправляем запрос на расчет доставки:', requestData);
+      console.log('Отправляем запрос на расчет стоимости доставки:', requestData);
       
-      try {
-        // Вызываем API для расчета стоимости доставки
-        const result = await deliveryAPI.calculateDeliveryFromCart(requestData);
-        console.log('Рассчитана новая стоимость доставки:', result);
+      // Выполняем запрос к API для расчета стоимости доставки
+      const response = await deliveryAPI.calculateDeliveryFromCart(requestData);
+      console.log('Получен ответ по стоимости доставки:', response);
+      
+      // Очищаем ошибку доставки
+      setDeliveryError(null);
+      
+      // Сохраняем результат расчета в состояние
+      setCalculatedDeliveryCost(response);
+      
+      return response;
+    } catch (error) {
+      console.error('Ошибка при расчете стоимости доставки:', error);
+      
+      // Проверяем наличие подробной информации об ошибке
+      if (error.response && error.response.data) {
+        const errorDetail = error.response.data.detail;
         
-        // Обновляем состояние с рассчитанной стоимостью
-        setCalculatedDeliveryCost(result);
-        
-        return result;
-      } catch (err) {
-        console.error('Ошибка при расчете стоимости доставки:', err);
-        console.error('Подробности запроса:', requestData);
-        if (err.response) {
-          console.error('Ответ сервера:', err.response.data);
-          console.error('Статус ответа:', err.response.status);
+        // Анализируем сообщение об ошибке
+        if (typeof errorDetail === 'string') {
+          // Если это ошибка о недоступности курьерской доставки
+          if (errorDetail.toLowerCase().includes('курьерская доставка') && 
+              errorDetail.toLowerCase().includes('невозможна')) {
+            setDeliveryError(`${errorDetail} Пожалуйста, выберите другой адрес или пункт выдачи.`);
+          } else {
+            setDeliveryError(`Ошибка: ${errorDetail}`);
+          }
+        } else {
+          setDeliveryError(`Ошибка при расчете стоимости доставки: ${error.response?.status || 'неизвестная ошибка'}`);
         }
-        setDeliveryError('Не удалось рассчитать стоимость доставки. Пожалуйста, проверьте введенные данные.');
-        return null;
+      } else {
+        setDeliveryError(`Ошибка при расчете стоимости доставки: ${error.message || 'неизвестная ошибка'}`);
       }
-    } catch (err) {
-      console.error('Ошибка при подготовке запроса для расчета стоимости доставки:', err);
-      console.error('Ошибка при расчете стоимости доставки:', err);
-      setDeliveryError('Не удалось рассчитать стоимость доставки. Пожалуйста, проверьте введенные данные.');
+      
       return null;
     }
   };
@@ -1473,39 +1578,79 @@ const AdminOrderDetail = () => {
                     <Form.Group className="mb-3">
                       <Form.Label>Тип доставки</Form.Label>
                       <Form.Select 
-                        value={deliveryData.delivery_type} 
+                        value={deliveryData.delivery_type}
                         onChange={handleDeliveryTypeChange}
+                        className="mb-2"
                       >
                         <option value="">Выберите тип доставки</option>
-                        <option value="boxberry_pickup_point">BoxBerry - Пункт выдачи</option>
-                        <option value="boxberry_courier">BoxBerry - Курьер</option>
-                        <option value="cdek_pickup_point">CDEK - Пункт выдачи</option>
-                        <option value="cdek_courier">CDEK - Курьер</option>
+                        <option value="boxberry_pickup_point">Пункт выдачи BoxBerry</option>
+                        <option value="boxberry_courier">Курьерская доставка BoxBerry</option>
                       </Form.Select>
                     </Form.Group>
                     
+                    {/* Адрес доставки */}
                     <Form.Group className="mb-3">
                       <Form.Label>Адрес доставки</Form.Label>
-                      <div className="d-flex">
-                        <Form.Control 
-                          type="text" 
-                          value={deliveryData.delivery_address}
-                          onChange={handleDeliveryAddressChange}
-                          placeholder="Введите адрес доставки"
-                          readOnly={isBoxberryPickupPoint}
-                          className={isBoxberryPickupPoint ? "bg-light" : ""}
-                        />
-                        {isBoxberryPickupPoint && (
+                      {deliveryData.delivery_type === 'boxberry_pickup_point' ? (
+                        <div className="d-flex">
+                          <Form.Control
+                            type="text"
+                            value={deliveryData.delivery_address}
+                            onChange={handleDeliveryAddressChange}
+                            placeholder="Выберите пункт выдачи"
+                            readOnly={true}
+                            className="me-2"
+                          />
                           <Button 
-                            variant="outline-primary"
+                            variant="outline-primary" 
+                            size="sm"
                             onClick={() => setShowBoxberryModal(true)}
-                            className="ms-2"
                           >
-                            Выбрать пункт
+                            {selectedPickupPoint ? 'Изменить пункт выдачи' : 'Выбрать пункт выдачи'}
                           </Button>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <div className="position-relative">
+                          <Form.Control
+                            type="text"
+                            value={deliveryData.delivery_address}
+                            onChange={handleDeliveryAddressChange}
+                            placeholder="Введите адрес доставки"
+                            className="mb-2"
+                          />
+                          {addressOptions.length > 0 && (
+                            <div 
+                              className="position-absolute w-100 border rounded bg-white shadow-sm overflow-hidden" 
+                              style={{ zIndex: 1000, maxHeight: '300px', overflowY: 'auto' }}
+                            >
+                              {addressOptions.map((suggestion, index) => (
+                                <div 
+                                  key={index} 
+                                  className="p-2 border-bottom hover-bg-light cursor-pointer"
+                                  onClick={() => handleSelectAddress(suggestion)}
+                                  style={{ cursor: 'pointer' }}
+                                  onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
+                                  onMouseLeave={(e) => e.target.style.backgroundColor = ''}
+                                >
+                                  {suggestion.value}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </Form.Group>
+                    
+                    {/* Информация о недоступности курьерской доставки */}
+                    {deliveryData.delivery_type === 'boxberry_courier' && 
+                     deliveryError && deliveryError.toLowerCase().includes('курьерская доставка') && 
+                     deliveryError.toLowerCase().includes('невозможна') && (
+                      <Alert variant="warning" className="mt-2 mb-3">
+                        <Alert.Heading as="h6">Курьерская доставка недоступна</Alert.Heading>
+                        <p className="mb-0">Для выбранного города или почтового индекса курьерская доставка BoxBerry недоступна. 
+                        Пожалуйста, выберите другой адрес или используйте доставку в пункт выдачи.</p>
+                      </Alert>
+                    )}
                     
                     {isBoxberryPickupPoint && selectedPickupPoint && (
                       <div className="mt-2 p-2 border rounded bg-light mb-3">
@@ -1601,7 +1746,11 @@ const AdminOrderDetail = () => {
                         variant="primary" 
                         size="sm" 
                         onClick={handleUpdateDelivery}
-                        disabled={deliveryLoading}
+                        disabled={deliveryLoading || deliveryError || 
+                          // Проверяем наличие данных для доставки согласно типу
+                          (deliveryData.delivery_type === 'boxberry_pickup_point' && !selectedPickupPoint) ||
+                          (deliveryData.delivery_type === 'boxberry_courier' && (!selectedAddressData || !selectedAddressData.postal_code))
+                        }
                       >
                         {deliveryLoading ? (
                           <>

@@ -1,7 +1,4 @@
-import asyncio
-import json
 import os
-from typing import Dict, List, Any
 
 import aio_pika
 from dotenv import load_dotenv

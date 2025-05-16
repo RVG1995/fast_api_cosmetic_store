@@ -191,12 +191,36 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
         # Рассчитываем общую стоимость заказа
         total_price = sum(item.price * item.quantity for item in cart_request.items)
         
-        # Формируем запрос для расчета доставки напрямую к API Boxberry
-        # Подготавливаем параметры API запроса
+        # Рассчитываем оптимальные габариты
+        dimensions = calculate_dimensions(cart_request.items)
+        
+        # Проверяем ограничения
+        is_pvz = cart_request.delivery_type == 'boxberry_pickup_point'
+        max_side = settings.BOXBERRY_MAX_PVZ_SIDE_LENGTH if is_pvz else settings.BOXBERRY_MAX_SIDE_LENGTH
+        
+        if max(dimensions['height'], dimensions['width'], dimensions['depth']) > max_side:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Превышена максимальная длина стороны: {max_side} см"
+            )
+        
+        if (dimensions['height'] + dimensions['width'] + dimensions['depth']) > settings.BOXBERRY_MAX_TOTAL_DIMENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Сумма габаритов превышает {settings.BOXBERRY_MAX_TOTAL_DIMENSIONS} см"
+            )
+        
+        # Формируем параметры для Boxberry API
         params = {
             "token": settings.BOXBERRY_TOKEN,
             "method": "DeliveryCalculation",
             "OrderSum": total_price,
+            "BoxSizes": [{
+                "Weight": dimensions['weight'],
+                "Height": dimensions['height'],
+                "Width": dimensions['width'],
+                "Depth": dimensions['depth']
+            }]
         }
         
         # Определяем тип доставки
@@ -209,43 +233,6 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
         # Если оплата при получении, то PaySum = OrderSum
         # Если оплата на сайте, то PaySum = 0
         params["PaySum"] = total_price if cart_request.is_payment_on_delivery else 0
-        
-        # Рассчитываем общий вес и габариты всех товаров
-        total_weight = 0
-        max_height = 0
-        max_width = 0
-        max_depth = 0
-        
-        for item in cart_request.items:
-            for _ in range(item.quantity):
-                # Суммируем вес каждого товара
-                item_weight = item.weight or 500  # Вес товара (граммы)
-                total_weight += item_weight
-                
-                # Находим максимальные габариты
-                item_height = item.height or 10  # Высота (см)
-                item_width = item.width or 10   # Ширина (см)
-                item_depth = item.depth or 10   # Глубина (см)
-                
-                max_height = max(max_height, item_height)
-                max_width = max(max_width, item_width)
-                max_depth = max(max_depth, item_depth)
-        
-        # Устанавливаем минимальные значения если ничего не рассчитано
-        total_weight = max(total_weight, 500)  # Минимум 500г
-        max_height = max(max_height, 10)       # Минимум 10см
-        max_width = max(max_width, 10)         # Минимум 10см
-        max_depth = max(max_depth, 10)         # Минимум 10см
-        
-        # Создаем массив BoxSizes с габаритами
-        params["BoxSizes"] = [
-            {
-                "Weight": total_weight,
-                "Height": max_height,
-                "Width": max_width,
-                "Depth": max_depth
-            }
-        ]
         
         # Добавляем код пункта выдачи или почтовый индекс
         if cart_request.pvz_code:
@@ -481,3 +468,78 @@ async def calculate_delivery(calculation_request: DeliveryCalculationRequest):
         logger.exception("Ошибка при расчете стоимости доставки: %s", str(e))
         raise HTTPException(status_code=500, 
                            detail=f"Ошибка при расчете стоимости доставки: {str(e)}")
+
+def calculate_dimensions(items: List[CartItemModel]) -> Dict[str, int]:
+    """
+    Рассчитывает оптимальные габариты упаковки для группы товаров.
+    Учитывает количество товаров и их габариты.
+    """
+    # Инициализация
+    total_weight = 0
+    total_volume = 0
+    max_side = 0
+    
+    # Собираем все товары с учетом количества
+    all_items = []
+    for item in items:
+        for _ in range(item.quantity):
+            all_items.append({
+                'weight': item.weight or 500,
+                'height': item.height or 10,
+                'width': item.width or 10,
+                'depth': item.depth or 10
+            })
+    
+    # Сортируем товары по убыванию объема
+    all_items.sort(key=lambda x: x['height'] * x['width'] * x['depth'], reverse=True)
+    
+    # Рассчитываем общий вес
+    total_weight = sum(item['weight'] for item in all_items)
+    
+    if not all_items:
+        return {
+            'weight': 500,
+            'height': 10,
+            'width': 10,
+            'depth': 10
+        }
+    
+    # Если товар один, возвращаем его габариты с учетом упаковки
+    if len(all_items) == 1:
+        return {
+            'weight': total_weight,
+            'height': int(all_items[0]['height'] * settings.PACKAGE_MULTIPLIER),
+            'width': int(all_items[0]['width'] * settings.PACKAGE_MULTIPLIER),
+            'depth': int(all_items[0]['depth'] * settings.PACKAGE_MULTIPLIER)
+        }
+    
+    # Для нескольких товаров используем алгоритм упаковки
+    # 1. Находим максимальную сторону среди всех товаров
+    max_side = max(
+        max(item['height'] for item in all_items),
+        max(item['width'] for item in all_items),
+        max(item['depth'] for item in all_items)
+    )
+    
+    # 2. Рассчитываем общий объем
+    total_volume = sum(
+        item['height'] * item['width'] * item['depth'] 
+        for item in all_items
+    )
+    
+    # 3. Добавляем коэффициент упаковки
+    total_volume *= settings.PACKAGE_MULTIPLIER
+    
+    # 4. Рассчитываем оптимальные габариты
+    # Берем кубический корень из объема и округляем вверх
+    side = int(total_volume ** (1/3)) + 1
+    
+    # Проверяем, что ни одна сторона не меньше максимальной стороны товара с учетом упаковки
+    side = max(side, int(max_side * settings.PACKAGE_MULTIPLIER))
+    
+    return {
+        'weight': total_weight,
+        'height': side,
+        'width': side,
+        'depth': side
+    }

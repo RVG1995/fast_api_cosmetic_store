@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     BOXBERRY_COUNTRY_RUSSIA_CODE: str = "643"
     BOXBERRY_API_URL: str = "https://api.boxberry.ru/json.php"
     BOXBERRY_CACHE_TTL: int = 86400 
+    BOXBERRY_MAX_SIDE_LENGTH: int = 120
+    BOXBERRY_MAX_PVZ_SIDE_LENGTH: int = 185
+    BOXBERRY_MAX_TOTAL_DIMENSIONS: int = 250
+
+    
+    PACKAGE_MULTIPLIER: float = 1.2
 
     # Настройки DaData API
     DADATA_TOKEN: str = ""

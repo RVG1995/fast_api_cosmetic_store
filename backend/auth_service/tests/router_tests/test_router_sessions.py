@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 from router import (
     get_user_sessions, revoke_user_session, revoke_all_user_sessions

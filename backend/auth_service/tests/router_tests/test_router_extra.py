@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException, status
 from datetime import datetime, timedelta, timezone
 
 # Тесты для сессий пользователя - покрытие строк 519-520, 533

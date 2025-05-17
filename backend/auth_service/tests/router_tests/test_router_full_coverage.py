@@ -2,10 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException, status
-from datetime import datetime, timedelta, timezone
-import sys
-import os
+from fastapi import HTTPException
 
 # Импортируем напрямую из модуля router.py для тестирования
 from router import (

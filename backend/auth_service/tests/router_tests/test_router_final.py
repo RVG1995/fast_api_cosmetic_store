@@ -2,8 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException, status
-from datetime import datetime, timedelta, timezone
+from fastapi import HTTPException
 
 # Тесты для получения пустого списка сессий - строки 519-520, 533
 @pytest.mark.asyncio

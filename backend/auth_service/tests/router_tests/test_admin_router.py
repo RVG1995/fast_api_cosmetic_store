@@ -1,10 +1,8 @@
 """Тесты для модуля административных эндпоинтов (admin_router.py)."""
 
-import sys
-import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 

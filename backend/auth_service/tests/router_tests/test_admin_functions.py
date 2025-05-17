@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from datetime import timedelta
 
 from router import (

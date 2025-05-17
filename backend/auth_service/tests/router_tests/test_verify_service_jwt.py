@@ -1,7 +1,7 @@
 """Тесты для функции verify_service_jwt из utils.py."""
 
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 from fastapi import HTTPException
 
 from utils import verify_service_jwt

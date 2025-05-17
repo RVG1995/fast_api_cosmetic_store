@@ -1,8 +1,8 @@
 """Дополнительные тесты для административных функций из admin_router.py."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException, status
+from unittest.mock import AsyncMock, patch
+from fastapi import HTTPException
 
 from admin_router import (
     make_user_admin, remove_admin_rights, delete_user, get_user_by_id

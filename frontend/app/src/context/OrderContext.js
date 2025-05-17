@@ -1052,6 +1052,7 @@ export const OrderProvider = ({ children }) => {
         payment_sum: orderData.is_payment_on_delivery ? orderData.total_price : 0, // если оплата при получении, то полная сумма, иначе 0
         delivery_cost: orderData.delivery_cost || 0,
         delivery_type: orderData.delivery_type,
+        delivery_address: orderData.delivery_address,
         boxberry_point_id: orderData.boxberry_point_id,
         full_name: orderData.full_name,
         phone: orderData.phone,
@@ -1064,18 +1065,107 @@ export const OrderProvider = ({ children }) => {
         })),
         // Добавляем информацию о весе и габаритах в соответствии с API Boxberry
         weights: {
-          weight: "500", // вес посылки в граммах
-          x: "12",       // габариты в см
-          y: "12",
-          z: "12"
+          weight: 500,  // вес посылки в граммах
+          x: 20,        // ширина в см
+          y: 20,        // глубина в см
+          z: 10         // высота в см
         }
       };
+      
+      // Обработка данных для курьерской доставки Boxberry
+      if (orderData.delivery_type === 'boxberry_courier') {
+        // Извлекаем почтовый индекс из адреса если он там есть
+        const extractZipFromAddress = (address) => {
+          if (!address) return null;
+          const zipRegex = /\b(\d{6})\b/; // Российский почтовый индекс - 6 цифр
+          const match = address.match(zipRegex);
+          return match ? match[1] : null;
+        };
+        
+        // Получаем почтовый индекс
+        const zipCode = extractZipFromAddress(orderData.delivery_address);
+        
+        // Получаем город из адреса
+        const getCityFromAddress = (address) => {
+          if (!address) return null;
+          // Адрес обычно начинается с названия города
+          const parts = address.split(',');
+          if (parts.length > 0) {
+            // Убираем "г" или "г." в начале
+            const cityPart = parts[0].trim();
+            return cityPart.replace(/^г\.?\s+/, '');
+          }
+          return null;
+        };
+        
+        const cityName = getCityFromAddress(orderData.delivery_address);
+        
+        // Добавляем данные для курьерской доставки
+        parcelData.zip_code = zipCode;
+        parcelData.city_name = cityName;
+        
+        // Формируем полные данные адреса для API
+        const addressParts = orderData.delivery_address.split(',').map(part => part.trim());
+        let street = '';
+        let house = '';
+        let flat = '';
+        
+        // Извлекаем улицу и дом из адреса, если они есть
+        // Проходим по частям адреса (пропуская первую часть, которая обычно город)
+        if (addressParts.length > 1) {
+          // Исключаем город и индекс
+          const addressWithoutCity = addressParts.slice(1).join(', ');
+          
+          // Ищем улицу
+          const streetMatch = addressWithoutCity.match(/ул(?:ица)?\s+([а-яА-Яa-zA-Z\s\-\.]+)/i);
+          if (streetMatch) {
+            street = streetMatch[1].trim();
+          }
+          
+          // Ищем дом
+          const houseMatch = addressWithoutCity.match(/д(?:ом)?\s*\.?\s*(\d+[\-\/]?\d*\w*)/i);
+          if (houseMatch) {
+            house = houseMatch[1].trim();
+          }
+          
+          // Ищем квартиру
+          const flatMatch = addressWithoutCity.match(/кв(?:артира)?\s*\.?\s*(\d+)/i);
+          if (flatMatch) {
+            flat = flatMatch[1].trim();
+          }
+        }
+        
+        // Формируем данные адреса для API
+        parcelData.address_data = {
+          postal_code: zipCode,
+          city: cityName,
+          settlement: cityName,
+          street_with_type: street ? `ул ${street}` : "",
+          house: house || "",
+          house_type_full: "дом",
+          flat: flat || "",
+          flat_type_full: "кв."
+        };
+        
+        // Формируем корректный формат kurdost для курьерской доставки Boxberry
+        parcelData.kurdost = {
+          index: zipCode || "",
+          citi: cityName || "",
+          addressp: street && house ? `ул ${street}, дом ${house}${flat ? `, кв ${flat}` : ''}` : orderData.delivery_address
+        };
+        
+        console.log('Подготовлены данные курьерской доставки:', {
+          address_data: parcelData.address_data,
+          kurdost: parcelData.kurdost
+        });
+      }
       
       let response;
       
       // Если у заказа уже есть трек-номер, обновляем существующую посылку
       if (orderData.tracking_number) {
         console.log(`Заказ ${orderId} уже имеет трек-номер ${orderData.tracking_number}, обновляем посылку`);
+        console.log('Данные для обновления посылки:', parcelData);
         response = await deliveryAPI.updateBoxberryParcel(parcelData, orderData.tracking_number);
       } else {
         // Иначе создаем новую посылку

@@ -1,6 +1,7 @@
 """Роутер для интеграции с API Boxberry для получения пунктов выдачи заказов с кэшированием."""
 
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException, Body, Depends
 import httpx
@@ -432,13 +433,23 @@ async def create_boxberry_parcel(
     order_data: dict = Body(...),
 ):
     """
-    Создание заказа в системе Boxberry и получение трек-номера.
+    Создание или обновление заказа в системе Boxberry и получение трек-номера.
     Доступно только для администраторов.
     
-    - **order_data**: Данные заказа для создания посылки в Boxberry
+    - **order_data**: Данные заказа для создания/обновления посылки в Boxberry
+    - Для обновления существующей посылки необходимо передать параметр updateByTrack с трек-номером
     """
     try:
-        logger.info(f"Запрос на создание посылки Boxberry для заказа: {order_data.get('order_number', 'N/A')}")
+        is_update = False
+        update_track = None
+        
+        # Проверяем, передан ли трек-номер для обновления
+        if "updateByTrack" in order_data and order_data["updateByTrack"]:
+            is_update = True
+            update_track = order_data["updateByTrack"]
+            logger.info(f"Запрос на обновление посылки Boxberry с трек-номером: {update_track}")
+        else:
+            logger.info(f"Запрос на создание посылки Boxberry для заказа: {order_data.get('order_number', 'N/A')}")
         
         # Формируем базовые параметры запроса
         parcel_data = {
@@ -481,12 +492,24 @@ async def create_boxberry_parcel(
         if order_data.get("dimensions"):
             dims = order_data.get("dimensions")
             parcel_data["sdata"]["weights"].update({
-                "weight": str(int(dims.get("weight", 1) * 1000)),  # переводим кг в граммы
+                "weight": str(int(float(dims.get("weight", 500)))),  # переводим кг в граммы
                 "x": str(int(dims.get("width", 20))),
                 "y": str(int(dims.get("depth", 20))),
                 "z": str(int(dims.get("height", 10)))
             })
-        
+            logger.info(f"Использованы переданные габариты: {dims}")
+            
+        # Если переданы weights напрямую, используем их
+        elif order_data.get("weights"):
+            weights = order_data.get("weights")
+            parcel_data["sdata"]["weights"].update({
+                "weight": str(weights.get("weight", 500)),  # вес в граммах
+                "x": str(weights.get("x", 20)),
+                "y": str(weights.get("y", 20)),
+                "z": str(weights.get("z", 10))
+            })
+            logger.info(f"Использованы переданные weights: {weights}")
+            
         # Если не переданы габариты, но есть товары, рассчитываем их
         elif order_data.get("items"):
             # Создаем список товаров для расчета габаритов
@@ -504,11 +527,12 @@ async def create_boxberry_parcel(
             if cart_items:
                 dimensions = calculate_dimensions(cart_items, package_multiplier=settings.PACKAGE_MULTIPLIER)
                 parcel_data["sdata"]["weights"].update({
-                    "weight": str(int(dimensions["weight"])),  # переводим кг в граммы
-                    "x": str(int(dimensions["width"])),
-                    "y": str(int(dimensions["depth"])),
-                    "z": str(int(dimensions["height"]))
+                    "weight": str(int(dimensions["weight"])),  # вес в граммах
+                    "x": str(int(dimensions["width"])),        # ширина в см
+                    "y": str(int(dimensions["depth"])),        # глубина в см
+                    "z": str(int(dimensions["height"]))        # высота в см
                 })
+                logger.info(f"Рассчитаны габариты на основе товаров: {dimensions}")
         
         # Добавляем данные в зависимости от типа доставки
         if order_data.get("delivery_type") == "boxberry_pickup_point":
@@ -525,53 +549,134 @@ async def create_boxberry_parcel(
                 
         elif order_data.get("delivery_type") == "boxberry_courier":
             # Курьерская доставка
-            # Проверяем наличие адреса и почтового индекса
+            # Проверяем наличие адреса
             if not order_data.get("delivery_address"):
                 raise HTTPException(
                     status_code=400,
                     detail="Не указан адрес доставки"
                 )
-                
-            # Проверяем данные для курьерской доставки
-            if not order_data.get("address_data"):
-                # Если не переданы разобранные данные адреса, пытаемся использовать имеющиеся
-                kurddost_data = {
-                    "index": order_data.get("zip_code", ""),
-                    "citi": order_data.get("city_name", ""),
-                    "addressp": order_data.get("delivery_address", "")
-                }
-            else:
+            
+            # Обязательно устанавливаем issue=1 для выдачи на ПВЗ
+            parcel_data["sdata"]["issue"] = "1"
+            
+            # Инициализируем kurdost с пустыми данными
+            kurdost_data = {
+                "index": "",
+                "citi": "",
+                "addressp": ""
+            }
+            
+            # Берем данные для курьерской доставки из входного запроса
+            # Сначала проверяем, есть ли готовая структура kurdost
+            if order_data.get("kurdost"):
+                logger.info(f"Используем готовую структуру kurdost из запроса: {order_data.get('kurdost')}")
+                kurdost_data.update(order_data.get("kurdost"))
+            
+            # Если нет готовой структуры kurdost, но есть address_data, используем его
+            elif order_data.get("address_data"):
                 # Используем переданные разобранные данные адреса
                 address_data = order_data.get("address_data", {})
+                logger.info(f"Используем address_data из запроса: {address_data}")
                 
-                # Формируем адрес для курьерской доставки
-                street = address_data.get("street_with_type", "")
-                house = address_data.get("house", "")
-                house_type = address_data.get("house_type_full", "дом")
-                flat = address_data.get("flat", "")
-                flat_type = address_data.get("flat_type_full", "кв.")
-                
-                # Собираем полный адрес: улица, дом, квартира (если есть)
-                address_parts = [f"{street}", f"{house_type} {house}"]
-                if flat:
-                    address_parts.append(f"{flat_type} {flat}")
-                
-                full_address = ", ".join(address_parts)
-                
-                kurddost_data = {
+                # Формируем данные для курьерской доставки
+                kurdost_data.update({
                     "index": address_data.get("postal_code", ""),
                     "citi": address_data.get("city", address_data.get("settlement", "")),
-                    "addressp": full_address
-                }
+                })
                 
+                # Формируем строку адреса для addressp
+                address_parts = []
+                
+                # Улица и дом
+                if address_data.get("street_with_type"):
+                    address_parts.append(address_data.get("street_with_type"))
+                elif address_data.get("street"):
+                    address_parts.append(f"ул {address_data.get('street')}")
+                
+                # Дом
+                house_info = ""
+                if address_data.get("house"):
+                    house_type = address_data.get("house_type_full", "дом")
+                    house_info = f"{house_type} {address_data.get('house')}"
+                    address_parts.append(house_info)
+                
+                # Корпус/блок
+                if address_data.get("block"):
+                    block_type = address_data.get("block_type", "корп")
+                    address_parts.append(f"{block_type} {address_data.get('block')}")
+                
+                # Квартира
+                if address_data.get("flat"):
+                    flat_type = address_data.get("flat_type_full", "кв")
+                    address_parts.append(f"{flat_type} {address_data.get('flat')}")
+                
+                # Формируем полный адрес
+                full_address = ", ".join(address_parts)
+                
+                # Если удалось сформировать адрес, используем его
+                if full_address:
+                    kurdost_data["addressp"] = full_address
+                else:
+                    # Иначе используем исходный адрес
+                    kurdost_data["addressp"] = order_data.get("delivery_address", "")
+                
+                logger.info(f"Сформирован адрес для курьерской доставки: {kurdost_data['addressp']}")
+            
+            # Если нет ни kurdost, ни address_data, используем обычные поля
+            else:
+                logger.info("Используем обычные поля для курьерской доставки")
+                
+                # Извлекаем почтовый индекс из адреса, если он там есть
+                zip_code = order_data.get("zip_code", "")
+                if not zip_code:
+                    # Ищем почтовый индекс в адресе (6 цифр в ряд)
+                    zip_match = re.search(r'\b(\d{6})\b', order_data.get("delivery_address", ""))
+                    if zip_match:
+                        zip_code = zip_match.group(1)
+                        logger.info(f"Извлечен почтовый индекс из адреса: {zip_code}")
+                
+                # Определяем город из адреса, если он не передан отдельно
+                city_name = order_data.get("city_name", "")
+                if not city_name and order_data.get("delivery_address"):
+                    # Предполагаем, что город указан в начале адреса до первой запятой
+                    address_parts = order_data.get("delivery_address", "").split(',')
+                    if address_parts:
+                        # Удаляем "г" или "г." в начале, если есть
+                        city_part = address_parts[0].strip()
+                        city_name = re.sub(r'^г\.?\s+', '', city_part)
+                        logger.info(f"Извлечен город из адреса: {city_name}")
+                
+                # Формируем адрес без города и индекса
+                delivery_address = order_data.get("delivery_address", "")
+                address_parts = delivery_address.split(',')
+                if len(address_parts) > 1:
+                    addressp = ','.join(address_parts[1:]).strip()
+                else:
+                    addressp = delivery_address
+                
+                logger.info(f"Адрес без города: {addressp}")
+                
+                kurdost_data = {
+                    "index": zip_code,
+                    "citi": city_name,
+                    "addressp": addressp
+                }
+            
             # Добавляем информацию о курьерской доставке
-            parcel_data["sdata"]["kurdost"] = kurddost_data
+            parcel_data["sdata"]["kurdost"] = kurdost_data
+            
+            # Логирование данных курьерской доставки для отладки
+            logger.info(f"Итоговые данные kurdost: {kurdost_data}")
             
         else:
             raise HTTPException(
                 status_code=400,
                 detail="Неподдерживаемый тип доставки. Поддерживаются только boxberry_pickup_point и boxberry_courier"
             )
+        
+        # Добавляем трек-номер для обновления если он есть
+        if is_update:
+            parcel_data["sdata"]["updateByTrack"] = update_track
         
         # Выполняем запрос к API BoxBerry
         logger.info(f"Отправка запроса на создание посылки в BoxBerry: {parcel_data}")
@@ -590,7 +695,7 @@ async def create_boxberry_parcel(
                 # Проверяем наличие ошибки в ответе
                 if isinstance(result, dict) and result.get("err"):
                     error_message = result.get("err", "Неизвестная ошибка")
-                    logger.error(f"Ошибка при создании посылки в BoxBerry: {error_message}")
+                    logger.error(f"Ошибка при {'обновлении' if is_update else 'создании'} посылки в BoxBerry: {error_message}")
                     raise HTTPException(status_code=400, detail=f"Ошибка BoxBerry API: {error_message}")
                 
                 # Проверяем наличие трек-номера
@@ -601,11 +706,17 @@ async def create_boxberry_parcel(
                     track_number = result.get("track")
                     logger.info(f"Получен трек-номер BoxBerry: {track_number}")
                     
+                    # Если это обновление и в ответе нет трек-номера, используем исходный
+                    if is_update and not track_number:
+                        track_number = update_track
+                        logger.info(f"Используем исходный трек-номер для обновленной посылки: {track_number}")
+                    
                     # Возвращаем результат
                     return {
                         "success": True,
                         "track_number": track_number,
-                        "response": result
+                        "label": result.get("label"),
+                        "message": "Посылка успешно обновлена" if is_update else "Посылка успешно создана"
                     }
                 else:
                     logger.warning(f"Неожиданный формат ответа от BoxBerry API: {result}")
@@ -620,12 +731,9 @@ async def create_boxberry_parcel(
                     detail=f"Ошибка запроса к BoxBerry API: {response.text}"
                 )
                 
-    except HTTPException:
-        raise
-        
     except Exception as e:
-        logger.exception(f"Ошибка при создании посылки в BoxBerry: {str(e)}")
+        logger.exception(f"Ошибка при {'обновлении' if 'updateByTrack' in order_data else 'создании'} посылки в BoxBerry: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Ошибка при создании посылки в BoxBerry: {str(e)}"
+            detail=f"Ошибка при {'обновлении' if 'updateByTrack' in order_data else 'создании'} посылки в BoxBerry: {str(e)}"
         )

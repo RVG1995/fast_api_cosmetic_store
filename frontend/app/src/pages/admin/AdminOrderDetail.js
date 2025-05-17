@@ -718,7 +718,15 @@ const AdminOrderDetail = () => {
       city: suggestion.data.city || suggestion.data.settlement,
       settlement: suggestion.data.settlement,
       street: suggestion.data.street,
-      house: suggestion.data.house
+      street_with_type: suggestion.data.street_with_type,
+      house: suggestion.data.house,
+      house_type: suggestion.data.house_type,
+      house_type_full: suggestion.data.house_type_full,
+      flat: suggestion.data.flat,
+      flat_type: suggestion.data.flat_type,
+      flat_type_full: suggestion.data.flat_type_full,
+      block: suggestion.data.block,
+      block_type: suggestion.data.block_type
     });
     
     // Обновляем адрес доставки

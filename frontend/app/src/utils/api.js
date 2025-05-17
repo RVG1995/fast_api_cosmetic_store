@@ -1198,6 +1198,8 @@ export const deliveryAPI = {
         ...orderData,
         updateByTrack: trackingNumber
       };
+      
+      console.log("Данные для обновления посылки с трек-номером:", updateData);
       const response = await deliveryApi.post('/delivery/boxberry/create-parcel', updateData);
       console.log('API updateBoxberryParcel ответ:', response.data);
       return response.data;

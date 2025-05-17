@@ -1463,11 +1463,31 @@ const AdminOrderDetail = () => {
       setBoxberryResult(result);
       
       if (result && result.success) {
+        // Если есть трек-номер и этикетка, обновляем информацию о доставке
+        if (result.track_number || result.label) {
+          try {
+            // Подготавливаем данные для обновления информации о доставке
+            const deliveryUpdateData = {
+              delivery_info: {
+                tracking_number: result.track_number || null,
+                label_url_boxberry: result.label || null
+              }
+            };
+            
+            // Обновляем информацию о доставке через API
+            await adminAPI.updateOrderDeliveryInfo(orderId, deliveryUpdateData);
+            console.log('Информация о доставке обновлена:', deliveryUpdateData);
+          } catch (updateError) {
+            console.error('Ошибка при обновлении информации о доставке:', updateError);
+          }
+        }
+        
         // Обновление данных заказа после создания посылки
         const updatedOrder = await getAdminOrderById(orderId);
         if (updatedOrder) {
           setOrder(updatedOrder);
           console.log("Успешно обновлен заказ с трек-номером:", updatedOrder.delivery_info?.tracking_number);
+          console.log("URL этикетки:", updatedOrder.delivery_info?.label_url_boxberry || "не указан");
         } else {
           console.error("Не удалось получить обновленные данные заказа");
         }
@@ -1835,6 +1855,20 @@ const handleCloseBoxberryParcelModal = () => {
                             {(order.delivery_info?.tracking_number || order.tracking_number) ? "Обновить посылку" : "Выгрузить заказ в Boxberry"}
                           </Button>
                         </div>
+                        {(order.delivery_info?.label_url_boxberry) && (
+                          <p>
+                            <strong>Этикетка Boxberry:</strong>{' '}
+                            <a 
+                              href={order.delivery_info.label_url_boxberry} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="btn btn-sm btn-outline-primary"
+                            >
+                              <i className="bi bi-printer me-1"></i>
+                              Открыть этикетку
+                            </a>
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

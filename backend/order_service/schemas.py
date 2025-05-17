@@ -81,6 +81,7 @@ class DeliveryInfoCreate(BaseModel):
     boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
     delivery_cost: float = Field(..., description="Стоимость доставки")
     tracking_number: Optional[str] = Field(None, description="Номер отслеживания")
+    label_url_boxberry: Optional[str] = Field(None, description="URL на этикетку Boxberry")
     
     @field_validator('delivery_type')
     def validate_delivery_type(cls, v):
@@ -251,6 +252,7 @@ class DeliveryInfoUpdate(BaseModel):
     boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
     delivery_cost: Optional[float] = Field(None, description="Стоимость доставки")
     tracking_number: Optional[str] = Field(None, description="Номер отслеживания")
+    label_url_boxberry: Optional[str] = Field(None, description="URL на этикетку Boxberry")
     delivery_address: Optional[str] = Field(None, description="Адрес доставки")
     is_payment_on_delivery: Optional[bool] = Field(None, description="Оплата при получении")
     
@@ -361,6 +363,7 @@ class DeliveryInfoResponse(BaseModel):
     boxberry_point_address: Optional[str] = None
     delivery_cost: float
     tracking_number: Optional[str] = None
+    label_url_boxberry: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 

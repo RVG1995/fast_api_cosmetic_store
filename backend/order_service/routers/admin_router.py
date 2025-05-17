@@ -1389,18 +1389,19 @@ async def update_order_delivery_info(
         boxberry_point_address = delivery_info_dict.get('boxberry_point_address') if delivery_info_dict and 'boxberry_point_address' in delivery_info_dict else delivery_data.boxberry_point_address
         delivery_cost = delivery_info_dict.get('delivery_cost') if delivery_info_dict and 'delivery_cost' in delivery_info_dict else delivery_data.delivery_cost
         tracking_number = delivery_info_dict.get('tracking_number') if delivery_info_dict and 'tracking_number' in delivery_info_dict else delivery_data.tracking_number
+        label_url_boxberry = delivery_info_dict.get('label_url_boxberry') if delivery_info_dict and 'label_url_boxberry' in delivery_info_dict else delivery_data.label_url_boxberry
         
         # Логгируем извлеченные данные
-        logger.info("Извлеченные данные для обновления delivery_info: тип=%s, пункт=%s, адрес=%s, стоимость=%s, трек=%s", 
-                  delivery_type, boxberry_point_id, boxberry_point_address, delivery_cost, tracking_number)
+        logger.info("Извлеченные данные для обновления delivery_info: тип=%s, пункт=%s, адрес=%s, стоимость=%s, трек=%s, этикетка=%s", 
+                  delivery_type, boxberry_point_id, boxberry_point_address, delivery_cost, tracking_number, label_url_boxberry)
         
         # Если информация о доставке уже существует, обновляем её
         if delivery_info:
             # Логгируем текущие данные
-            logger.info("Текущие данные delivery_info: тип=%s, пункт=%s, адрес=%s, стоимость=%s, трек=%s", 
+            logger.info("Текущие данные delivery_info: тип=%s, пункт=%s, адрес=%s, стоимость=%s, трек=%s, этикетка=%s", 
                         delivery_info.delivery_type, delivery_info.boxberry_point_id, 
                         delivery_info.boxberry_point_address, delivery_info.delivery_cost, 
-                        delivery_info.tracking_number)
+                        delivery_info.tracking_number, delivery_info.label_url_boxberry)
             
             # Напрямую обновляем данные из вложенного объекта delivery_info
             if delivery_info_dict:
@@ -1423,6 +1424,10 @@ async def update_order_delivery_info(
                 if 'tracking_number' in delivery_info_dict and delivery_info_dict['tracking_number'] is not None:
                     delivery_info.tracking_number = delivery_info_dict['tracking_number']
                     logger.info("Обновлен трек-номер для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['tracking_number'])
+                
+                if 'label_url_boxberry' in delivery_info_dict and delivery_info_dict['label_url_boxberry'] is not None:
+                    delivery_info.label_url_boxberry = delivery_info_dict['label_url_boxberry']
+                    logger.info("Обновлена ссылка на этикетку Boxberry для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['label_url_boxberry'])
             # Если нет вложенного объекта, используем обычные поля
             else:
                 # Обновляем только непустые поля
@@ -1441,6 +1446,10 @@ async def update_order_delivery_info(
                 if tracking_number is not None:
                     delivery_info.tracking_number = tracking_number
                     logger.info("Обновлен трек-номер для заказа %s: %s", order_id, tracking_number)
+                
+                if label_url_boxberry is not None:
+                    delivery_info.label_url_boxberry = label_url_boxberry
+                    logger.info("Обновлена ссылка на этикетку Boxberry для заказа %s: %s", order_id, label_url_boxberry)
         else:
             # Если информация о доставке отсутствует, создаем её с проверкой на None
             logger.info("Создание новой записи информации о доставке для заказа %s", order_id)
@@ -1462,6 +1471,9 @@ async def update_order_delivery_info(
                 if 'tracking_number' in delivery_info_dict and delivery_info_dict['tracking_number'] is not None:
                     delivery_info_data['tracking_number'] = delivery_info_dict['tracking_number']
                 
+                if 'label_url_boxberry' in delivery_info_dict and delivery_info_dict['label_url_boxberry'] is not None:
+                    delivery_info_data['label_url_boxberry'] = delivery_info_dict['label_url_boxberry']
+                
                 delivery_info = DeliveryInfoModel(**delivery_info_data)
                 logger.info("Создана запись информации о доставке для заказа %s из вложенного объекта: %s", order_id, delivery_info_data)
             else:
@@ -1479,7 +1491,8 @@ async def update_order_delivery_info(
                     boxberry_point_id=boxberry_point_id,
                     boxberry_point_address=boxberry_point_address,
                     delivery_cost=delivery_cost,
-                    tracking_number=tracking_number
+                    tracking_number=tracking_number,
+                    label_url_boxberry=label_url_boxberry
                 )
                 logger.info("Создана запись информации о доставке для заказа %s из обычных полей", order_id)
                 

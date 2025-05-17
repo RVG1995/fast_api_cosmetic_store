@@ -1,9 +1,10 @@
 """Tests for the admin endpoints using the TestClient approach."""
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, MagicMock
-
+from httpx import AsyncClient, ASGITransport
 
 # Import the FastAPI app and necessary modules
 from main import app
@@ -45,9 +46,9 @@ def create_mock_session():
     return session
 
 # Override dependencies for tests
-@pytest.fixture
-def test_client():
-    """Create a test client with overridden dependencies."""
+@pytest_asyncio.fixture
+async def admin_async_client():
+    """Create both sync and async clients for admin endpoint testing."""
     # Create mock dependencies
     mock_user = create_mock_user()
     mock_admin = create_mock_admin()
@@ -75,9 +76,6 @@ def test_client():
     async def verify_service_jwt_override():
         return True
     
-    # Save original dependencies
-    original_dependencies = {}
-    
     # Override dependencies
     app.dependency_overrides[auth_utils.get_current_user] = get_current_user_override
     app.dependency_overrides[auth_utils.get_admin_user] = get_admin_user_override
@@ -86,18 +84,29 @@ def test_client():
     app.dependency_overrides[admin_router.verify_service_key] = verify_service_key_override
     app.dependency_overrides[admin_router.verify_service_jwt] = verify_service_jwt_override
     
-    # Create test client
+    # Use TestClient для синхронных запросов
     client = TestClient(app)
     
-    yield client, mock_session, mock_user, mock_admin, mock_super_admin
+    # Создаём транспорт ASGI, который будет использовать наше FastAPI приложение
+    # Это предотвращает реальные HTTP-запросы
+    transport = ASGITransport(app=app)
+    
+    # Create AsyncClient с ASGI транспортом для тестирования без реальных HTTP запросов
+    async_client = AsyncClient(transport=transport, base_url="http://test")
+    
+    yield client, async_client, mock_session, mock_user, mock_admin, mock_super_admin
+    
+    # Cleanup async client
+    await async_client.aclose()
     
     # Restore original dependencies
     app.dependency_overrides.clear()
 
 # Tests for admin endpoints
-def test_get_all_users(test_client):
+@pytest.mark.asyncio
+async def test_get_all_users(admin_async_client):
     """Test getting all users (admin access)."""
-    client, mock_session, _, _, _ = test_client
+    client, async_client, mock_session, _, _, _ = admin_async_client
     
     # Setup mock users for the response
     user1 = create_mock_user(id=1, email="user1@example.com")
@@ -110,32 +119,46 @@ def test_get_all_users(test_client):
     execute_result.scalars.return_value = scalars_result
     mock_session.execute.return_value = execute_result
     
-    # Make the request
-    response = client.get(
+    # Make both sync and async requests for comparison
+    # Sync request using TestClient
+    sync_response = client.get(
         "/admin/users",
         headers={"Authorization": "Bearer fake_token"}
     )
     
-    # Check the response
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    assert data[0]["id"] == 1
-    assert data[0]["email"] == "user1@example.com"
-    assert data[1]["id"] == 2
-    assert data[1]["email"] == "admin@example.com"
+    # Async request using AsyncClient
+    async_response = await async_client.get(
+        "/admin/users",
+        headers={"Authorization": "Bearer fake_token"}
+    )
+    
+    # Check both responses
+    assert sync_response.status_code == 200
+    assert async_response.status_code == 200
+    
+    sync_data = sync_response.json()
+    async_data = async_response.json()
+    
+    # Verify both responses match
+    assert sync_data == async_data
+    assert len(sync_data) == 2
+    assert sync_data[0]["id"] == 1
+    assert sync_data[0]["email"] == "user1@example.com"
+    assert sync_data[1]["id"] == 2
+    assert sync_data[1]["email"] == "admin@example.com"
 
-def test_activate_user(test_client):
+@pytest.mark.asyncio
+async def test_activate_user(admin_async_client):
     """Test activating a user."""
-    client, mock_session, _, _, _ = test_client
+    client, async_client, mock_session, _, _, _ = admin_async_client
     
     # Create inactive user
     inactive_user = create_mock_user(is_active=False)
     
     # Mock UserModel.get_by_id to return the inactive user
     with patch("models.UserModel.get_by_id", return_value=inactive_user):
-        # Make the request
-        response = client.patch(
+        # Make the async request
+        response = await async_client.patch(
             "/admin/users/1/activate",
             headers={"Authorization": "Bearer fake_token"}
         )
@@ -150,14 +173,15 @@ def test_activate_user(test_client):
         assert inactive_user.activation_token is None
         mock_session.commit.assert_called_once()
 
-def test_activate_user_not_found(test_client):
+@pytest.mark.asyncio
+async def test_activate_user_not_found(admin_async_client):
     """Test activating a non-existent user."""
-    client, _, _, _, _ = test_client
+    _, async_client, _, _, _, _ = admin_async_client
     
     # Mock UserModel.get_by_id to return None (user not found)
     with patch("models.UserModel.get_by_id", return_value=None):
-        # Make the request
-        response = client.patch(
+        # Make the async request
+        response = await async_client.patch(
             "/admin/users/999/activate",
             headers={"Authorization": "Bearer fake_token"}
         )
@@ -166,17 +190,18 @@ def test_activate_user_not_found(test_client):
         assert response.status_code == 404
         assert response.json() == {"detail": "Пользователь не найден"}
 
-def test_make_user_admin(test_client):
+@pytest.mark.asyncio
+async def test_make_user_admin(admin_async_client):
     """Test making a user an admin."""
-    client, mock_session, _, _, _ = test_client
+    client, async_client, mock_session, _, _, _ = admin_async_client
     
     # Create regular user
     regular_user = create_mock_user()
     
     # Mock UserModel.get_by_id to return the regular user
     with patch("models.UserModel.get_by_id", return_value=regular_user):
-        # Make the request
-        response = client.patch(
+        # Make the request using the async client
+        response = await async_client.patch(
             "/admin/users/1/make-admin",
             headers={"Authorization": "Bearer fake_token"}
         )
@@ -190,17 +215,18 @@ def test_make_user_admin(test_client):
         assert regular_user.is_admin is True
         mock_session.commit.assert_called_once()
 
-def test_remove_admin_rights(test_client):
+@pytest.mark.asyncio
+async def test_remove_admin_rights(admin_async_client):
     """Test removing admin rights from a user."""
-    client, mock_session, _, _, _ = test_client
+    client, async_client, mock_session, _, _, _ = admin_async_client
     
     # Create admin user who is not super admin
     admin_user = create_mock_admin()
     
     # Mock UserModel.get_by_id to return the admin user
     with patch("models.UserModel.get_by_id", return_value=admin_user):
-        # Make the request
-        response = client.patch(
+        # Make the request using AsyncClient
+        response = await async_client.patch(
             "/admin/users/2/remove-admin",
             headers={"Authorization": "Bearer fake_token"}
         )
@@ -214,17 +240,18 @@ def test_remove_admin_rights(test_client):
         assert admin_user.is_admin is False
         mock_session.commit.assert_called_once()
 
-def test_remove_admin_rights_from_super_admin(test_client):
+@pytest.mark.asyncio
+async def test_remove_admin_rights_from_super_admin(admin_async_client):
     """Test removing admin rights from a super admin (should fail)."""
-    client, _, _, _, _ = test_client
+    _, async_client, _, _, _, _ = admin_async_client
     
     # Create super admin user
     super_admin = create_mock_super_admin()
     
     # Mock UserModel.get_by_id to return the super admin user
     with patch("models.UserModel.get_by_id", return_value=super_admin):
-        # Make the request
-        response = client.patch(
+        # Make the request using AsyncClient
+        response = await async_client.patch(
             "/admin/users/3/remove-admin",
             headers={"Authorization": "Bearer fake_token"}
         )
@@ -233,17 +260,18 @@ def test_remove_admin_rights_from_super_admin(test_client):
         assert response.status_code == 400
         assert response.json() == {"detail": "Невозможно отозвать права администратора у суперадминистратора"}
 
-def test_delete_user(test_client):
+@pytest.mark.asyncio
+async def test_delete_user(admin_async_client):
     """Test deleting a user."""
-    client, mock_session, _, _, _ = test_client
+    _, async_client, mock_session, _, _, _ = admin_async_client
     
     # Create regular user
     regular_user = create_mock_user()
     
     # Mock UserModel.get_by_id to return the regular user
     with patch("models.UserModel.get_by_id", return_value=regular_user):
-        # Make the request
-        response = client.delete(
+        # Make the request using AsyncClient
+        response = await async_client.delete(
             "/admin/users/1",
             headers={"Authorization": "Bearer fake_token"}
         )
@@ -257,12 +285,13 @@ def test_delete_user(test_client):
         mock_session.delete.assert_called_once_with(regular_user)
         mock_session.commit.assert_called_once()
 
-def test_check_admin_access(test_client):
+@pytest.mark.asyncio
+async def test_check_admin_access(admin_async_client):
     """Test checking admin access."""
-    client, _, _, _, _ = test_client
+    _, async_client, _, _, _, _ = admin_async_client
     
-    # Make the request
-    response = client.get(
+    # Make the request using AsyncClient
+    response = await async_client.get(
         "/admin/check-access",
         headers={"Authorization": "Bearer fake_token"}
     )
@@ -271,12 +300,13 @@ def test_check_admin_access(test_client):
     assert response.status_code == 200
     assert response.json() == {"status": "success", "message": "У вас есть права администратора"}
 
-def test_check_super_admin_access(test_client):
+@pytest.mark.asyncio
+async def test_check_super_admin_access(admin_async_client):
     """Test checking super admin access."""
-    client, _, _, _, _ = test_client
+    _, async_client, _, _, _, _ = admin_async_client
     
-    # Make the request
-    response = client.get(
+    # Make the request using AsyncClient
+    response = await async_client.get(
         "/admin/check-super-access",
         headers={"Authorization": "Bearer fake_token"}
     )
@@ -285,17 +315,18 @@ def test_check_super_admin_access(test_client):
     assert response.status_code == 200
     assert response.json() == {"status": "success", "message": "У вас есть права суперадминистратора"}
 
-def test_get_user_by_id(test_client):
+@pytest.mark.asyncio
+async def test_get_user_by_id(admin_async_client):
     """Test getting a user by ID with service JWT."""
-    client, _, _, _, _ = test_client
+    _, async_client, _, _, _, _ = admin_async_client
     
     # Create regular user
     user = create_mock_user()
     
     # Mock UserModel.get_by_id to return the user
     with patch("models.UserModel.get_by_id", return_value=user):
-        # Make the request
-        response = client.get(
+        # Make the request using AsyncClient
+        response = await async_client.get(
             "/admin/users/1",
             headers={"Authorization": "Bearer service_token"}
         )
@@ -306,14 +337,15 @@ def test_get_user_by_id(test_client):
         assert data["id"] == 1
         assert data["email"] == "user@example.com"
 
-def test_get_user_by_id_not_found(test_client):
+@pytest.mark.asyncio
+async def test_get_user_by_id_not_found(admin_async_client):
     """Test getting a non-existent user by ID."""
-    client, _, _, _, _ = test_client
+    _, async_client, _, _, _, _ = admin_async_client
     
     # Mock UserModel.get_by_id to return None (user not found)
     with patch("models.UserModel.get_by_id", return_value=None):
-        # Make the request
-        response = client.get(
+        # Make the request using AsyncClient
+        response = await async_client.get(
             "/admin/users/999",
             headers={"Authorization": "Bearer service_token"}
         )

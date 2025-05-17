@@ -1,15 +1,16 @@
 """Tests for the authentication endpoints using the TestClient approach."""
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, MagicMock
+from httpx import AsyncClient, ASGITransport
 from fastapi import HTTPException
 
 # Import the FastAPI app and necessary modules
 from main import app
 import auth_utils
 import router
-from utils import verify_service_jwt, get_password_hash, verify_password
 
 # Create a mock user for tests
 def create_mock_user(id=1, email="user@example.com", is_active=True, is_admin=False, 
@@ -38,8 +39,25 @@ def create_mock_session():
     return session
 
 # Override dependencies for tests
-@pytest.fixture
-def test_client():
+@pytest_asyncio.fixture
+async def async_client():
+    """Create an async client for testing."""
+    # Use TestClient для синхронных запросов
+    client = TestClient(app)
+    
+    # Создаём транспорт ASGI, который будет использовать наше FastAPI приложение
+    # Это предотвращает реальные HTTP-запросы
+    transport = ASGITransport(app=app)
+    
+    # Create AsyncClient с ASGI транспортом для тестирования без реальных HTTP запросов
+    async_client = AsyncClient(transport=transport, base_url="http://test")
+    yield client, async_client
+    
+    # Cleanup async client
+    await async_client.aclose()
+
+@pytest_asyncio.fixture
+async def test_async_client():
     """Create a test client with overridden dependencies."""
     # Create mock dependencies
     mock_user = create_mock_user()
@@ -76,10 +94,20 @@ def test_client():
     get_password_hash_patcher.start()
     verify_credentials_patcher.start()
     
-    # Create test client
+    # Use TestClient для синхронных запросов
     client = TestClient(app)
     
-    yield client, mock_session, mock_user
+    # Создаём транспорт ASGI, который будет использовать наше FastAPI приложение
+    # Это предотвращает реальные HTTP-запросы
+    transport = ASGITransport(app=app)
+    
+    # Create AsyncClient с ASGI транспортом для тестирования без реальных HTTP запросов
+    async_client = AsyncClient(transport=transport, base_url="http://test")
+    
+    yield client, async_client, mock_session, mock_user
+    
+    # Close async client
+    await async_client.aclose()
     
     # Stop patchers
     verify_password_patcher.stop()
@@ -90,9 +118,10 @@ def test_client():
     app.dependency_overrides.clear()
 
 # Tests for login
-def test_login_success(test_client):
+@pytest.mark.asyncio
+async def test_login_success(test_async_client):
     """Test successful login."""
-    client, mock_session, mock_user = test_client
+    client, async_client, mock_session, mock_user = test_async_client
     
     # Mock token creation
     with patch("router.TokenService.create_access_token", return_value=("mock_token", "mock_jti")):
@@ -100,8 +129,8 @@ def test_login_success(test_client):
         with patch("router.session_service.create_session", new_callable=AsyncMock):
             # Mock last login update
             with patch("router.user_service.update_last_login", new_callable=AsyncMock):
-                # Make the request
-                response = client.post(
+                # Using AsyncClient instead of sync client
+                response = await async_client.post(
                     "/auth/login",
                     data={"username": "user@example.com", "password": "password123"}
                 )
@@ -112,14 +141,15 @@ def test_login_success(test_client):
                 assert "access_token" in data
                 assert data["token_type"] == "bearer"
 
-def test_login_invalid_credentials(test_client):
+@pytest.mark.asyncio
+async def test_login_invalid_credentials(test_async_client):
     """Test login with invalid credentials."""
-    client, mock_session, _ = test_client
+    client, async_client, mock_session, _ = test_async_client
     
     # Mock verify_credentials to raise an exception
     with patch("router.user_service.verify_credentials", side_effect=HTTPException(status_code=401, detail="Invalid credentials")):
-        # Make the request
-        response = client.post(
+        # Using AsyncClient instead of sync client
+        response = await async_client.post(
             "/auth/login",
             data={"username": "user@example.com", "password": "wrong_password"}
         )
@@ -128,16 +158,17 @@ def test_login_invalid_credentials(test_client):
         assert response.status_code == 401
         assert response.json() == {"detail": "Invalid credentials"}
 
-def test_login_too_many_attempts(test_client):
+@pytest.mark.asyncio
+async def test_login_too_many_attempts(test_async_client):
     """Test login with too many attempts."""
-    client, _, _ = test_client
+    client, async_client, _, _ = test_async_client
     
     # Mock check_ip_blocked to indicate too many attempts
     with patch("router.bruteforce_protection.check_ip_blocked", new_callable=AsyncMock) as mock_check:
         mock_check.return_value = True
         
-        # Make the request
-        response = client.post(
+        # Using AsyncClient instead of sync client
+        response = await async_client.post(
             "/auth/login",
             data={"username": "user@example.com", "password": "password123"}
         )
@@ -146,16 +177,17 @@ def test_login_too_many_attempts(test_client):
         assert response.status_code == 429
         assert "Слишком много неудачных попыток" in response.json()["detail"]
 
-def test_login_ip_blocked(test_client):
+@pytest.mark.asyncio
+async def test_login_ip_blocked(test_async_client):
     """Test login with IP address blocked."""
-    client, _, _ = test_client
+    client, async_client, _, _ = test_async_client
     
     # Mock verify_credentials to indicate IP is blocked
     with patch("router.user_service.verify_credentials", side_effect=HTTPException(
         status_code=403, detail="Your IP address has been temporarily blocked due to suspicious activity."
     )):
-        # Make the request
-        response = client.post(
+        # Using AsyncClient instead of sync client
+        response = await async_client.post(
             "/auth/login",
             data={"username": "user@example.com", "password": "password123"}
         )
@@ -165,9 +197,10 @@ def test_login_ip_blocked(test_client):
         assert "IP address has been temporarily blocked" in response.json()["detail"]
 
 # Tests for registration
-def test_register_success(test_client):
+@pytest.mark.asyncio
+async def test_register_success(test_async_client):
     """Test successful user registration."""
-    client, mock_session, _ = test_client
+    client, async_client, mock_session, _ = test_async_client
     
     # Mock existing user check
     with patch("router.user_service.get_user_by_email", new_callable=AsyncMock) as mock_get_user:
@@ -180,8 +213,8 @@ def test_register_success(test_client):
             
             # Mock activation email sending
             with patch("router.user_service.send_activation_email", new_callable=AsyncMock):
-                # Make the request
-                response = client.post(
+                # Using AsyncClient instead of sync client
+                response = await async_client.post(
                     "/auth/register",
                     json={
                         "email": "newuser@example.com",
@@ -199,16 +232,17 @@ def test_register_success(test_client):
                 response_data = response.json()
                 assert response_data["email"] == "newuser@example.com"
 
-def test_register_email_exists(test_client):
+@pytest.mark.asyncio
+async def test_register_email_exists(test_async_client):
     """Test registration with existing email."""
-    client, mock_session, _ = test_client
+    client, async_client, mock_session, _ = test_async_client
     
     # Mock existing user check to indicate email already exists
     with patch("router.user_service.get_user_by_email", new_callable=AsyncMock) as mock_get_user:
         mock_get_user.return_value = create_mock_user(email="existing@example.com")
         
-        # Make the request
-        response = client.post(
+        # Using AsyncClient instead of sync client
+        response = await async_client.post(
             "/auth/register",
             json={
                 "email": "existing@example.com",
@@ -225,12 +259,13 @@ def test_register_email_exists(test_client):
         assert response.status_code == 400
         assert "Email уже зарегистрирован" in response.json()["detail"]
 
-def test_register_passwords_dont_match(test_client):
+@pytest.mark.asyncio
+async def test_register_passwords_dont_match(test_async_client):
     """Test registration with non-matching passwords."""
-    client, _, _ = test_client
+    client, async_client, _, _ = test_async_client
     
-    # Make the request with different passwords
-    response = client.post(
+    # Using AsyncClient instead of sync client
+    response = await async_client.post(
         "/auth/register",
         json={
             "email": "newuser@example.com",
@@ -248,9 +283,10 @@ def test_register_passwords_dont_match(test_client):
     # No need to check specific error message, it's enough to verify the status code
 
 # Tests for logout
-def test_logout_with_token(test_client):
+@pytest.mark.asyncio
+async def test_logout_with_token(test_async_client):
     """Test logout with a valid token."""
-    client, mock_session, _ = test_client
+    client, async_client, mock_session, _ = test_async_client
     
     # Mock token decoding
     with patch("router.TokenService.decode_token", return_value={"jti": "test_jti"}):
@@ -258,8 +294,8 @@ def test_logout_with_token(test_client):
         with patch("router.session_service.revoke_session_by_jti", new_callable=AsyncMock) as mock_revoke:
             mock_revoke.return_value = True
             
-            # Make the request
-            response = client.post(
+            # Using AsyncClient instead of sync client
+            response = await async_client.post(
                 "/auth/logout",
                 headers={"Authorization": "Bearer test_token"}
             )
@@ -268,21 +304,23 @@ def test_logout_with_token(test_client):
             assert response.status_code == 200
             assert "success" in response.json()["status"]
 
-def test_logout_without_token(test_client):
+@pytest.mark.asyncio
+async def test_logout_without_token(test_async_client):
     """Test logout without a token."""
-    client, _, _ = test_client
+    client, async_client, _, _ = test_async_client
     
-    # Make the request without token
-    response = client.post("/auth/logout")
+    # Using AsyncClient instead of sync client
+    response = await async_client.post("/auth/logout")
     
     # Check response - should be successful even without token
     assert response.status_code == 200
     assert "success" in response.json()["status"]
 
 # Tests for password change
-def test_change_password_success(test_client):
+@pytest.mark.asyncio
+async def test_change_password_success(test_async_client):
     """Test successful password change."""
-    client, session, user = test_client
+    client, async_client, session, user = test_async_client
     
     # We need to patch the schema validation for testing
     # For this test, let's skip the actual test since the schema validations are causing issues
@@ -293,9 +331,10 @@ def test_change_password_success(test_client):
         # Use a simplified test approach without making the actual request
         assert True
 
-def test_change_password_wrong_current(test_client):
+@pytest.mark.asyncio
+async def test_change_password_wrong_current(test_async_client):
     """Test password change with wrong current password."""
-    client, session, user = test_client
+    client, async_client, session, user = test_async_client
     
     # We need to patch the schema validation for testing
     # For this test, let's skip the actual test since the schema validations are causing issues
@@ -306,12 +345,13 @@ def test_change_password_wrong_current(test_client):
         # Use a simplified test approach without making the actual request
         assert True
 
-def test_change_password_passwords_dont_match(test_client):
+@pytest.mark.asyncio
+async def test_change_password_passwords_dont_match(test_async_client):
     """Test password change with non-matching new passwords."""
-    client, session, user = test_client
+    client, async_client, session, user = test_async_client
     
-    # Make the request with different passwords
-    response = client.post(
+    # Using AsyncClient instead of sync client
+    response = await async_client.post(
         "/auth/change-password",
         json={
             "current_password": "CurrentPassword123",

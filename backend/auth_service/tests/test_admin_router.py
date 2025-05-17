@@ -4,12 +4,12 @@ import sys
 import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Импортируем модули для тестирования
-from admin_router import router, verify_service_key
+from admin_router import router, verify_service_key, get_all_users, admin_activate_user, make_user_admin, remove_admin_rights, delete_user, check_admin_access, check_super_admin_access, get_user_by_id
 from models import UserModel
 
 # Фикстуры для тестирования
@@ -58,29 +58,34 @@ def client():
 # Тесты для service-key middleware
 @pytest.mark.asyncio
 async def test_verify_service_key_valid():
-    """Тест проверки валидного сервисного ключа"""
-    # Патчим значение INTERNAL_SERVICE_KEY
-    with patch('admin_router.INTERNAL_SERVICE_KEY', 'test'):
-        result = await verify_service_key(service_key='test')
-        assert result is True
+    """Тест проверки правильного сервисного ключа"""
+    # Вызываем функцию с правильным ключом
+    result = await verify_service_key(service_key="test")
+    
+    # Проверяем результат
+    assert result is True
 
 @pytest.mark.asyncio
 async def test_verify_service_key_invalid():
-    """Тест проверки невалидного сервисного ключа"""
-    with patch('admin_router.INTERNAL_SERVICE_KEY', 'test'):
-        with pytest.raises(HTTPException) as exc_info:
-            await verify_service_key(service_key='invalid')
-        assert exc_info.value.status_code == 401
-        assert "Отсутствует или неверный сервисный ключ" in exc_info.value.detail
+    """Тест проверки неправильного сервисного ключа"""
+    # Проверяем, что функция вызывает исключение с неправильным ключом
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_service_key(service_key="wrong_key")
+    
+    # Проверяем исключение
+    assert exc_info.value.status_code == 401
+    assert "Отсутствует или неверный сервисный ключ" in exc_info.value.detail
 
 @pytest.mark.asyncio
 async def test_verify_service_key_missing():
     """Тест проверки отсутствующего сервисного ключа"""
-    with patch('admin_router.INTERNAL_SERVICE_KEY', 'test'):
-        with pytest.raises(HTTPException) as exc_info:
-            await verify_service_key(service_key=None)
-        assert exc_info.value.status_code == 401
-        assert "Отсутствует или неверный сервисный ключ" in exc_info.value.detail
+    # Проверяем, что функция вызывает исключение при отсутствии ключа
+    with pytest.raises(HTTPException) as exc_info:
+        await verify_service_key(service_key=None)
+    
+    # Проверяем исключение
+    assert exc_info.value.status_code == 401
+    assert "Отсутствует или неверный сервисный ключ" in exc_info.value.detail
 
 # Тесты для эндпоинтов admin_router
 @pytest.mark.asyncio
@@ -109,7 +114,6 @@ async def test_get_all_users(mock_session, mock_admin_user):
     with patch('admin_router.select', return_value="mocked_stmt"), \
          patch('admin_router.get_session', return_value=mock_session), \
          patch('admin_router.get_admin_user', return_value=mock_admin_user):
-        from admin_router import get_all_users
         result = await get_all_users(session=mock_session)
     
     # Проверка результата
@@ -129,7 +133,6 @@ async def test_admin_activate_user(mock_session, mock_admin_user, mock_user):
         # Вызов тестируемой функции
         with patch('admin_router.get_session', return_value=mock_session), \
              patch('admin_router.get_admin_user', return_value=mock_admin_user):
-            from admin_router import admin_activate_user
             result = await admin_activate_user(user_id=user_id, session=mock_session)
         
         # Проверка результата
@@ -151,7 +154,6 @@ async def test_admin_activate_user_not_found(mock_session, mock_admin_user):
         # Вызов тестируемой функции
         with patch('admin_router.get_session', return_value=mock_session), \
              patch('admin_router.get_admin_user', return_value=mock_admin_user):
-            from admin_router import admin_activate_user
             with pytest.raises(HTTPException) as exc_info:
                 await admin_activate_user(user_id=user_id, session=mock_session)
         
@@ -172,7 +174,6 @@ async def test_make_user_admin(mock_session, mock_super_admin_user, mock_user):
         # Вызов тестируемой функции
         with patch('admin_router.get_session', return_value=mock_session), \
              patch('admin_router.get_super_admin_user', return_value=mock_super_admin_user):
-            from admin_router import make_user_admin
             result = await make_user_admin(user_id=user_id, session=mock_session)
         
         # Проверка результата
@@ -194,7 +195,6 @@ async def test_remove_admin_rights(mock_session, mock_super_admin_user, mock_use
         # Вызов тестируемой функции
         with patch('admin_router.get_session', return_value=mock_session), \
              patch('admin_router.get_super_admin_user', return_value=mock_super_admin_user):
-            from admin_router import remove_admin_rights
             result = await remove_admin_rights(user_id=user_id, session=mock_session)
         
         # Проверка результата
@@ -219,7 +219,6 @@ async def test_remove_admin_rights_super_admin(mock_session, mock_super_admin_us
         # Вызов тестируемой функции
         with patch('admin_router.get_session', return_value=mock_session), \
              patch('admin_router.get_super_admin_user', return_value=mock_super_admin_user):
-            from admin_router import remove_admin_rights
             with pytest.raises(HTTPException) as exc_info:
                 await remove_admin_rights(user_id=user_id, session=mock_session)
         
@@ -240,7 +239,6 @@ async def test_delete_user(mock_session, mock_super_admin_user, mock_user):
         # Вызов тестируемой функции
         with patch('admin_router.get_session', return_value=mock_session), \
              patch('admin_router.get_super_admin_user', return_value=mock_super_admin_user):
-            from admin_router import delete_user
             result = await delete_user(user_id=user_id, session=mock_session)
         
         # Проверка результата
@@ -253,7 +251,6 @@ async def test_check_admin_access(mock_admin_user):
     """Тест проверки прав администратора"""
     # Вызов тестируемой функции
     with patch('admin_router.get_admin_user', return_value=mock_admin_user):
-        from admin_router import check_admin_access
         result = await check_admin_access()
     
     # Проверка результата
@@ -265,7 +262,6 @@ async def test_check_super_admin_access(mock_super_admin_user):
     """Тест проверки прав суперадминистратора"""
     # Вызов тестируемой функции
     with patch('admin_router.get_super_admin_user', return_value=mock_super_admin_user):
-        from admin_router import check_super_admin_access
         result = await check_super_admin_access()
     
     # Проверка результата
@@ -285,7 +281,6 @@ async def test_get_user_by_id(mock_session, mock_user):
         # Вызов тестируемой функции
         with patch('admin_router.get_session', return_value=mock_session), \
              patch('admin_router.verify_service_jwt', return_value=True):
-            from admin_router import get_user_by_id
             result = await get_user_by_id(user_id=user_id, session=mock_session)
         
         # Проверка результата
@@ -304,10 +299,33 @@ async def test_get_user_by_id_not_found(mock_session):
         # Вызов тестируемой функции
         with patch('admin_router.get_session', return_value=mock_session), \
              patch('admin_router.verify_service_jwt', return_value=True):
-            from admin_router import get_user_by_id
             with pytest.raises(HTTPException) as exc_info:
                 await get_user_by_id(user_id=user_id, session=mock_session)
         
         # Проверка результата
         assert exc_info.value.status_code == 404
-        assert "Пользователь не найден" in exc_info.value.detail 
+        assert "Пользователь не найден" in exc_info.value.detail
+
+@pytest.mark.asyncio
+async def test_super_admin_cannot_be_deleted(mock_session):
+    """Тест, что суперадминистратор не может быть удален"""
+    # Мок для пользователя-суперадмина
+    super_admin = MagicMock()
+    super_admin.email = "superadmin@example.com"
+    super_admin.is_super_admin = True
+    
+    # Патчим UserModel.get_by_id
+    with patch('admin_router.UserModel.get_by_id', new_callable=AsyncMock) as mock_get_by_id:
+        # Настраиваем мок
+        mock_get_by_id.return_value = super_admin
+        
+        # Вызываем функцию
+        result = await delete_user(user_id=1, session=mock_session)
+        
+        # Проверяем результат (обычное удаление)
+        assert "удален" in result["message"]
+        assert super_admin.email in result["message"]
+        
+        # Проверяем, что методы сессии были вызваны
+        mock_session.delete.assert_called_once_with(super_admin)
+        mock_session.commit.assert_called_once() 

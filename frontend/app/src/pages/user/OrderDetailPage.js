@@ -455,6 +455,43 @@ const OrderDetailPage = () => {
                 </Row>
               )}
               
+              {/* Информация о доставке */}
+              <div className="mb-4">
+                <h5 className="section-title">Информация о доставке</h5>
+                <Row>
+                  <Col md={6}>
+                    <div className="order-info-item">
+                      <div className="order-info-label">Адрес доставки:</div>
+                      <div className="order-info-value">{order.delivery_address || "Не указан"}</div>
+                    </div>
+                  </Col>
+                  <Col md={6}>
+                    <div className="order-info-item">
+                      <div className="order-info-label">Тип доставки:</div>
+                      <div className="order-info-value">{formatDeliveryType(order.delivery_type)}</div>
+                    </div>
+                  </Col>
+                </Row>
+                {order.boxberry_point_address && (
+                  <div className="order-info-item mt-2">
+                    <div className="order-info-label">Адрес пункта выдачи:</div>
+                    <div className="order-info-value">{order.boxberry_point_address}</div>
+                  </div>
+                )}
+                {order.tracking_number && order.delivery_type && order.delivery_type.includes('boxberry') && (
+                  <div className="order-info-item mt-2">
+                    <div className="order-info-label">Трек-номер:</div>
+                    <div className="order-info-value">{order.tracking_number}</div>
+                  </div>
+                )}
+                <div className="order-info-item mt-2">
+                  <div className="order-info-label">Способ оплаты:</div>
+                  <div className="order-info-value">
+                    {order.is_payment_on_delivery ? 'Оплата при получении' : 'Оплата на сайте'}
+                  </div>
+                </div>
+              </div>
+              
               {order.comment && (
                 <div className="order-notes mb-4">
                   <h5>Комментарий к заказу:</h5>
@@ -568,34 +605,6 @@ const OrderDetailPage = () => {
               <p className="mb-4">
                 <strong>{order.full_name}</strong>
               </p>
-              
-              <h5 className="section-title">Адрес доставки</h5>
-              <p className="mb-4">
-                {order.delivery_address || "Адрес не указан"}
-              </p>
-              
-              {/* Информация о доставке */}
-              <h5 className="section-title">Способ доставки</h5>
-              <div className="mb-4 delivery-info">
-                <div className="detail-field mb-2">
-                  <span className="detail-label">Тип доставки:</span>
-                  <span className="detail-value">{formatDeliveryType(order.delivery_type)}</span>
-                </div>
-                
-                {order.boxberry_point_address && (
-                  <div className="detail-field mb-2">
-                    <span className="detail-label">Адрес пункта выдачи:</span>
-                    <span className="detail-value">{order.boxberry_point_address}</span>
-                  </div>
-                )}
-                
-                <div className="detail-field mb-2">
-                  <span className="detail-label">Способ оплаты:</span>
-                  <span className="detail-value">
-                    {order.is_payment_on_delivery ? 'Оплата при получении' : 'Оплата на сайте'}
-                  </span>
-                </div>
-              </div>
               
               <h5 className="section-title">Контактная информация</h5>
               <div className="contact-info">

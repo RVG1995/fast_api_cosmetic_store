@@ -9,7 +9,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy import exc as sqlalchemy_exc
 
-from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel, PromoCodeUsageModel
+from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel, PromoCodeUsageModel, DeliveryInfoModel
 from schemas import OrderCreate, OrderUpdate, OrderStatusHistoryCreate, OrderFilterParams, OrderStatistics
 from dependencies import check_products_availability, get_products_info
 from product_api import get_product_api
@@ -47,12 +47,12 @@ async def create_order(
         raise ValueError("Не найден статус заказа по умолчанию")
     
     # Проверяем, что указан тип доставки
-    if not order_data.delivery_type:
+    if not order_data.delivery_info.delivery_type:
         logger.error("Не указан способ доставки")
         raise ValueError("Необходимо выбрать способ доставки")
     
     # Для пунктов выдачи проверяем, что указан адрес пункта
-    if order_data.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not order_data.boxberry_point_address:
+    if order_data.delivery_info.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not order_data.delivery_info.boxberry_point_address:
         logger.error("Не указан адрес пункта выдачи")
         raise ValueError("Необходимо указать адрес пункта выдачи")
     
@@ -127,16 +127,22 @@ async def create_order(
         is_paid=False,
         personal_data_agreement=order_data.personal_data_agreement,
         receive_notifications=order_data.receive_notifications,
-        # Данные о доставке
-        delivery_type=order_data.delivery_type,
-        boxberry_point_address=order_data.boxberry_point_address if hasattr(order_data, 'boxberry_point_address') else None,
-        boxberry_point_id=order_data.boxberry_point_id if hasattr(order_data, 'boxberry_point_id') else None,
-        delivery_cost=order_data.delivery_cost if hasattr(order_data, 'delivery_cost') else None,
         # Данные о способе оплаты
         is_payment_on_delivery=order_data.is_payment_on_delivery if hasattr(order_data, 'is_payment_on_delivery') else True,
     )
     session.add(order)
     await session.flush()
+    
+    # Создаем информацию о доставке
+    delivery_info = DeliveryInfoModel(
+        order_id=order.id,
+        delivery_type=order_data.delivery_info.delivery_type,
+        boxberry_point_id=order_data.delivery_info.boxberry_point_id,
+        boxberry_point_address=order_data.delivery_info.boxberry_point_address,
+        delivery_cost=order_data.delivery_info.delivery_cost,
+        tracking_number=order_data.delivery_info.tracking_number
+    )
+    session.add(delivery_info)
     
     # Создаем элементы заказа
     for item in order_data.items:
@@ -186,9 +192,9 @@ async def create_order(
         session.add(promo_code_usage)
     
     # Добавляем стоимость доставки к общей сумме заказа
-    if hasattr(order_data, 'delivery_cost') and order_data.delivery_cost:
-        total_price += order_data.delivery_cost
-        logger.info(f"Добавлена стоимость доставки {order_data.delivery_cost} к заказу, итоговая сумма: {total_price}")
+    if order_data.delivery_info.delivery_cost:
+        total_price += order_data.delivery_info.delivery_cost
+        logger.info(f"Добавлена стоимость доставки {order_data.delivery_info.delivery_cost} к заказу, итоговая сумма: {total_price}")
     
     # Обновляем общую стоимость заказа и скидку
     order.total_price = total_price
@@ -209,7 +215,11 @@ async def create_order(
     await invalidate_order_cache(order.id)
     logger.info("Кэш заказа %s и связанных списков инвалидирован после создания", order.id)
     
-    return order
+    # Делаем коммит, чтобы убедиться, что данные фиксируются в базе
+    await session.commit()
+    
+    # Получаем заказ со всеми связанными данными (включая delivery_info)
+    return await get_order_by_id(session, order.id)
 
 async def get_order_by_id(session: AsyncSession, order_id: int, user_id: Optional[int] = None) -> Optional[OrderModel]:
     """
@@ -231,7 +241,8 @@ async def get_order_by_id(session: AsyncSession, order_id: int, user_id: Optiona
         query = select(OrderModel).options(
             selectinload(OrderModel.items),
             selectinload(OrderModel.status),
-            selectinload(OrderModel.status_history).selectinload(OrderStatusHistoryModel.status)
+            selectinload(OrderModel.status_history).selectinload(OrderStatusHistoryModel.status),
+            selectinload(OrderModel.delivery_info)  # Явно загружаем информацию о доставке
         ).filter(OrderModel.id == order_id)
         
         # Если указан пользователь, фильтруем только его заказы
@@ -348,17 +359,40 @@ async def update_order(
         order.delivery_address = order_data.delivery_address
     if hasattr(order_data, 'comment') and order_data.comment is not None:
         order.comment = order_data.comment
-    if hasattr(order_data, 'delivery_type') and order_data.delivery_type is not None:
-        order.delivery_type = order_data.delivery_type
-    if hasattr(order_data, 'boxberry_point_address') and order_data.boxberry_point_address is not None:
-        order.boxberry_point_address = order_data.boxberry_point_address
-    if hasattr(order_data, 'boxberry_point_id') and order_data.boxberry_point_id is not None:
-        order.boxberry_point_id = order_data.boxberry_point_id
     if hasattr(order_data, 'is_paid') and order_data.is_paid is not None:
         order.is_paid = order_data.is_paid
-    if hasattr(order_data, 'tracking_number') and order_data.tracking_number is not None:
-        order.tracking_number = order_data.tracking_number
-        logger.info("Обновлен трек-номер для заказа %s: %s", order_id, order_data.tracking_number)
+    
+    # Обновляем информацию о доставке
+    if hasattr(order_data, 'delivery_info') and order_data.delivery_info is not None:
+        # Получаем информацию о доставке для заказа
+        delivery_info_query = select(DeliveryInfoModel).filter(DeliveryInfoModel.order_id == order_id)
+        delivery_info_result = await session.execute(delivery_info_query)
+        delivery_info = delivery_info_result.scalars().first()
+        
+        # Если информация о доставке уже существует, обновляем её
+        if delivery_info:
+            if order_data.delivery_info.delivery_type is not None:
+                delivery_info.delivery_type = order_data.delivery_info.delivery_type
+            if order_data.delivery_info.boxberry_point_id is not None:
+                delivery_info.boxberry_point_id = order_data.delivery_info.boxberry_point_id
+            if order_data.delivery_info.boxberry_point_address is not None:
+                delivery_info.boxberry_point_address = order_data.delivery_info.boxberry_point_address
+            if order_data.delivery_info.delivery_cost is not None:
+                delivery_info.delivery_cost = order_data.delivery_info.delivery_cost
+            if order_data.delivery_info.tracking_number is not None:
+                delivery_info.tracking_number = order_data.delivery_info.tracking_number
+                logger.info("Обновлен трек-номер для заказа %s: %s", order_id, order_data.delivery_info.tracking_number)
+        else:
+            # Если информация о доставке отсутствует, создаем её
+            delivery_info = DeliveryInfoModel(
+                order_id=order_id,
+                delivery_type=order_data.delivery_info.delivery_type or "boxberry_courier",
+                boxberry_point_id=order_data.delivery_info.boxberry_point_id,
+                boxberry_point_address=order_data.delivery_info.boxberry_point_address,
+                delivery_cost=order_data.delivery_info.delivery_cost or 0,
+                tracking_number=order_data.delivery_info.tracking_number
+            )
+            session.add(delivery_info)
     
     order.updated_at = datetime.utcnow()
     await session.flush()
@@ -370,7 +404,11 @@ async def update_order(
         await invalidate_statistics_cache()
     logger.info("Кэш заказа %s инвалидирован после обновления", order_id)
     
-    return order
+    # Коммитим изменения
+    await session.commit()
+    
+    # Возвращаем обновленный заказ со всеми связанными данными
+    return await get_order_by_id(session, order_id, user_id)
 
 async def change_order_status(
     session: AsyncSession,
@@ -440,7 +478,11 @@ async def change_order_status(
     await invalidate_statistics_cache()
     logger.info("Кэш заказа %s и статистики инвалидирован после изменения статуса", order_id)
     
-    return order
+    # Коммитим изменения
+    await session.commit()
+    
+    # Возвращаем заказ со всеми связанными данными
+    return await get_order_by_id(session, order_id)
 
 async def update_order_items(
     order_id: int,
@@ -620,9 +662,9 @@ async def update_order_items(
                     order.discount_amount = discount
         
         # Добавляем стоимость доставки к общей сумме заказа, если она указана
-        if order.delivery_cost:
-            logger.info("Добавляем стоимость доставки %s к итоговой сумме заказа %s", order.delivery_cost, order_id)
-            total_price += order.delivery_cost
+        if order.delivery_info and order.delivery_info.delivery_cost:
+            logger.info("Добавляем стоимость доставки %s к итоговой сумме заказа %s", order.delivery_info.delivery_cost, order_id)
+            total_price += order.delivery_info.delivery_cost
         
         logger.info("Обновляем общую сумму заказа %s: %s", order_id, total_price)
         order.total_price = total_price
@@ -730,7 +772,11 @@ async def cancel_order(
     await invalidate_statistics_cache()
     logger.info("Кэш заказа %s и статистики инвалидирован после отмены заказа", order_id)
     
-    return order
+    # Коммитим изменения
+    await session.commit()
+    
+    # Возвращаем заказ со всеми связанными данными
+    return await get_order_by_id(session, order_id)
 
 async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
     """

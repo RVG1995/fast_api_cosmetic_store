@@ -575,14 +575,17 @@ const CheckoutPage = () => {
         delivery_address: formData.delivery_address,
         comment: formData.comment,
         
-        // Информация о типе доставки
-        delivery_type: deliveryType,
-        delivery_cost: deliveryCost, // Важно! Передаем стоимость доставки
-        is_payment_on_delivery: isPaymentOnDelivery, // Информация о способе оплаты
+        // Информация о доставке в объекте delivery_info
+        delivery_info: {
+          delivery_type: deliveryType,
+          delivery_cost: deliveryCost,
+          boxberry_point_id: (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) ? parseInt(selectedPickupPoint.Code) : null,
+          boxberry_point_address: (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) ? selectedPickupPoint.Address : null,
+          tracking_number: null
+        },
         
-        // Данные для BoxBerry
-        boxberry_point_id: (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) ? parseInt(selectedPickupPoint.Code) : null,
-        boxberry_point_address: (deliveryType === 'boxberry_pickup_point' && selectedPickupPoint) ? selectedPickupPoint.Address : null,
+        // Информация о способе оплаты
+        is_payment_on_delivery: isPaymentOnDelivery,
         
         // Промокод (если применен)
         promo_code: promoCode ? promoCode.code : null,

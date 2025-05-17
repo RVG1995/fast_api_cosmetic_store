@@ -72,6 +72,22 @@ class OrderStatusModel(Base):
             print(f"Ошибка при получении статуса заказа по умолчанию: {str(e)}")
             return None
 
+
+class DeliveryInfoModel(Base):
+    """Модель информации о доставке."""
+    __tablename__ = 'delivery_info'
+    
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    delivery_type: Mapped[str] = mapped_column(String(50), nullable=False)  # boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier
+    boxberry_point_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # ID пункта выдачи
+    boxberry_point_address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Адрес пункта выдачи
+    delivery_cost: Mapped[float] = mapped_column(Float, nullable=False)  # Стоимость доставки
+    tracking_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Номер отслеживания
+    
+    # Добавляем обратное отношение к OrderModel
+    order = relationship("OrderModel", back_populates="delivery_info")
+
 class OrderModel(Base):
     """Модель заказа."""
     __tablename__ = 'orders'
@@ -94,13 +110,8 @@ class OrderModel(Base):
     delivery_address: Mapped[str] = mapped_column(String(255), nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
-    # Информация о типе доставки
-    delivery_type: Mapped[str] = mapped_column(String(50), nullable=False)  # boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier
-    boxberry_point_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # ID пункта выдачи
-    boxberry_point_address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Адрес пункта выдачи
-    delivery_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=False)  # Стоимость доставки
-
-    tracking_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Номер отслеживания
+    # Изменяем на отношение один-к-одному, добавляя uselist=False
+    delivery_info = relationship("DeliveryInfoModel", back_populates="order", cascade="all, delete-orphan", uselist=False)
     
     # Информация о способе оплаты
     is_payment_on_delivery: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # Оплата при получении
@@ -136,7 +147,8 @@ class OrderModel(Base):
             query = select(cls).options(
                 selectinload(cls.items),
                 selectinload(cls.status),
-                selectinload(cls.status_history)
+                selectinload(cls.status_history),
+                selectinload(cls.delivery_info)
             ).filter(cls.id == order_id)
             result = await session.execute(query)
             return result.scalars().first()
@@ -177,7 +189,8 @@ class OrderModel(Base):
             offset = (page - 1) * limit
             query = query.options(
                 selectinload(cls.items),
-                selectinload(cls.status)
+                selectinload(cls.status),
+                selectinload(cls.delivery_info)
             ).offset(offset).limit(limit)
             
             # Выполняем запрос
@@ -275,7 +288,8 @@ class OrderModel(Base):
             offset = (page - 1) * limit
             query = query.options(
                 selectinload(cls.items),
-                selectinload(cls.status)
+                selectinload(cls.status),
+                selectinload(cls.delivery_info)
             ).offset(offset).limit(limit)
             
             # Выполняем запрос

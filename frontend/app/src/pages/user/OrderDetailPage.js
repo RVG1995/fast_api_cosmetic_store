@@ -468,20 +468,28 @@ const OrderDetailPage = () => {
                   <Col md={6}>
                     <div className="order-info-item">
                       <div className="order-info-label">Тип доставки:</div>
-                      <div className="order-info-value">{formatDeliveryType(order.delivery_type)}</div>
+                      <div className="order-info-value">{formatDeliveryType(order.delivery_info?.delivery_type || order.delivery_type)}</div>
                     </div>
                   </Col>
                 </Row>
-                {order.boxberry_point_address && (
+                {/* Стоимость доставки */}
+                <div className="order-info-item mt-2">
+                  <div className="order-info-label">Стоимость доставки:</div>
+                  <div className="order-info-value">{formatPrice(order.delivery_info?.delivery_cost || order.delivery_cost || 0)}</div>
+                </div>
+                {/* Пункт выдачи Boxberry */}
+                {(order.delivery_info?.boxberry_point_address || order.boxberry_point_address) && (
                   <div className="order-info-item mt-2">
                     <div className="order-info-label">Адрес пункта выдачи:</div>
-                    <div className="order-info-value">{order.boxberry_point_address}</div>
+                    <div className="order-info-value">{order.delivery_info?.boxberry_point_address || order.boxberry_point_address}</div>
                   </div>
                 )}
-                {order.tracking_number && order.delivery_type && order.delivery_type.includes('boxberry') && (
+                {/* Трек-номер */}
+                {(order.delivery_info?.tracking_number || order.tracking_number) && 
+                 (order.delivery_info?.delivery_type || order.delivery_type)?.includes('boxberry') && (
                   <div className="order-info-item mt-2">
                     <div className="order-info-label">Трек-номер:</div>
-                    <div className="order-info-value">{order.tracking_number}</div>
+                    <div className="order-info-value">{order.delivery_info?.tracking_number || order.tracking_number}</div>
                   </div>
                 )}
                 <div className="order-info-item mt-2">

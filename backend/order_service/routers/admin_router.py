@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import hashlib
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Body, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import pandas as pd
@@ -24,12 +24,12 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 from database import get_db
-from models import OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel
+from models import OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel, DeliveryInfoModel
 from schemas import (
     OrderUpdate, OrderResponse, OrderDetailResponse, 
     OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics, BatchStatusUpdate,
     OrderItemsUpdate, OrderItemsUpdateResponse, PromoCodeResponse, OrderResponseWithPromo, OrderDetailResponseWithPromo,
-    AdminOrderCreate, OrderFilterParams, OrderCreate
+    AdminOrderCreate, OrderFilterParams, OrderCreate, DeliveryInfoUpdate
 )
 from services import (
     create_order, get_order_by_id, get_orders, update_order, 
@@ -47,6 +47,7 @@ from cache import (
     DEFAULT_CACHE_TTL
 )
 from notification_api import check_notification_settings
+from sqlalchemy import select
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -677,18 +678,21 @@ async def create_order_admin(
                     phone = phone + '0' * missing_digits
                     
         # Проверяем тип доставки
-        if not order_data.delivery_type:
+        if not order_data.delivery_info.delivery_type:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Необходимо выбрать способ доставки",
             )
             
         # Для пунктов выдачи проверяем, что указан адрес пункта
-        if order_data.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not order_data.boxberry_point_address:
+        if order_data.delivery_info.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not order_data.delivery_info.boxberry_point_address:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Необходимо указать адрес пункта выдачи",
             )
+        
+        # Создаем объект доставки для нового заказа
+        delivery_info = order_data.delivery_info
         
         # Преобразуем данные из AdminOrderCreate в OrderCreate
         create_data = OrderCreate(
@@ -700,9 +704,7 @@ async def create_order_admin(
             comment=order_data.comment,
             promo_code=promo_code,  # Используем обработанный промокод
             personal_data_agreement=True,  # Для админа всегда True
-            delivery_type=order_data.delivery_type,
-            boxberry_point_address=order_data.boxberry_point_address,
-            delivery_cost=order_data.delivery_cost,  # Добавляем стоимость доставки
+            delivery_info=delivery_info,
             is_payment_on_delivery=order_data.is_payment_on_delivery  # Добавляем флаг оплаты при получении
         )
         
@@ -1339,129 +1341,185 @@ async def generate_orders_report(
 
 @router.put("/{order_id}/delivery", response_model=OrderResponse,dependencies=[Depends(get_admin_user)])
 async def update_order_delivery_info(
+    request: Request,
     order_id: int = Path(..., ge=1),
-    delivery_data: dict = Body(...),
+    delivery_data: DeliveryInfoUpdate = Body(...),
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Обновление информации о доставке заказа (только для администраторов).
-    Эндпоинт для обновления типа доставки и адреса доставки.
+    Обновление информации о доставке заказа
     
     - **order_id**: ID заказа
-    - **delivery_data**: Данные о доставке для обновления:
-      - delivery_type: Тип доставки
-      - delivery_address: Адрес доставки
-      - delivery_cost: Стоимость доставки (опционально)
-      - boxberry_point_id: ID пункта выдачи BoxBerry (опционально)
-      - boxberry_point_address: Адрес пункта выдачи BoxBerry (опционально)
-      - is_payment_on_delivery: Способ оплаты - при получении (true) или на сайте (false) (опционально)
+    - **delivery_data**: Данные для обновления информации о доставке
     """
     try:
-        logger.info("Запрос на обновление информации о доставке заказа. ID: %s, данные: %s", order_id, delivery_data)
+        logger.info("Получен запрос на обновление информации о доставке заказа %s", order_id)
+        logger.info("Данные доставки: %s", delivery_data.model_dump())
         
-        # Проверяем наличие обязательных полей
-        if not delivery_data.get("delivery_type"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Не указан тип доставки",
-            )
-            
-        if not delivery_data.get("delivery_address"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Не указан адрес доставки",
-            )
-        
-        # Получаем текущий заказ
+        # Проверяем существование заказа
         order = await get_order_by_id(session, order_id)
         if not order:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Заказ с ID {order_id} не найден",
+                detail=f"Заказ с ID {order_id} не найден"
             )
         
-        # Проверяем, можно ли изменять информацию о доставке
-        # Если заказ уже отправлен или доставлен, запрещаем изменения
-        statuses_not_allow_delivery_changes = ["Оплачен", "Отправлен", "Доставлен", "Отменен"]
-        if order.status and order.status.name in statuses_not_allow_delivery_changes:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Невозможно изменить информацию о доставке для заказа в статусе '{order.status.name}'",
-            )
+        # Получаем информацию о доставке
+        delivery_info_query = select(DeliveryInfoModel).filter(DeliveryInfoModel.order_id == order_id)
+        delivery_info_result = await session.execute(delivery_info_query)
+        delivery_info = delivery_info_result.scalars().first()
         
-        # Проверка на оплаченность заказа - запрещаем изменять информацию о доставке для оплаченных заказов
-        if order.is_paid:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Невозможно изменить информацию о доставке для оплаченного заказа",
-            )
+        # Получаем данные из тела запроса в виде словаря
+        raw_data = await request.json()
+        delivery_data_dict = delivery_data.model_dump(exclude_unset=True)
         
-        # Обновляем информацию о доставке
-        order.delivery_type = delivery_data.get("delivery_type")
-        order.delivery_address = delivery_data.get("delivery_address")
+        # Логгируем полученные данные
+        logger.info("Полученный delivery_data_dict: %s", delivery_data_dict)
+        logger.info("Полный необработанный запрос: %s", raw_data)
         
-        # Запоминаем старую стоимость доставки для пересчета
-        old_delivery_cost = order.delivery_cost or 0
-        
-        # Обновляем стоимость доставки, если указана
-        if "delivery_cost" in delivery_data and delivery_data["delivery_cost"] is not None:
-            order.delivery_cost = float(delivery_data["delivery_cost"])
-            # Пересчитываем полную стоимость заказа
-            # Если была старая стоимость доставки, вычитаем ее и добавляем новую
-            order.total_price = order.total_price - old_delivery_cost + order.delivery_cost
-            logger.info("Обновлена стоимость доставки для заказа %s: %s, новая полная стоимость: %s", 
-                      order_id, order.delivery_cost, order.total_price)
-        
-        # Обновляем способ оплаты, если указан
-        if "is_payment_on_delivery" in delivery_data:
-            order.is_payment_on_delivery = bool(delivery_data["is_payment_on_delivery"])
-            logger.info("Обновлен способ оплаты для заказа %s: оплата при получении = %s", 
-                       order_id, order.is_payment_on_delivery)
-        
-        # Обновляем информацию о пункте выдачи BoxBerry
-        if "boxberry_point_id" in delivery_data:
-            order.boxberry_point_id = int(delivery_data["boxberry_point_id"]) if delivery_data["boxberry_point_id"] is not None else None
-            logger.info("Обновлен ID пункта выдачи BoxBerry для заказа %s: %s", order_id, order.boxberry_point_id)
-        
-        if "boxberry_point_address" in delivery_data:
-            order.boxberry_point_address = delivery_data["boxberry_point_address"]
-            logger.info("Обновлен адрес пункта выдачи BoxBerry для заказа %s: %s", order_id, order.boxberry_point_address)
+        # Проверяем, есть ли вложенный объект delivery_info в запросе
+        delivery_info_dict = raw_data.get('delivery_info', {})
+        if delivery_info_dict:
+            logger.info("Найдены данные вложенного объекта delivery_info (из raw_data): %s", delivery_info_dict)
             
-        # Обновляем номер отслеживания, если указан
-        if "tracking_number" in delivery_data:
-            order.tracking_number = delivery_data["tracking_number"]
-            logger.info("Обновлен трек-номер для заказа %s: %s", order_id, order.tracking_number)
+        # Объединяем данные из обоих источников
+        # Приоритет отдаем вложенному объекту delivery_info из raw_data
+        delivery_type = delivery_info_dict.get('delivery_type') if delivery_info_dict and 'delivery_type' in delivery_info_dict else delivery_data.delivery_type
+        boxberry_point_id = delivery_info_dict.get('boxberry_point_id') if delivery_info_dict and 'boxberry_point_id' in delivery_info_dict else delivery_data.boxberry_point_id
+        boxberry_point_address = delivery_info_dict.get('boxberry_point_address') if delivery_info_dict and 'boxberry_point_address' in delivery_info_dict else delivery_data.boxberry_point_address
+        delivery_cost = delivery_info_dict.get('delivery_cost') if delivery_info_dict and 'delivery_cost' in delivery_info_dict else delivery_data.delivery_cost
+        tracking_number = delivery_info_dict.get('tracking_number') if delivery_info_dict and 'tracking_number' in delivery_info_dict else delivery_data.tracking_number
         
-        # Если был изменен тип доставки с boxberry на другой, очищаем связанные поля
-        if order.delivery_type and not order.delivery_type.startswith("boxberry_"):
-            order.boxberry_point_id = None
-            order.boxberry_point_address = None
-            order.boxberry_city_code = None
+        # Логгируем извлеченные данные
+        logger.info("Извлеченные данные для обновления delivery_info: тип=%s, пункт=%s, адрес=%s, стоимость=%s, трек=%s", 
+                  delivery_type, boxberry_point_id, boxberry_point_address, delivery_cost, tracking_number)
         
-        # Если новый тип доставки - пункт выдачи BoxBerry, копируем адрес доставки в boxberry_point_address
-        # Делаем это только если не указан явно адрес пункта выдачи
-        if order.delivery_type == "boxberry_pickup_point" and "boxberry_point_address" not in delivery_data:
-            order.boxberry_point_address = order.delivery_address
+        # Если информация о доставке уже существует, обновляем её
+        if delivery_info:
+            # Логгируем текущие данные
+            logger.info("Текущие данные delivery_info: тип=%s, пункт=%s, адрес=%s, стоимость=%s, трек=%s", 
+                        delivery_info.delivery_type, delivery_info.boxberry_point_id, 
+                        delivery_info.boxberry_point_address, delivery_info.delivery_cost, 
+                        delivery_info.tracking_number)
+            
+            # Напрямую обновляем данные из вложенного объекта delivery_info
+            if delivery_info_dict:
+                if 'delivery_type' in delivery_info_dict and delivery_info_dict['delivery_type'] is not None:
+                    delivery_info.delivery_type = delivery_info_dict['delivery_type']
+                    logger.info("Обновлен тип доставки для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['delivery_type'])
+                
+                if 'boxberry_point_id' in delivery_info_dict and delivery_info_dict['boxberry_point_id'] is not None:
+                    delivery_info.boxberry_point_id = delivery_info_dict['boxberry_point_id']
+                    logger.info("Обновлен ID пункта выдачи для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['boxberry_point_id'])
+                
+                if 'boxberry_point_address' in delivery_info_dict and delivery_info_dict['boxberry_point_address'] is not None:
+                    delivery_info.boxberry_point_address = delivery_info_dict['boxberry_point_address']
+                    logger.info("Обновлен адрес пункта выдачи для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['boxberry_point_address'])
+                
+                if 'delivery_cost' in delivery_info_dict and delivery_info_dict['delivery_cost'] is not None:
+                    delivery_info.delivery_cost = delivery_info_dict['delivery_cost']
+                    logger.info("Обновлена стоимость доставки для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['delivery_cost'])
+                
+                if 'tracking_number' in delivery_info_dict and delivery_info_dict['tracking_number'] is not None:
+                    delivery_info.tracking_number = delivery_info_dict['tracking_number']
+                    logger.info("Обновлен трек-номер для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['tracking_number'])
+            # Если нет вложенного объекта, используем обычные поля
+            else:
+                # Обновляем только непустые поля
+                if delivery_type is not None:
+                    delivery_info.delivery_type = delivery_type
+                    logger.info("Обновлен тип доставки для заказа %s: %s", order_id, delivery_type)
+                if boxberry_point_id is not None:
+                    delivery_info.boxberry_point_id = boxberry_point_id
+                    logger.info("Обновлен ID пункта выдачи для заказа %s: %s", order_id, boxberry_point_id)
+                if boxberry_point_address is not None:
+                    delivery_info.boxberry_point_address = boxberry_point_address
+                    logger.info("Обновлен адрес пункта выдачи для заказа %s: %s", order_id, boxberry_point_address)
+                if delivery_cost is not None:
+                    delivery_info.delivery_cost = delivery_cost
+                    logger.info("Обновлена стоимость доставки для заказа %s: %s", order_id, delivery_cost)
+                if tracking_number is not None:
+                    delivery_info.tracking_number = tracking_number
+                    logger.info("Обновлен трек-номер для заказа %s: %s", order_id, tracking_number)
+        else:
+            # Если информация о доставке отсутствует, создаем её с проверкой на None
+            logger.info("Создание новой записи информации о доставке для заказа %s", order_id)
+            
+            # Если есть вложенный объект delivery_info, используем его
+            if delivery_info_dict:
+                delivery_info_data = {
+                    'order_id': order_id,
+                    'delivery_type': delivery_info_dict.get('delivery_type', 'boxberry_courier'),
+                    'delivery_cost': delivery_info_dict.get('delivery_cost', 0.0)
+                }
+                
+                if 'boxberry_point_id' in delivery_info_dict and delivery_info_dict['boxberry_point_id'] is not None:
+                    delivery_info_data['boxberry_point_id'] = delivery_info_dict['boxberry_point_id']
+                    
+                if 'boxberry_point_address' in delivery_info_dict and delivery_info_dict['boxberry_point_address'] is not None:
+                    delivery_info_data['boxberry_point_address'] = delivery_info_dict['boxberry_point_address']
+                    
+                if 'tracking_number' in delivery_info_dict and delivery_info_dict['tracking_number'] is not None:
+                    delivery_info_data['tracking_number'] = delivery_info_dict['tracking_number']
+                
+                delivery_info = DeliveryInfoModel(**delivery_info_data)
+                logger.info("Создана запись информации о доставке для заказа %s из вложенного объекта: %s", order_id, delivery_info_data)
+            else:
+                if delivery_type is None:
+                    logger.warning("delivery_type не указан, используем значение по умолчанию 'boxberry_courier'")
+                    delivery_type = "boxberry_courier"
+                    
+                if delivery_cost is None:
+                    logger.warning("delivery_cost не указан, используем значение по умолчанию 0")
+                    delivery_cost = 0
+                    
+                delivery_info = DeliveryInfoModel(
+                    order_id=order_id,
+                    delivery_type=delivery_type,
+                    boxberry_point_id=boxberry_point_id,
+                    boxberry_point_address=boxberry_point_address,
+                    delivery_cost=delivery_cost,
+                    tracking_number=tracking_number
+                )
+                logger.info("Создана запись информации о доставке для заказа %s из обычных полей", order_id)
+                
+            session.add(delivery_info)
+            logger.info("Добавлена новая запись информации о доставке для заказа %s", order_id)
         
-        session.add(order)
+        # Обновляем данные самого заказа
+        # Получаем словарь из Pydantic-модели, чтобы проверить наличие полей
+        delivery_data_dict = delivery_data.model_dump(exclude_unset=True)
         
-        # Фиксируем изменения в базе данных
+        if 'delivery_address' in delivery_data_dict:
+            order.delivery_address = delivery_data.delivery_address
+            logger.info("Обновлен адрес доставки для заказа %s: %s", order_id, delivery_data.delivery_address)
+            
+        if 'is_payment_on_delivery' in delivery_data_dict:
+            order.is_payment_on_delivery = delivery_data.is_payment_on_delivery
+            logger.info("Обновлен способ оплаты для заказа %s: %s", order_id, 
+                       "Оплата при получении" if delivery_data.is_payment_on_delivery else "Оплата на сайте")
+            
+        # Обновляем дату обновления заказа
+        order.updated_at = datetime.utcnow()
+        
         await session.commit()
         
-        # Инвалидируем кэш заказа
+        # Инвалидируем кеш заказа
         await invalidate_order_cache(order_id)
-        logger.info("Кэш заказа %s инвалидирован после обновления информации о доставке", order_id)
         
-        # Обновляем заказ в сессии
+        # Получаем обновленный заказ
         updated_order = await get_order_by_id(session, order_id)
         
-        # Преобразуем модель в схему и возвращаем обновленный заказ
         return OrderResponse.model_validate(updated_order)
-    except HTTPException:
-        raise
+    except ValueError as e:
+        logger.error("Ошибка при обновлении информации о доставке заказа: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        ) from e
     except Exception as e:
-        logger.error("Непредвиденная ошибка при обновлении информации о доставке: %s", str(e))
+        logger.error("Непредвиденная ошибка при обновлении информации о доставке заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Произошла ошибка при обновлении информации о доставке",
+            detail="Произошла ошибка при обновлении информации о доставке заказа"
         ) from e

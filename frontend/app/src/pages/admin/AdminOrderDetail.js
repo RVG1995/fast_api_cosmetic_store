@@ -1259,26 +1259,41 @@ const AdminOrderDetail = () => {
       }
       
       // Получаем стоимость доставки из рассчитанного значения или текущего заказа
-      let deliveryCost = calculatedDeliveryCost ? calculatedDeliveryCost.price : (order.delivery_cost || 0);
+      let deliveryCost = calculatedDeliveryCost ? calculatedDeliveryCost.price : (order.delivery_info?.delivery_cost || order.delivery_cost || 0);
       
-      // Базовые данные для обновления
-      const updateData = {
+      // Создаем объект delivery_info для обновления
+      const deliveryInfo = {
         delivery_type: deliveryData.delivery_type,
-        delivery_address: deliveryData.delivery_address,
-        is_payment_on_delivery: isPaymentOnDelivery,
-        delivery_cost: deliveryCost
+        delivery_cost: deliveryCost,
+        tracking_number: order.delivery_info?.tracking_number || order.tracking_number || null
       };
-      
+
       // Если выбран пункт BoxBerry, добавляем его код
       if (deliveryData.delivery_type === 'boxberry_pickup_point' && selectedPickupPoint) {
-        updateData.boxberry_point_id = parseInt(selectedPickupPoint.Code);
-        updateData.boxberry_point_address = selectedPickupPoint.Address;
+        deliveryInfo.boxberry_point_id = parseInt(selectedPickupPoint.Code);
+        deliveryInfo.boxberry_point_address = selectedPickupPoint.Address;
       } else if (deliveryData.delivery_type === 'boxberry_courier') {
         // Для курьерской доставки явно устанавливаем boxberry_point_id в null,
         // чтобы очистить его, если ранее был выбран пункт выдачи
-        updateData.boxberry_point_id = null;
-        updateData.boxberry_point_address = null;
+        deliveryInfo.boxberry_point_id = null;
+        deliveryInfo.boxberry_point_address = null;
       }
+      
+      console.log('Текущая стоимость доставки:', deliveryCost);
+      
+      // Базовые данные для обновления
+      const updateData = {
+        delivery_address: deliveryData.delivery_address,
+        is_payment_on_delivery: isPaymentOnDelivery,
+        delivery_info: {
+          ...deliveryInfo,
+          // Принудительно добавляем поля, даже если они null
+          delivery_type: deliveryData.delivery_type,
+          delivery_cost: deliveryCost
+        }
+      };
+      
+      console.log('Подробные данные для отправки:', updateData);
       
       console.log('Отправляем запрос на обновление доставки:', updateData);
       
@@ -1452,7 +1467,7 @@ const AdminOrderDetail = () => {
         const updatedOrder = await getAdminOrderById(orderId);
         if (updatedOrder) {
           setOrder(updatedOrder);
-          console.log("Успешно обновлен заказ с трек-номером:", updatedOrder.tracking_number);
+          console.log("Успешно обновлен заказ с трек-номером:", updatedOrder.delivery_info?.tracking_number);
         } else {
           console.error("Не удалось получить обновленные данные заказа");
         }
@@ -1529,7 +1544,12 @@ const handleCloseBoxberryParcelModal = () => {
                   <p>
                     <strong>Сумма заказа:</strong> {formatPrice(
                       (calculatedDeliveryCost && deliveryData.delivery_type)
-                        ? (order.total_price - (order.delivery_cost || 0) + calculatedDeliveryCost.price)
+                        ? (
+                            // Берем стоимость товаров (без доставки)
+                            (order.total_price - (order.delivery_info?.delivery_cost || order.delivery_cost || 0)) 
+                            // И добавляем новую стоимость доставки
+                            + calculatedDeliveryCost.price
+                          )
                         : order.total_price
                     )}
                     {calculatedDeliveryCost && deliveryData.delivery_type && (
@@ -1784,22 +1804,23 @@ const handleCloseBoxberryParcelModal = () => {
                   </Form>
                 ) : (
                   <div>
-                    <p><strong>Тип доставки:</strong> {formatDeliveryType(order.delivery_type)}</p>
+                    <p><strong>Тип доставки:</strong> {formatDeliveryType(order.delivery_info?.delivery_type || order.delivery_type)}</p>
                     <p><strong>Адрес доставки:</strong> {order.delivery_address}</p>
-                    <p><strong>Стоимость доставки:</strong> {formatPrice(order.delivery_cost || 0)}</p>
+                    <p><strong>Стоимость доставки:</strong> {formatPrice(order.delivery_info?.delivery_cost || order.delivery_cost || 0)}</p>
                     
                     {/* Отображение информации о пункте выдачи Boxberry, если есть */}
-                    {order.delivery_type && order.delivery_type.includes('boxberry_pickup_point') && order.boxberry_point_address && (
-                      <p><strong>Пункт выдачи BoxBerry:</strong> {order.boxberry_point_address}</p>
+                    {(order.delivery_info?.delivery_type || order.delivery_type)?.includes('boxberry_pickup_point') && 
+                     (order.delivery_info?.boxberry_point_address || order.boxberry_point_address) && (
+                      <p><strong>Пункт выдачи BoxBerry:</strong> {order.delivery_info?.boxberry_point_address || order.boxberry_point_address}</p>
                     )}
                     
                     {/* Отображение трек-номера и кнопки для Boxberry */}
-                    {order.delivery_type && order.delivery_type.includes('boxberry') && (
+                    {(order.delivery_info?.delivery_type || order.delivery_type)?.includes('boxberry') && (
                       <div className="mt-3 border-top pt-3">
                         <div className="d-flex justify-content-between align-items-center">
                           <div>
-                            <strong>Трек-номер:</strong> {order.tracking_number ? (
-                              <span>{order.tracking_number}</span>
+                            <strong>Трек-номер:</strong> {(order.delivery_info?.tracking_number || order.tracking_number) ? (
+                              <span>{order.delivery_info?.tracking_number || order.tracking_number}</span>
                             ) : (
                               <span className="text-muted">Не создан</span>
                             )}
@@ -1811,7 +1832,7 @@ const handleCloseBoxberryParcelModal = () => {
                             onClick={handleOpenBoxberryParcelModal}
                             disabled={boxberryLoading || loading}
                           >
-                            {order.tracking_number ? "Обновить посылку" : "Выгрузить заказ в Boxberry"}
+                            {(order.delivery_info?.tracking_number || order.tracking_number) ? "Обновить посылку" : "Выгрузить заказ в Boxberry"}
                           </Button>
                         </div>
                       </div>
@@ -1887,7 +1908,7 @@ const handleCloseBoxberryParcelModal = () => {
                     <td colSpan="4" className="text-end"><strong>Стоимость доставки:</strong></td>
                     <td>
                       <strong>
-                        {formatPrice(calculatedDeliveryCost ? calculatedDeliveryCost.price : (order.delivery_cost || 0))}
+                        {formatPrice(calculatedDeliveryCost ? calculatedDeliveryCost.price : (order.delivery_info?.delivery_cost || order.delivery_cost || 0))}
                       </strong>
                       {calculatedDeliveryCost && deliveryData.delivery_type && (
                         <div className="text-muted small">
@@ -1901,9 +1922,19 @@ const handleCloseBoxberryParcelModal = () => {
                     <td>
                       <strong>
                         {formatPrice(
+                          // Если у нас есть расчет для новой стоимости доставки
                           (calculatedDeliveryCost && deliveryData.delivery_type)
-                            ? (order.total_price - (order.delivery_cost || 0) + calculatedDeliveryCost.price)
-                            : (order.total_price || order.total_amount || 0)
+                            ? (
+                                // Считаем стоимость товаров
+                                order.items.reduce((total, item) => total + (item.unit_price || item.product_price || 0) * item.quantity, 0)
+                                // И добавляем новую стоимость доставки
+                                + calculatedDeliveryCost.price
+                              )
+                            : // Иначе считаем сумму всех товаров + существующая стоимость доставки
+                              (
+                                order.items.reduce((total, item) => total + (item.unit_price || item.product_price || 0) * item.quantity, 0) +
+                                (order.delivery_info?.delivery_cost || 0)
+                              )
                         )}
                       </strong>
                       {calculatedDeliveryCost && deliveryData.delivery_type && (
@@ -2179,8 +2210,8 @@ const handleCloseBoxberryParcelModal = () => {
             // Отображаем форму создания/обновления посылки
             <>
               <p>
-                {order.tracking_number 
-                  ? `Вы уверены, что хотите обновить посылку ${order.tracking_number} в Boxberry для этого заказа?` 
+                {order.delivery_info?.tracking_number || order.tracking_number
+                ? `Вы уверены, что хотите обновить посылку ${order.delivery_info?.tracking_number || order.tracking_number} в Boxberry для этого заказа?` 
                   : "Вы уверены, что хотите создать посылку в Boxberry для этого заказа?"}
               </p>
               
@@ -2213,7 +2244,7 @@ const handleCloseBoxberryParcelModal = () => {
                 onClick={handleConfirmBoxberryParcel}
                 disabled={boxberryLoading}
               >
-                {order.tracking_number ? "Обновить" : "Создать"}
+                {order.delivery_info?.tracking_number || order.tracking_number ? "Обновить" : "Создать"}
               </Button>
             </>
           )}

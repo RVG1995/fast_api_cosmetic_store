@@ -232,36 +232,24 @@ export const OrderProvider = ({ children }) => {
         receive_notifications: Boolean(orderData.receive_notifications)
       };
       
-      // Добавляем информацию о типе доставки и пункте выдачи BoxBerry
-      if (orderData.delivery_type) {
-        newOrderData.delivery_type = orderData.delivery_type;
-      }
-      
-      // Добавляем стоимость доставки
-      if (orderData.delivery_cost) {
-        newOrderData.delivery_cost = orderData.delivery_cost;
+      // Добавляем информацию о доставке в объект delivery_info
+      if (orderData.delivery_info) {
+        // Если есть, просто копируем его как есть
+        newOrderData.delivery_info = orderData.delivery_info;
+      } else {
+        // Если нет, собираем delivery_info из отдельных полей для обратной совместимости
+        newOrderData.delivery_info = {
+          delivery_type: orderData.delivery_type || "",
+          delivery_cost: orderData.delivery_cost || 0,
+          boxberry_point_id: orderData.boxberry_point_id || null,
+          boxberry_point_address: orderData.boxberry_point_address || null,
+          tracking_number: null
+        };
       }
       
       // Добавляем информацию о способе оплаты
       if (orderData.hasOwnProperty('is_payment_on_delivery')) {
         newOrderData.is_payment_on_delivery = orderData.is_payment_on_delivery;
-      }
-      
-      if (orderData.boxberry_point_id) {
-        newOrderData.boxberry_point_id = orderData.boxberry_point_id;
-      }
-      
-      if (orderData.boxberry_point_address) {
-        newOrderData.boxberry_point_address = orderData.boxberry_point_address;
-      }
-      
-      if (orderData.boxberry_city_code) {
-        newOrderData.boxberry_city_code = orderData.boxberry_city_code;
-      }
-      
-      // Для обратной совместимости с существующим кодом
-      if (orderData.is_boxberry_pickup && !newOrderData.delivery_type) {
-        newOrderData.delivery_type = "boxberry";
       }
       
       // Добавляем промокод, если он есть
@@ -1045,15 +1033,37 @@ export const OrderProvider = ({ children }) => {
         }
       }
       
+      // Логируем полученные данные для отладки проблем с типом доставки
+      console.log('Данные о доставке в заказе:', {
+        delivery_type: orderData.delivery_type,
+        delivery_info: orderData.delivery_info,
+        boxberry_point_id: orderData.boxberry_point_id
+      });
+      
+      // Рассчитываем сумму товаров напрямую из товаров заказа
+      const itemsTotal = orderData.items.reduce(
+        (sum, item) => sum + (item.product_price || 0) * (item.quantity || 1), 
+        0
+      );
+      console.log('Рассчитанная сумма товаров в заказе:', itemsTotal);
+      
       // Формируем данные для создания/обновления посылки
+      // Рассчитываем стоимость доставки
+      const deliveryCost = orderData.delivery_info?.delivery_cost || orderData.delivery_cost || 0;
+      
+      // Рассчитываем итоговую сумму (товары + доставка)
+      const totalWithDelivery = itemsTotal + deliveryCost;
+      console.log('Рассчитанная общая сумма заказа (товары + доставка):', totalWithDelivery);
+      
       const parcelData = {
         order_number: orderData.order_number,
-        price: orderData.total_price - (orderData.delivery_cost || 0), // сумма товаров без доставки
-        payment_sum: orderData.is_payment_on_delivery ? orderData.total_price : 0, // если оплата при получении, то полная сумма, иначе 0
-        delivery_cost: orderData.delivery_cost || 0,
-        delivery_type: orderData.delivery_type,
+        price: itemsTotal, // сумма товаров без доставки, рассчитанная из списка товаров
+        payment_sum: orderData.is_payment_on_delivery ? totalWithDelivery : 0, // если оплата при получении, используем актуальную сумму
+        delivery_cost: deliveryCost,
+        // Предпочтительно использовать delivery_info.delivery_type, если доступен
+        delivery_type: orderData.delivery_info?.delivery_type || orderData.delivery_type || "boxberry_pickup_point",
         delivery_address: orderData.delivery_address,
-        boxberry_point_id: orderData.boxberry_point_id,
+        boxberry_point_id: orderData.delivery_info?.boxberry_point_id || orderData.boxberry_point_id,
         full_name: orderData.full_name,
         phone: orderData.phone,
         email: orderData.email,
@@ -1073,7 +1083,8 @@ export const OrderProvider = ({ children }) => {
       };
       
       // Обработка данных для курьерской доставки Boxberry
-      if (orderData.delivery_type === 'boxberry_courier') {
+      const deliveryType = orderData.delivery_info?.delivery_type || orderData.delivery_type;
+      if (deliveryType === 'boxberry_courier') {
         // Извлекаем почтовый индекс из адреса если он там есть
         const extractZipFromAddress = (address) => {
           if (!address) return null;
@@ -1163,10 +1174,11 @@ export const OrderProvider = ({ children }) => {
       let response;
       
       // Если у заказа уже есть трек-номер, обновляем существующую посылку
-      if (orderData.tracking_number) {
-        console.log(`Заказ ${orderId} уже имеет трек-номер ${orderData.tracking_number}, обновляем посылку`);
+      const existingTrackingNumber = orderData.delivery_info?.tracking_number;
+      if (existingTrackingNumber) {
+        console.log(`Заказ ${orderId} уже имеет трек-номер ${existingTrackingNumber}, обновляем посылку`);
         console.log('Данные для обновления посылки:', parcelData);
-        response = await deliveryAPI.updateBoxberryParcel(parcelData, orderData.tracking_number);
+        response = await deliveryAPI.updateBoxberryParcel(parcelData, existingTrackingNumber);
       } else {
         // Иначе создаем новую посылку
         console.log(`Заказ ${orderId} не имеет трек-номера, создаем новую посылку`);
@@ -1178,10 +1190,14 @@ export const OrderProvider = ({ children }) => {
         const trackingNumber = response.track || response.track_number || response.tracking_number;
         
         // Обновляем заказ с трек-номером, если он изменился
-        if (trackingNumber !== orderData.tracking_number) {
+        if (trackingNumber !== orderData.delivery_info?.tracking_number) {
           await axios.put(
             `${ORDER_SERVICE_URL}/admin/orders/${orderId}`,
-            { tracking_number: trackingNumber },
+            { 
+              delivery_info: {
+                tracking_number: trackingNumber
+              }
+            },
             { withCredentials: true }
           );
           
@@ -1194,7 +1210,7 @@ export const OrderProvider = ({ children }) => {
           success: true,
           trackingNumber,
           label: response.label,
-          message: orderData.tracking_number ? 
+          message: existingTrackingNumber ? 
             "Посылка успешно обновлена" : 
             "Посылка успешно создана и трек-номер сохранен"
         };

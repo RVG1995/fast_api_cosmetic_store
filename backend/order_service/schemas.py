@@ -74,6 +74,35 @@ class BillingAddressCreate(AddressBase):
     """Модель для создания адреса для выставления счета."""
     pass
 
+class DeliveryInfoCreate(BaseModel):
+    """Модель для создания информации о доставке."""
+    delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
+    boxberry_point_id: Optional[int] = Field(None, description="ID пункта выдачи")
+    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
+    delivery_cost: float = Field(..., description="Стоимость доставки")
+    tracking_number: Optional[str] = Field(None, description="Номер отслеживания")
+    
+    @field_validator('delivery_type')
+    def validate_delivery_type(cls, v):
+        """Валидирует тип доставки для создания информации о доставке.
+        
+        Args:
+            v (str): Тип доставки для валидации
+            
+        Returns:
+            str: Валидный тип доставки
+            
+        Raises:
+            ValueError: Если тип доставки не соответствует допустимым значениям
+        """
+        if not v:
+            raise ValueError("Тип доставки обязателен. Выберите способ доставки")
+            
+        valid_types = ["boxberry_pickup_point", "boxberry_courier", "cdek_pickup_point", "cdek_courier"]
+        if v not in valid_types:
+            raise ValueError(f"Тип доставки должен быть одним из: {', '.join(valid_types)}")
+        return v
+
 class OrderItemCreate(OrderItemBase):
     """Модель для создания элемента заказа."""
     pass
@@ -89,13 +118,8 @@ class OrderCreate(BaseModel):
     delivery_address: str = Field(..., min_length=5, max_length=255)
     comment: Optional[str] = None
     
-    # Информация о типе доставки
-    delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
-    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
-    boxberry_point_id: Optional[int] = Field(None, description="ID пункта выдачи BoxBerry")
-    
-    # Стоимость доставки
-    delivery_cost: Optional[float] = Field(None, description="Стоимость доставки")
+    # Информация о доставке
+    delivery_info: DeliveryInfoCreate
     
     # Информация о способе оплаты
     is_payment_on_delivery: Optional[bool] = Field(True, description="Оплата при получении")
@@ -201,27 +225,6 @@ class OrderCreate(BaseModel):
         
         return self
 
-    @field_validator('delivery_type')
-    def validate_delivery_type(cls, v):
-        """Валидирует тип доставки для создания заказа.
-        
-        Args:
-            v (str): Тип доставки для валидации
-            
-        Returns:
-            str: Валидный тип доставки
-            
-        Raises:
-            ValueError: Если тип доставки не соответствует допустимым значениям
-        """
-        if not v:
-            raise ValueError("Тип доставки обязателен. Выберите способ доставки")
-            
-        valid_types = ["boxberry_pickup_point", "boxberry_courier", "cdek_pickup_point", "cdek_courier"]
-        if v not in valid_types:
-            raise ValueError(f"Тип доставки должен быть одним из: {', '.join(valid_types)}")
-        return v
-
 class OrderStatusCreate(BaseModel):
     """Модель для создания статуса заказа."""
     name: str = Field(..., min_length=2, max_length=50)
@@ -241,6 +244,37 @@ class PromoCodeCreate(PromoCodeBase):
     pass
 
 # Модели для обновления
+class DeliveryInfoUpdate(BaseModel):
+    """Модель для обновления информации о доставке."""
+    delivery_type: Optional[str] = Field(None, description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
+    boxberry_point_id: Optional[int] = Field(None, description="ID пункта выдачи")
+    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
+    delivery_cost: Optional[float] = Field(None, description="Стоимость доставки")
+    tracking_number: Optional[str] = Field(None, description="Номер отслеживания")
+    delivery_address: Optional[str] = Field(None, description="Адрес доставки")
+    is_payment_on_delivery: Optional[bool] = Field(None, description="Оплата при получении")
+    
+    @field_validator('delivery_type')
+    def validate_delivery_type(cls, v):
+        """Валидирует тип доставки для обновления информации о доставке.
+        
+        Args:
+            v (str): Тип доставки для валидации
+            
+        Returns:
+            str: Валидный тип доставки
+            
+        Raises:
+            ValueError: Если тип доставки не соответствует допустимым значениям
+        """
+        if v is None:
+            return v
+            
+        valid_types = ["boxberry_pickup_point", "boxberry_courier", "cdek_pickup_point", "cdek_courier"]
+        if v not in valid_types:
+            raise ValueError(f"Тип доставки должен быть одним из: {', '.join(valid_types)}")
+        return v
+
 class AddressUpdate(BaseModel):
     """Модель для обновления адреса."""
     full_name: Optional[str] = Field(None, min_length=2, max_length=255)
@@ -264,13 +298,8 @@ class OrderUpdate(BaseModel):
     delivery_address: Optional[str] = Field(None, min_length=5, max_length=255)
     comment: Optional[str] = None
     
-    # Информация о типе доставки
-    delivery_type: Optional[str] = Field(None, description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
-    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
-    boxberry_point_id: Optional[int] = Field(None, description="ID пункта выдачи BoxBerry")
-    
-    # Трек-номер для отслеживания посылки
-    tracking_number: Optional[str] = Field(None, description="Номер отслеживания посылки")
+    # Информация о доставке
+    delivery_info: Optional[DeliveryInfoUpdate] = None
     
     is_paid: Optional[bool] = None
     
@@ -298,27 +327,6 @@ class OrderUpdate(BaseModel):
             raise ValueError('Телефон должен содержать только цифры')
         return v
 
-    @field_validator('delivery_type')
-    def validate_delivery_type(cls, v):
-        """Валидирует тип доставки для обновления заказа.
-        
-        Args:
-            v (str): Тип доставки для валидации
-            
-        Returns:
-            str: Валидный тип доставки
-            
-        Raises:
-            ValueError: Если тип доставки не соответствует допустимым значениям
-        """
-        if v is None:
-            return v
-            
-        valid_types = ["boxberry_pickup_point", "boxberry_courier", "cdek_pickup_point", "cdek_courier"]
-        if v not in valid_types:
-            raise ValueError(f"Тип доставки должен быть одним из: {', '.join(valid_types)}")
-        return v
-
 class OrderStatusUpdate(BaseModel):
     """Модель для обновления статуса заказа."""
     name: Optional[str] = Field(None, min_length=2, max_length=50)
@@ -344,6 +352,18 @@ class PromoCodeUpdate(BaseModel):
         return self
 
 # Модели для ответов
+class DeliveryInfoResponse(BaseModel):
+    """Модель ответа с информацией о доставке."""
+    id: int
+    order_id: int
+    delivery_type: str
+    boxberry_point_id: Optional[int] = None
+    boxberry_point_address: Optional[str] = None
+    delivery_cost: float
+    tracking_number: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
 class OrderStatusResponse(BaseModel):
     """Модель ответа со статусом заказа."""
     id: int
@@ -455,13 +475,8 @@ class OrderResponse(BaseModel):
     delivery_address: str
     comment: Optional[str] = None
     
-    # Информация о типе доставки
-    delivery_type: Optional[str] = Field(None, description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
-    boxberry_point_address: Optional[str] = None
-    boxberry_point_id: Optional[int] = None
-    delivery_cost: Optional[float] = None
-    
-    tracking_number: Optional[str] = None
+    # Информация о доставке
+    delivery_info: Optional[DeliveryInfoResponse] = None
     
     # Информация о способе оплаты
     is_payment_on_delivery: Optional[bool] = True
@@ -671,15 +686,8 @@ class AdminOrderCreate(BaseModel):
     delivery_address: str = Field(..., min_length=5, max_length=255)
     comment: Optional[str] = None
     
-    # Информация о типе доставки
-    delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
-    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
-    boxberry_point_id: Optional[int] = None
-    
-    tracking_number: Optional[str] = Field(None, description="Номер отслеживания")
-    
-    # Стоимость доставки
-    delivery_cost: Optional[float] = Field(None, description="Стоимость доставки в рублях")
+    # Информация о доставке
+    delivery_info: DeliveryInfoCreate
     
     # Информация о способе оплаты
     is_payment_on_delivery: Optional[bool] = Field(True, description="Оплата при получении")
@@ -718,23 +726,13 @@ class AdminOrderCreate(BaseModel):
             raise ValueError('Телефон должен содержать только цифры')
         return v
 
-    @field_validator('delivery_type')
-    def validate_delivery_type(cls, v):
-        """Валидирует тип доставки для создания заказа администратором.
-        
-        Args:
-            v (str): Тип доставки для валидации
-            
-        Returns:
-            str: Валидный тип доставки
-            
-        Raises:
-            ValueError: Если тип доставки не соответствует допустимым значениям
-        """
-        if not v:
-            raise ValueError("Тип доставки обязателен. Выберите способ доставки")
-            
-        valid_types = ["boxberry_pickup_point", "boxberry_courier", "cdek_pickup_point", "cdek_courier"]
-        if v not in valid_types:
-            raise ValueError(f"Тип доставки должен быть одним из: {', '.join(valid_types)}")
-        return v
+class DeliveryInfo(BaseModel):
+    """Схема для информации о доставке."""
+    delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
+    boxberry_point_address: Optional[str] = Field(None, description="Адрес пункта выдачи")
+    boxberry_point_id: Optional[int] = Field(None, description="ID пункта выдачи BoxBerry")
+    delivery_cost: float = Field(..., description="Стоимость доставки в рублях")
+    tracking_number: Optional[str] = Field(None, description="Номер отслеживания посылки")
+    
+    model_config = ConfigDict(from_attributes=True)
+    

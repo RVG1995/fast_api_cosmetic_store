@@ -30,7 +30,7 @@ async def check_order_info(order_id: int) -> Dict[str, bool]:
                 token = await _get_service_token()
                 headers = {"Authorization": f"Bearer {token}"}
                 response = await client.get(
-                    f"{settings.ORDER_SERVICE_URL}/orders/{order_id}/service",
+                    f"{settings.ORDER_SERVICE_URL}/orders/service/{order_id}",
                     headers=headers, timeout=5.0,
                 )
                 if response.status_code == 401:

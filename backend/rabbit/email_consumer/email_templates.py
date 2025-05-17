@@ -133,35 +133,9 @@ def create_order_email_content(order_data):
                 </tr>
                 <tr>
                     <td style="padding: 5px 0;"><strong>Способ оплаты:</strong></td>
-                    <td>{order_data.get('payment_method', 'Н/Д')}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 5px 0;"><strong>Способ доставки:</strong></td>
-                    <td>{order_data.get('delivery_method', 'Н/Д')}</td>
+                    <td>{"Оплата при получении" if order_data.get('is_payment_on_delivery', True) else "Онлайн-оплата"}</td>
                 </tr>
                 {f'<tr><td style="padding: 5px 0;"><strong>Промокод:</strong></td><td>{promo_code.get("code")}</td></tr>' if promo_code else ''}
-            </table>
-            
-            <h2 style="color: #4a5568; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">Список товаров:</h2>
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
-                <thead>
-                    <tr style="background-color: #f1f5f9;">
-                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Наименование</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">Кол-во</th>
-                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Цена</th>
-                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Сумма</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {items_html}
-                </tbody>
-                <tfoot>
-                    {discount_info}
-                    <tr>
-                        <td colspan="3" style="padding: 10px; text-align: right; font-weight: bold;">Итого:</td>
-                        <td style="padding: 10px; text-align: right; font-weight: bold;">{order_data.get('total_price', total):.2f} ₽</td>
-                    </tr>
-                </tfoot>
             </table>
             
             <h2 style="color: #4a5568; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">Данные доставки:</h2>
@@ -182,6 +156,52 @@ def create_order_email_content(order_data):
                     <td style="padding: 5px 0;"><strong>Адрес доставки:</strong></td>
                     <td>{order_data.get('delivery_address', 'Н/Д')}</td>
                 </tr>
+                {f'''
+                <tr>
+                    <td style="padding: 5px 0;"><strong>Тип доставки:</strong></td>
+                    <td>{
+                        "Пункт выдачи BoxBerry" if order_data.get('delivery_info', {}).get('delivery_type') == "boxberry_pickup_point" else
+                        "Курьерская доставка BoxBerry" if order_data.get('delivery_info', {}).get('delivery_type') == "boxberry_courier" else
+                        order_data.get('delivery_info', {}).get('delivery_type', 'Н/Д')
+                    }</td>
+                </tr>''' if order_data.get('delivery_info', {}).get('delivery_type') else ''}
+                {f'''
+                <tr>
+                    <td style="padding: 5px 0;"><strong>Пункт выдачи:</strong></td>
+                    <td>{order_data.get('delivery_info', {}).get('boxberry_point_address', 'Н/Д')}</td>
+                </tr>''' if order_data.get('delivery_info', {}).get('delivery_type') == "boxberry_pickup_point" and order_data.get('delivery_info', {}).get('boxberry_point_address') else ''}
+                {f'''
+                <tr>
+                    <td style="padding: 5px 0;"><strong>Трек-номер:</strong></td>
+                    <td>{order_data.get('delivery_info', {}).get('tracking_number', 'Не указан')}</td>
+                </tr>''' if order_data.get('delivery_info', {}).get('tracking_number') else ''}
+            </table>
+            
+            <h2 style="color: #4a5568; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">Список товаров:</h2>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+                <thead>
+                    <tr style="background-color: #f1f5f9;">
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Наименование</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">Кол-во</th>
+                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Цена</th>
+                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Сумма</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {items_html}
+                </tbody>
+                <tfoot>
+                    {discount_info}
+                    {f'''
+                    <tr>
+                        <td colspan="3" style="padding: 10px; text-align: right;">Стоимость доставки:</td>
+                        <td style="padding: 10px; text-align: right;">{order_data.get('delivery_info', {}).get('delivery_cost', 0):.2f} ₽</td>
+                    </tr>''' if order_data.get('delivery_info', {}).get('delivery_cost') is not None else ''}
+                    <tr>
+                        <td colspan="3" style="padding: 10px; text-align: right; font-weight: bold;">Итого:</td>
+                        <td style="padding: 10px; text-align: right; font-weight: bold;">{order_data.get('total_price', total):.2f} ₽</td>
+                    </tr>
+                </tfoot>
             </table>
             
             <p>Мы свяжемся с вами, как только заказ будет готов к отправке.</p>
@@ -336,32 +356,14 @@ def create_status_update_email_content(order_data):
                     <td><strong>{status}</strong></td>
                 </tr>
                 <tr>
+                    <td style="padding: 5px 0;"><strong>Способ оплаты:</strong></td>
+                    <td>{"Оплата при получении" if order_data.get('is_payment_on_delivery', True) else "Онлайн-оплата"}</td>
+                </tr>
+                <tr>
                     <td style="padding: 5px 0;"><strong>Сумма заказа:</strong></td>
                     <td>{order_data.get('total_price', 0):.2f} ₽</td>
                 </tr>
                 {f'<tr><td style="padding: 5px 0;"><strong>Промокод:</strong></td><td>{promo_code.get("code")}</td></tr>' if promo_code else ''}
-            </table>
-            
-            <h2 style="color: #4a5568; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">Список товаров:</h2>
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
-                <thead>
-                    <tr style="background-color: #f1f5f9;">
-                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Наименование</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">Кол-во</th>
-                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Цена</th>
-                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Сумма</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {items_html}
-                </tbody>
-                <tfoot>
-                    {discount_info}
-                    <tr>
-                        <td colspan="3" style="padding: 10px; text-align: right; font-weight: bold;">Итого:</td>
-                        <td style="padding: 10px; text-align: right; font-weight: bold;">{order_data.get('total_price', total):.2f} ₽</td>
-                    </tr>
-                </tfoot>
             </table>
             
             <h2 style="color: #4a5568; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">Данные доставки:</h2>
@@ -382,6 +384,52 @@ def create_status_update_email_content(order_data):
                     <td style="padding: 5px 0;"><strong>Адрес доставки:</strong></td>
                     <td>{order_data.get('delivery_address', 'Н/Д')}</td>
                 </tr>
+                {f'''
+                <tr>
+                    <td style="padding: 5px 0;"><strong>Тип доставки:</strong></td>
+                    <td>{
+                        "Пункт выдачи BoxBerry" if order_data.get('delivery_info', {}).get('delivery_type') == "boxberry_pickup_point" else
+                        "Курьерская доставка BoxBerry" if order_data.get('delivery_info', {}).get('delivery_type') == "boxberry_courier" else
+                        order_data.get('delivery_info', {}).get('delivery_type', 'Н/Д')
+                    }</td>
+                </tr>''' if order_data.get('delivery_info', {}).get('delivery_type') else ''}
+                {f'''
+                <tr>
+                    <td style="padding: 5px 0;"><strong>Пункт выдачи:</strong></td>
+                    <td>{order_data.get('delivery_info', {}).get('boxberry_point_address', 'Н/Д')}</td>
+                </tr>''' if order_data.get('delivery_info', {}).get('delivery_type') == "boxberry_pickup_point" and order_data.get('delivery_info', {}).get('boxberry_point_address') else ''}
+                {f'''
+                <tr>
+                    <td style="padding: 5px 0;"><strong>Трек-номер:</strong></td>
+                    <td>{order_data.get('delivery_info', {}).get('tracking_number', 'Не указан')}</td>
+                </tr>''' if order_data.get('delivery_info', {}).get('tracking_number') else ''}
+            </table>
+            
+            <h2 style="color: #4a5568; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">Список товаров:</h2>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+                <thead>
+                    <tr style="background-color: #f1f5f9;">
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Наименование</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">Кол-во</th>
+                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Цена</th>
+                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Сумма</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {items_html}
+                </tbody>
+                <tfoot>
+                    {discount_info}
+                    {f'''
+                    <tr>
+                        <td colspan="3" style="padding: 10px; text-align: right;">Стоимость доставки:</td>
+                        <td style="padding: 10px; text-align: right;">{order_data.get('delivery_info', {}).get('delivery_cost', 0):.2f} ₽</td>
+                    </tr>''' if order_data.get('delivery_info', {}).get('delivery_cost') is not None else ''}
+                    <tr>
+                        <td colspan="3" style="padding: 10px; text-align: right; font-weight: bold;">Итого:</td>
+                        <td style="padding: 10px; text-align: right; font-weight: bold;">{order_data.get('total_price', total):.2f} ₽</td>
+                    </tr>
+                </tfoot>
             </table>
             
             <p>Если у вас возникли вопросы по заказу, напишите нам на электронную почту или позвоните по телефону поддержки.</p>

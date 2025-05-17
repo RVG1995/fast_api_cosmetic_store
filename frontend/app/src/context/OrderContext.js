@@ -985,6 +985,23 @@ export const OrderProvider = ({ children }) => {
     setError(null);
     
     try {
+      // Создаем объект delivery_info из переданных данных
+      const deliveryInfo = {
+        delivery_type: orderData.delivery_type || "boxberry_pickup_point",
+        delivery_cost: orderData.delivery_cost ? parseFloat(orderData.delivery_cost) : 0,
+        boxberry_point_id: orderData.boxberry_point_id ? parseInt(orderData.boxberry_point_id, 10) : null,
+        boxberry_point_address: orderData.boxberry_point_address || null,
+        tracking_number: null
+      };
+      
+      // Логируем данные пункта выдачи для отладки
+      if (orderData.delivery_type && orderData.delivery_type.includes('pickup_point')) {
+        console.log('ID пункта выдачи в запросе:', orderData.boxberry_point_id, 
+                    'преобразован в:', deliveryInfo.boxberry_point_id)
+      }
+      
+      console.log('Сформирован объект delivery_info:', deliveryInfo);
+      
       // Преобразуем данные для отправки
       const processedData = {
         ...orderData,
@@ -992,8 +1009,8 @@ export const OrderProvider = ({ children }) => {
           product_id: parseInt(item.product_id || item.product_id),
           quantity: parseInt(item.quantity)
         })),
-        // Добавляем корректную обработку стоимости доставки
-        delivery_cost: orderData.delivery_cost ? parseInt(orderData.delivery_cost) : null,
+        // Добавляем объект delivery_info
+        delivery_info: deliveryInfo,
         // Добавляем флаг способа оплаты
         is_payment_on_delivery: Boolean(orderData.is_payment_on_delivery)
       };

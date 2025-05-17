@@ -615,10 +615,15 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   // Обработчик выбора пункта выдачи BoxBerry
   const handlePickupPointSelected = (point) => {
     setSelectedPickupPoint(point);
+    
+    // Обновляем данные формы с адресом и ID пункта выдачи
     setFormData({
       ...formData,
-      delivery_address: point.Address
+      delivery_address: point.Address, 
+      boxberry_point_id: parseInt(point.Code, 10) // Добавляем ID пункта выдачи как число
     });
+    
+    console.log(`Выбран пункт выдачи: Code=${point.Code}, Address=${point.Address}`);
     
     // Вызываем расчет доставки
     calculateDeliveryCost();
@@ -706,9 +711,19 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
         is_payment_on_delivery: Boolean(formData.is_payment_on_delivery)
       };
       
-      // Если тип доставки - пункт выдачи, копируем адрес доставки в поле boxberry_point_address
+      // Если тип доставки - пункт выдачи, добавляем информацию о пункте выдачи
       if (formData.delivery_type.includes('pickup_point')) {
+        // Копируем адрес доставки в поле boxberry_point_address
         orderData.boxberry_point_address = formData.delivery_address;
+        
+        // Убедимся, что ID пункта выдачи передается как число
+        if (selectedPickupPoint) {
+          orderData.boxberry_point_id = parseInt(selectedPickupPoint.Code, 10);
+          console.log(`Отправка заказа с пунктом выдачи ID=${orderData.boxberry_point_id}`);
+        } else if (formData.boxberry_point_id) {
+          orderData.boxberry_point_id = parseInt(formData.boxberry_point_id, 10);
+          console.log(`Отправка заказа с сохраненным ID пункта выдачи=${orderData.boxberry_point_id}`);
+        }
       }
       
       // Обработка телефона

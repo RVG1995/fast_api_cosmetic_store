@@ -456,7 +456,7 @@ class OrderResponse(BaseModel):
     comment: Optional[str] = None
     
     # Информация о типе доставки
-    delivery_type: str = Field(..., description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
+    delivery_type: Optional[str] = Field(None, description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_address: Optional[str] = None
     boxberry_point_id: Optional[int] = None
     delivery_cost: Optional[float] = None
@@ -648,7 +648,7 @@ class OrderSchema(BaseModel):
     personal_data_agreement: bool = Field(..., description="Согласие на обработку персональных данных")
     
     # Информация о типе доставки
-    delivery_type: str = Field("standard", description="Тип доставки: standard, boxberry")
+    delivery_type: Optional[str] = Field(None, description="Тип доставки: boxberry_pickup_point, boxberry_courier, cdek_pickup_point, cdek_courier")
     boxberry_point_id: Optional[str] = None
     boxberry_point_address: Optional[str] = None
     boxberry_city_code: Optional[str] = None

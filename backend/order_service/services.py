@@ -619,6 +619,11 @@ async def update_order_items(
                     total_price -= discount
                     order.discount_amount = discount
         
+        # Добавляем стоимость доставки к общей сумме заказа, если она указана
+        if order.delivery_cost:
+            logger.info("Добавляем стоимость доставки %s к итоговой сумме заказа %s", order.delivery_cost, order_id)
+            total_price += order.delivery_cost
+        
         logger.info("Обновляем общую сумму заказа %s: %s", order_id, total_price)
         order.total_price = total_price
         

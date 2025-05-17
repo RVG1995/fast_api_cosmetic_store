@@ -1189,6 +1189,24 @@ export const deliveryAPI = {
     }
   },
   
+  // Обновление посылки в Boxberry
+  updateBoxberryParcel: async (orderData, trackingNumber) => {
+    try {
+      console.log(`Вызов API updateBoxberryParcel для заказа:`, orderData);
+      // Добавляем updateByTrack в данные заказа для обновления существующей посылки
+      const updateData = {
+        ...orderData,
+        updateByTrack: trackingNumber
+      };
+      const response = await deliveryApi.post('/delivery/boxberry/create-parcel', updateData);
+      console.log('API updateBoxberryParcel ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API updateBoxberryParcel:', error);
+      throw error;
+    }
+  },
+  
   // Получение подсказок адресов Dadata
   getDadataAddressSuggestions: async (query) => {
     try {

@@ -2119,7 +2119,11 @@ const handleCloseBoxberryParcelModal = () => {
         backdrop="static"
       >
         <Modal.Header closeButton>
-          <Modal.Title>Создание посылки в Boxberry</Modal.Title>
+          <Modal.Title>
+            {order.tracking_number 
+              ? "Обновление посылки в Boxberry" 
+              : "Создание посылки в Boxberry"}
+          </Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {boxberryLoading ? (
@@ -2127,15 +2131,21 @@ const handleCloseBoxberryParcelModal = () => {
               <Spinner animation="border" role="status">
                 <span className="visually-hidden">Загрузка...</span>
               </Spinner>
-              <p className="mt-3">Идет создание посылки в Boxberry...</p>
+              <p className="mt-3">
+                {order.tracking_number 
+                  ? "Идет обновление посылки в Boxberry..." 
+                  : "Идет создание посылки в Boxberry..."}
+              </p>
             </div>
           ) : boxberryResult ? (
-            // Отображаем результат создания посылки
+            // Отображаем результат создания/обновления посылки
             <>
               {boxberryResult.success ? (
                 <div>
                   <Alert variant="success">
-                    Посылка успешно создана в системе Boxberry.
+                    {order.tracking_number 
+                      ? "Посылка успешно обновлена в системе Boxberry."
+                      : "Посылка успешно создана в системе Boxberry."}
                   </Alert>
                   <p><strong>Трек-номер:</strong> {boxberryResult.trackingNumber}</p>
                   {boxberryResult.label && (
@@ -2153,17 +2163,23 @@ const handleCloseBoxberryParcelModal = () => {
                 </div>
               ) : (
                 <Alert variant="danger">
-                  {boxberryResult.error || "Произошла ошибка при создании посылки в Boxberry"}
+                  {boxberryResult.error || "Произошла ошибка при работе с посылкой в Boxberry"}
                 </Alert>
               )}
             </>
           ) : (
-            // Отображаем форму создания посылки
+            // Отображаем форму создания/обновления посылки
             <>
-              <p>Вы уверены, что хотите создать посылку в Boxberry для этого заказа?</p>
+              <p>
+                {order.tracking_number 
+                  ? `Вы уверены, что хотите обновить посылку ${order.tracking_number} в Boxberry для этого заказа?` 
+                  : "Вы уверены, что хотите создать посылку в Boxberry для этого заказа?"}
+              </p>
               
               <Alert variant="info">
-                После создания посылки в системе Boxberry, заказу будет присвоен трек-номер для отслеживания.
+                {order.tracking_number 
+                  ? "Обновление посылки позволит синхронизировать информацию о заказе с системой Boxberry."
+                  : "После создания посылки в системе Boxberry, заказу будет присвоен трек-номер для отслеживания."}
               </Alert>
               
               {error && (
@@ -2189,7 +2205,7 @@ const handleCloseBoxberryParcelModal = () => {
                 onClick={handleConfirmBoxberryParcel}
                 disabled={boxberryLoading}
               >
-                Создать посылку
+                {order.tracking_number ? "Обновить" : "Создать"}
               </Button>
             </>
           )}

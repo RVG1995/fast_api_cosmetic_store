@@ -1028,13 +1028,13 @@ export const OrderProvider = ({ children }) => {
     }
   };
 
-  // Создание посылки Boxberry для заказа
+  // Создание или обновление посылки Boxberry для заказа
   const createBoxberryParcel = async (orderId) => {
     setLoading(true);
     setError(null);
     
     try {
-      console.log(`Запрос на создание посылки Boxberry для заказа: ${orderId}`);
+      console.log(`Запрос на создание/обновление посылки Boxberry для заказа: ${orderId}`);
       
       // Получаем текущий заказ, если его нет в состоянии
       let orderData = currentOrder;
@@ -1045,7 +1045,7 @@ export const OrderProvider = ({ children }) => {
         }
       }
       
-      // Формируем данные для создания посылки
+      // Формируем данные для создания/обновления посылки
       const parcelData = {
         order_number: orderData.order_number,
         price: orderData.total_price - (orderData.delivery_cost || 0), // сумма товаров без доставки
@@ -1071,36 +1071,49 @@ export const OrderProvider = ({ children }) => {
         }
       };
       
-      // Используем функцию из deliveryAPI вместо прямого запроса
-      const response = await deliveryAPI.createBoxberryParcel(parcelData);
+      let response;
+      
+      // Если у заказа уже есть трек-номер, обновляем существующую посылку
+      if (orderData.tracking_number) {
+        console.log(`Заказ ${orderId} уже имеет трек-номер ${orderData.tracking_number}, обновляем посылку`);
+        response = await deliveryAPI.updateBoxberryParcel(parcelData, orderData.tracking_number);
+      } else {
+        // Иначе создаем новую посылку
+        console.log(`Заказ ${orderId} не имеет трек-номера, создаем новую посылку`);
+        response = await deliveryAPI.createBoxberryParcel(parcelData);
+      }
       
       // Если получен трек-номер, обновляем заказ
-      if (response && (response.track_number || response.tracking_number)) {
-        const trackingNumber = response.track_number || response.tracking_number;
+      if (response && (response.track || response.track_number || response.tracking_number)) {
+        const trackingNumber = response.track || response.track_number || response.tracking_number;
         
-        // Обновляем заказ с трек-номером
-        await axios.put(
-          `${ORDER_SERVICE_URL}/admin/orders/${orderId}`,
-          { tracking_number: trackingNumber },
-          { withCredentials: true }
-        );
-        
-        // Обновляем текущий заказ
-        const updatedOrder = await getAdminOrderById(orderId);
-        setCurrentOrder(updatedOrder);
+        // Обновляем заказ с трек-номером, если он изменился
+        if (trackingNumber !== orderData.tracking_number) {
+          await axios.put(
+            `${ORDER_SERVICE_URL}/admin/orders/${orderId}`,
+            { tracking_number: trackingNumber },
+            { withCredentials: true }
+          );
+          
+          // Обновляем текущий заказ
+          const updatedOrder = await getAdminOrderById(orderId);
+          setCurrentOrder(updatedOrder);
+        }
         
         return {
           success: true,
           trackingNumber,
-          label: response.response?.label,
-          message: "Посылка успешно создана и трек-номер сохранен"
+          label: response.label,
+          message: orderData.tracking_number ? 
+            "Посылка успешно обновлена" : 
+            "Посылка успешно создана и трек-номер сохранен"
         };
       } else {
         throw new Error('Не удалось получить трек-номер');
       }
     } catch (err) {
-      console.error('Ошибка при создании посылки Boxberry:', err);
-      const errorMsg = err.response?.data?.detail || err.message || 'Ошибка при создании посылки Boxberry';
+      console.error('Ошибка при обработке посылки Boxberry:', err);
+      const errorMsg = err.response?.data?.detail || err.message || 'Ошибка при обработке посылки Boxberry';
       setError(errorMsg);
       throw err;
     } finally {

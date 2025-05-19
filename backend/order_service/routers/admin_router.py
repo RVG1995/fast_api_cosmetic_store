@@ -262,36 +262,166 @@ async def get_order_admin(
 
 @router.put("/{order_id}", response_model=OrderResponse)
 async def update_order_admin(
+    request: Request,
     order_id: int = Path(..., ge=1),
     order_data: OrderUpdate = Body(...),
     current_user: Dict[str, Any] = Depends(get_admin_user),
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Обновление информации о заказе (только для администраторов).
+    Комплексное обновление заказа и информации о доставке (только для администраторов).
     
     - **order_id**: ID заказа
-    - **order_data**: Данные для обновления
+    - **order_data**: Данные для обновления заказа включая доставку, товары и статус
     """
     try:
-        # Обновляем заказ
-        order = await update_order(
-            session=session,
-            order_id=order_id,
-            order_data=order_data
-        )
+        logger.info("Получен запрос на комплексное обновление заказа %s", order_id)
+        logger.info("Данные заказа: %s", order_data.model_dump())
         
+        # Проверяем существование заказа
+        order = await get_order_by_id(session, order_id)
         if not order:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Заказ с ID {order_id} не найден",
+                detail=f"Заказ с ID {order_id} не найден"
             )
         
-        # Добавляем запись в историю статусов, если статус был изменен
-        if order_data.status_id is not None:
-            # Используем комментарий, если он предоставлен, иначе используем стандартное сообщение
-            status_note = order_data.comment if order_data.comment else "Статус обновлен администратором"
+        # Проверка статуса заказа - запрещаем редактирование для определенных статусов
+        non_editable_statuses = ["Отправлен", "Доставлен", "Отменен", "Оплачен"]
+        if order.status and order.status.name in non_editable_statuses:
+            if order_data.status_id is None:  # Если не меняем статус, а только редактируем заказ
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Редактирование заказа невозможно в статусе '{order.status.name}'"
+                )
+            else:
+                # Если меняем статус, то другие изменения не применяем
+                logger.warning("Заказ в статусе %s, будет изменен только статус", order.status.name)
+                
+                # Проверяем, отличается ли новый статус от текущего
+                if order_data.status_id == order.status_id:
+                    logger.info("Статус заказа не изменился, пропускаем обновление")
+                    # Возвращаем заказ без изменений
+                    return OrderResponse.model_validate(order)
+                
+                # Проверяем существование нового статуса
+                new_status = await session.get(OrderStatusModel, order_data.status_id)
+                if not new_status:
+                    raise ValueError(f"Статус с ID {order_data.status_id} не найден")
+                
+                # Меняем только статус
+                order.status_id = order_data.status_id
+                order.updated_at = datetime.utcnow()
+                
+                # Добавляем запись в историю статусов
+                status_note = order_data.comment if order_data.comment else "Статус обновлен администратором"
+                await OrderStatusHistoryModel.add_status_change(
+                    session=session,
+                    order_id=order.id,
+                    status_id=order_data.status_id,
+                    changed_by_user_id=current_user["user_id"],
+                    notes=status_note
+                )
+                
+                await session.commit()
+                
+                # Инвалидируем кэш
+                await invalidate_order_cache(order_id)
+                await invalidate_statistics_cache()
+                
+                updated_order = await get_order_by_id(session, order_id)
+                return OrderResponse.model_validate(updated_order)
+        
+        # Проверка оплаченных заказов - запрещаем редактирование товаров для оплаченных заказов
+        if order.is_paid and (order_data.items_to_add or order_data.items_to_update or order_data.items_to_remove):
+            raise HTTPException(
+                status_code=400, 
+                detail="Редактирование товаров невозможно для оплаченных заказов"
+            )
+        
+        # Изменения внесены в заказ
+        changes_made = False
+        
+        # Обновляем основные поля заказа
+        if hasattr(order_data, 'full_name') and order_data.full_name is not None:
+            order.full_name = order_data.full_name
+            changes_made = True
+        if hasattr(order_data, 'email') and order_data.email is not None:
+            order.email = order_data.email
+            changes_made = True
+        if hasattr(order_data, 'phone') and order_data.phone is not None:
+            order.phone = order_data.phone
+            changes_made = True
+        if hasattr(order_data, 'delivery_address') and order_data.delivery_address is not None:
+            order.delivery_address = order_data.delivery_address
+            changes_made = True
+        if hasattr(order_data, 'comment') and order_data.comment is not None:
+            order.comment = order_data.comment
+            changes_made = True
+        if hasattr(order_data, 'is_paid') and order_data.is_paid is not None:
+            order.is_paid = order_data.is_paid
+            changes_made = True
+        if hasattr(order_data, 'is_payment_on_delivery') and order_data.is_payment_on_delivery is not None:
+            order.is_payment_on_delivery = order_data.is_payment_on_delivery
+            changes_made = True
+        
+        # Обновляем информацию о доставке
+        if hasattr(order_data, 'delivery_info') and order_data.delivery_info is not None:
+            # Получаем информацию о доставке для заказа
+            delivery_info_query = select(DeliveryInfoModel).filter(DeliveryInfoModel.order_id == order_id)
+            delivery_info_result = await session.execute(delivery_info_query)
+            delivery_info = delivery_info_result.scalars().first()
             
+            # Если информация о доставке уже существует, обновляем её
+            if delivery_info:
+                if order_data.delivery_info.delivery_type is not None:
+                    delivery_info.delivery_type = order_data.delivery_info.delivery_type
+                    changes_made = True
+                if order_data.delivery_info.boxberry_point_id is not None:
+                    delivery_info.boxberry_point_id = order_data.delivery_info.boxberry_point_id
+                    changes_made = True
+                if order_data.delivery_info.boxberry_point_address is not None:
+                    delivery_info.boxberry_point_address = order_data.delivery_info.boxberry_point_address
+                    changes_made = True
+                if order_data.delivery_info.delivery_cost is not None:
+                    delivery_info.delivery_cost = order_data.delivery_info.delivery_cost
+                    changes_made = True
+                if order_data.delivery_info.tracking_number is not None:
+                    delivery_info.tracking_number = order_data.delivery_info.tracking_number
+                    changes_made = True
+                    logger.info("Обновлен трек-номер для заказа %s: %s", order_id, order_data.delivery_info.tracking_number)
+                if order_data.delivery_info.label_url_boxberry is not None:
+                    delivery_info.label_url_boxberry = order_data.delivery_info.label_url_boxberry
+                    changes_made = True
+            else:
+                # Если информация о доставке отсутствует, создаем её
+                delivery_info = DeliveryInfoModel(
+                    order_id=order_id,
+                    delivery_type=order_data.delivery_info.delivery_type or "boxberry_courier",
+                    boxberry_point_id=order_data.delivery_info.boxberry_point_id,
+                    boxberry_point_address=order_data.delivery_info.boxberry_point_address,
+                    delivery_cost=order_data.delivery_info.delivery_cost or 0,
+                    tracking_number=order_data.delivery_info.tracking_number,
+                    label_url_boxberry=order_data.delivery_info.label_url_boxberry
+                )
+                session.add(delivery_info)
+                changes_made = True
+                logger.info("Создана новая запись информации о доставке для заказа %s", order_id)
+        
+        # Обновляем статус заказа, если он предоставлен
+        if order_data.status_id is not None and order_data.status_id != order.status_id:
+            # Проверяем существование статуса
+            status = await session.get(OrderStatusModel, order_data.status_id)
+            if not status:
+                logger.error("Статус с ID %s не найден", order_data.status_id)
+                raise ValueError(f"Статус с ID {order_data.status_id} не найден")
+            
+            # Устанавливаем новый статус
+            order.status_id = order_data.status_id
+            changes_made = True
+            
+            # Добавляем запись в историю статусов
+            status_note = order_data.comment if order_data.comment else "Статус обновлен администратором"
             await OrderStatusHistoryModel.add_status_change(
                 session=session,
                 order_id=order.id,
@@ -300,18 +430,53 @@ async def update_order_admin(
                 notes=status_note
             )
         
-        # Коммитим сессию
-        await session.commit()
+        # Обновляем товары в заказе, если они предоставлены
+        if (hasattr(order_data, 'items_to_add') and order_data.items_to_add) or \
+           (hasattr(order_data, 'items_to_update') and order_data.items_to_update) or \
+           (hasattr(order_data, 'items_to_remove') and order_data.items_to_remove):
+            
+            # Подготавливаем данные для обновления
+            items_to_add = [item.model_dump() for item in order_data.items_to_add] if order_data.items_to_add else []
+            items_to_update = order_data.items_to_update if order_data.items_to_update else {}
+            items_to_remove = order_data.items_to_remove if order_data.items_to_remove else []
+            
+            # Проверяем, есть ли изменения в товарах
+            if items_to_add or items_to_update or items_to_remove:
+                # Вызываем сервисную функцию для обновления товаров
+                updated_order = await update_order_items(
+                    order_id=order_id,
+                    items_to_add=items_to_add,
+                    items_to_update=items_to_update,
+                    items_to_remove=items_to_remove,
+                    session=session,
+                    user_id=current_user["user_id"]
+                )
+                
+                if not updated_order:
+                    raise HTTPException(status_code=400, detail="Ошибка при обновлении элементов заказа")
+                
+                # Обновляем текущий заказ данными о товарах
+                order = updated_order
+                changes_made = True
+        
+        if changes_made:
+            # Обновляем дату обновления заказа
+            order.updated_at = datetime.utcnow()
+            
+            # Коммитим изменения
+            await session.commit()
+            
+            # Инвалидируем кэш заказа
+            await invalidate_order_cache(order_id)
+            # Инвалидируем кэш статистики, если изменился статус
+            if order_data.status_id is not None and order_data.status_id != order.status_id:
+                await invalidate_statistics_cache()
+            logger.info("Кэш заказа %s инвалидирован после обновления", order_id)
+        else:
+            logger.info("Не обнаружено изменений для заказа %s", order_id)
         
         # Вручную запрашиваем заказ со всеми связанными данными
-        loaded_order = await get_order_by_id(session, order.id)
-        
-        # Инвалидируем кэш заказа
-        await invalidate_order_cache(order_id)
-        # Инвалидируем кэш статистики, если изменился статус
-        if order_data.status_id is not None:
-            await invalidate_statistics_cache()
-        logger.info("Кэш заказа %s инвалидирован после обновления заказа", order_id)
+        loaded_order = await get_order_by_id(session, order_id)
         
         # Преобразуем модель в схему
         return OrderResponse.model_validate(loaded_order)
@@ -324,10 +489,10 @@ async def update_order_admin(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Непредвиденная ошибка при обновлении заказа: %s", str(e))
+        logger.exception("Непредвиденная ошибка при обновлении заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Произошла ошибка при обновлении заказа",
+            detail=f"Произошла ошибка при обновлении заказа: {str(e)}",
         ) from e
 
 @router.post("/{order_id}/status", response_model=OrderResponse)
@@ -1337,202 +1502,4 @@ async def generate_orders_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при генерации отчета"
-        ) from e
-
-@router.put("/{order_id}/delivery", response_model=OrderResponse,dependencies=[Depends(get_admin_user)])
-async def update_order_delivery_info(
-    request: Request,
-    order_id: int = Path(..., ge=1),
-    delivery_data: DeliveryInfoUpdate = Body(...),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Обновление информации о доставке заказа
-    
-    - **order_id**: ID заказа
-    - **delivery_data**: Данные для обновления информации о доставке
-    """
-    try:
-        logger.info("Получен запрос на обновление информации о доставке заказа %s", order_id)
-        logger.info("Данные доставки: %s", delivery_data.model_dump())
-        
-        # Проверяем существование заказа
-        order = await get_order_by_id(session, order_id)
-        if not order:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Заказ с ID {order_id} не найден"
-            )
-        
-        # Получаем информацию о доставке
-        delivery_info_query = select(DeliveryInfoModel).filter(DeliveryInfoModel.order_id == order_id)
-        delivery_info_result = await session.execute(delivery_info_query)
-        delivery_info = delivery_info_result.scalars().first()
-        
-        # Получаем данные из тела запроса в виде словаря
-        raw_data = await request.json()
-        delivery_data_dict = delivery_data.model_dump(exclude_unset=True)
-        
-        # Логгируем полученные данные
-        logger.info("Полученный delivery_data_dict: %s", delivery_data_dict)
-        logger.info("Полный необработанный запрос: %s", raw_data)
-        
-        # Проверяем, есть ли вложенный объект delivery_info в запросе
-        delivery_info_dict = raw_data.get('delivery_info', {})
-        if delivery_info_dict:
-            logger.info("Найдены данные вложенного объекта delivery_info (из raw_data): %s", delivery_info_dict)
-            
-        # Объединяем данные из обоих источников
-        # Приоритет отдаем вложенному объекту delivery_info из raw_data
-        delivery_type = delivery_info_dict.get('delivery_type') if delivery_info_dict and 'delivery_type' in delivery_info_dict else delivery_data.delivery_type
-        boxberry_point_id = delivery_info_dict.get('boxberry_point_id') if delivery_info_dict and 'boxberry_point_id' in delivery_info_dict else delivery_data.boxberry_point_id
-        boxberry_point_address = delivery_info_dict.get('boxberry_point_address') if delivery_info_dict and 'boxberry_point_address' in delivery_info_dict else delivery_data.boxberry_point_address
-        delivery_cost = delivery_info_dict.get('delivery_cost') if delivery_info_dict and 'delivery_cost' in delivery_info_dict else delivery_data.delivery_cost
-        tracking_number = delivery_info_dict.get('tracking_number') if delivery_info_dict and 'tracking_number' in delivery_info_dict else delivery_data.tracking_number
-        label_url_boxberry = delivery_info_dict.get('label_url_boxberry') if delivery_info_dict and 'label_url_boxberry' in delivery_info_dict else delivery_data.label_url_boxberry
-        
-        # Логгируем извлеченные данные
-        logger.info("Извлеченные данные для обновления delivery_info: тип=%s, пункт=%s, адрес=%s, стоимость=%s, трек=%s, этикетка=%s", 
-                  delivery_type, boxberry_point_id, boxberry_point_address, delivery_cost, tracking_number, label_url_boxberry)
-        
-        # Если информация о доставке уже существует, обновляем её
-        if delivery_info:
-            # Логгируем текущие данные
-            logger.info("Текущие данные delivery_info: тип=%s, пункт=%s, адрес=%s, стоимость=%s, трек=%s, этикетка=%s", 
-                        delivery_info.delivery_type, delivery_info.boxberry_point_id, 
-                        delivery_info.boxberry_point_address, delivery_info.delivery_cost, 
-                        delivery_info.tracking_number, delivery_info.label_url_boxberry)
-            
-            # Напрямую обновляем данные из вложенного объекта delivery_info
-            if delivery_info_dict:
-                if 'delivery_type' in delivery_info_dict and delivery_info_dict['delivery_type'] is not None:
-                    delivery_info.delivery_type = delivery_info_dict['delivery_type']
-                    logger.info("Обновлен тип доставки для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['delivery_type'])
-                
-                if 'boxberry_point_id' in delivery_info_dict and delivery_info_dict['boxberry_point_id'] is not None:
-                    delivery_info.boxberry_point_id = delivery_info_dict['boxberry_point_id']
-                    logger.info("Обновлен ID пункта выдачи для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['boxberry_point_id'])
-                
-                if 'boxberry_point_address' in delivery_info_dict and delivery_info_dict['boxberry_point_address'] is not None:
-                    delivery_info.boxberry_point_address = delivery_info_dict['boxberry_point_address']
-                    logger.info("Обновлен адрес пункта выдачи для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['boxberry_point_address'])
-                
-                if 'delivery_cost' in delivery_info_dict and delivery_info_dict['delivery_cost'] is not None:
-                    delivery_info.delivery_cost = delivery_info_dict['delivery_cost']
-                    logger.info("Обновлена стоимость доставки для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['delivery_cost'])
-                
-                if 'tracking_number' in delivery_info_dict and delivery_info_dict['tracking_number'] is not None:
-                    delivery_info.tracking_number = delivery_info_dict['tracking_number']
-                    logger.info("Обновлен трек-номер для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['tracking_number'])
-                
-                if 'label_url_boxberry' in delivery_info_dict and delivery_info_dict['label_url_boxberry'] is not None:
-                    delivery_info.label_url_boxberry = delivery_info_dict['label_url_boxberry']
-                    logger.info("Обновлена ссылка на этикетку Boxberry для заказа %s из вложенного объекта: %s", order_id, delivery_info_dict['label_url_boxberry'])
-            # Если нет вложенного объекта, используем обычные поля
-            else:
-                # Обновляем только непустые поля
-                if delivery_type is not None:
-                    delivery_info.delivery_type = delivery_type
-                    logger.info("Обновлен тип доставки для заказа %s: %s", order_id, delivery_type)
-                if boxberry_point_id is not None:
-                    delivery_info.boxberry_point_id = boxberry_point_id
-                    logger.info("Обновлен ID пункта выдачи для заказа %s: %s", order_id, boxberry_point_id)
-                if boxberry_point_address is not None:
-                    delivery_info.boxberry_point_address = boxberry_point_address
-                    logger.info("Обновлен адрес пункта выдачи для заказа %s: %s", order_id, boxberry_point_address)
-                if delivery_cost is not None:
-                    delivery_info.delivery_cost = delivery_cost
-                    logger.info("Обновлена стоимость доставки для заказа %s: %s", order_id, delivery_cost)
-                if tracking_number is not None:
-                    delivery_info.tracking_number = tracking_number
-                    logger.info("Обновлен трек-номер для заказа %s: %s", order_id, tracking_number)
-                
-                if label_url_boxberry is not None:
-                    delivery_info.label_url_boxberry = label_url_boxberry
-                    logger.info("Обновлена ссылка на этикетку Boxberry для заказа %s: %s", order_id, label_url_boxberry)
-        else:
-            # Если информация о доставке отсутствует, создаем её с проверкой на None
-            logger.info("Создание новой записи информации о доставке для заказа %s", order_id)
-            
-            # Если есть вложенный объект delivery_info, используем его
-            if delivery_info_dict:
-                delivery_info_data = {
-                    'order_id': order_id,
-                    'delivery_type': delivery_info_dict.get('delivery_type', 'boxberry_courier'),
-                    'delivery_cost': delivery_info_dict.get('delivery_cost', 0.0)
-                }
-                
-                if 'boxberry_point_id' in delivery_info_dict and delivery_info_dict['boxberry_point_id'] is not None:
-                    delivery_info_data['boxberry_point_id'] = delivery_info_dict['boxberry_point_id']
-                    
-                if 'boxberry_point_address' in delivery_info_dict and delivery_info_dict['boxberry_point_address'] is not None:
-                    delivery_info_data['boxberry_point_address'] = delivery_info_dict['boxberry_point_address']
-                    
-                if 'tracking_number' in delivery_info_dict and delivery_info_dict['tracking_number'] is not None:
-                    delivery_info_data['tracking_number'] = delivery_info_dict['tracking_number']
-                
-                if 'label_url_boxberry' in delivery_info_dict and delivery_info_dict['label_url_boxberry'] is not None:
-                    delivery_info_data['label_url_boxberry'] = delivery_info_dict['label_url_boxberry']
-                
-                delivery_info = DeliveryInfoModel(**delivery_info_data)
-                logger.info("Создана запись информации о доставке для заказа %s из вложенного объекта: %s", order_id, delivery_info_data)
-            else:
-                if delivery_type is None:
-                    logger.warning("delivery_type не указан, используем значение по умолчанию 'boxberry_courier'")
-                    delivery_type = "boxberry_courier"
-                    
-                if delivery_cost is None:
-                    logger.warning("delivery_cost не указан, используем значение по умолчанию 0")
-                    delivery_cost = 0
-                    
-                delivery_info = DeliveryInfoModel(
-                    order_id=order_id,
-                    delivery_type=delivery_type,
-                    boxberry_point_id=boxberry_point_id,
-                    boxberry_point_address=boxberry_point_address,
-                    delivery_cost=delivery_cost,
-                    tracking_number=tracking_number,
-                    label_url_boxberry=label_url_boxberry
-                )
-                logger.info("Создана запись информации о доставке для заказа %s из обычных полей", order_id)
-                
-            session.add(delivery_info)
-            logger.info("Добавлена новая запись информации о доставке для заказа %s", order_id)
-        
-        # Обновляем данные самого заказа
-        # Получаем словарь из Pydantic-модели, чтобы проверить наличие полей
-        delivery_data_dict = delivery_data.model_dump(exclude_unset=True)
-        
-        if 'delivery_address' in delivery_data_dict:
-            order.delivery_address = delivery_data.delivery_address
-            logger.info("Обновлен адрес доставки для заказа %s: %s", order_id, delivery_data.delivery_address)
-            
-        if 'is_payment_on_delivery' in delivery_data_dict:
-            order.is_payment_on_delivery = delivery_data.is_payment_on_delivery
-            logger.info("Обновлен способ оплаты для заказа %s: %s", order_id, 
-                       "Оплата при получении" if delivery_data.is_payment_on_delivery else "Оплата на сайте")
-            
-        # Обновляем дату обновления заказа
-        order.updated_at = datetime.utcnow()
-        
-        await session.commit()
-        
-        # Инвалидируем кеш заказа
-        await invalidate_order_cache(order_id)
-        
-        # Получаем обновленный заказ
-        updated_order = await get_order_by_id(session, order_id)
-        
-        return OrderResponse.model_validate(updated_order)
-    except ValueError as e:
-        logger.error("Ошибка при обновлении информации о доставке заказа: %s", str(e))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        ) from e
-    except Exception as e:
-        logger.error("Непредвиденная ошибка при обновлении информации о доставке заказа: %s", str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Произошла ошибка при обновлении информации о доставке заказа"
         ) from e

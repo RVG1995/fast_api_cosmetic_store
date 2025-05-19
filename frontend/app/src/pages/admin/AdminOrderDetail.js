@@ -12,6 +12,7 @@ import BoxberryPickupModal from '../../components/cart/BoxberryPickupModal';
 import debounce from 'lodash/debounce';
 import AdminBackButton from '../../components/common/AdminBackButton';
 import { API_URLS } from '../../utils/constants';
+import EditOrderModal from '../../components/admin/EditOrderModal';
 
 // Компонент для редактирования товаров в заказе
 const OrderItemsEditor = ({ order, onOrderUpdated }) => {
@@ -655,6 +656,7 @@ const AdminOrderDetail = () => {
   const [boxberryLoading, setBoxberryLoading] = useState(false);
   const [boxberryResult, setBoxberryResult] = useState(null);
   const [showBoxberryParcelModal, setShowBoxberryParcelModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   
   // Эффект для автоматического расчета стоимости доставки при открытии формы
   useEffect(() => {
@@ -1533,6 +1535,16 @@ const handleCloseBoxberryParcelModal = () => {
     <Container className="py-4">
       <AdminBackButton to="/admin/orders" label="Вернуться к списку заказов" />
       <h2 className="mb-4">Информация о заказе #{order.id}</h2>
+      <Button variant="primary" className="mb-3" onClick={() => setShowEditModal(true)}>
+        Редактировать заказ
+      </Button>
+      <EditOrderModal
+        order={order}
+        show={showEditModal}
+        onHide={() => setShowEditModal(false)}
+        onOrderUpdated={setOrder}
+        statuses={statuses}
+      />
       
       {updateSuccess && (
         <Alert variant="success" className="mb-4">
@@ -1888,24 +1900,8 @@ const handleCloseBoxberryParcelModal = () => {
           <Card className="mb-4">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h5 className="mb-0">Товары в заказе</h5>
-              {canEditItems() ? (
-                <OrderItemsEditor order={order} onOrderUpdated={setOrder} />
-              ) : (
-                <Badge bg="secondary">
-                  {order.is_paid && order.status && !['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'].includes(order.status.name) ? 
-                    "Редактирование недоступно для оплаченных заказов" : 
-                    `Редактирование недоступно для заказов в статусе "${order.status.name}"`}
-                </Badge>
-              )}
             </Card.Header>
             <Card.Body>
-              {!canEditItems() && (
-                <Alert variant="info" className="mb-3">
-                  {order.is_paid && order.status && !['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'].includes(order.status.name) ? 
-                    "Нельзя редактировать товары, так как заказ уже оплачен" : 
-                    `Нельзя редактировать товары для заказа в статусе "${order.status.name}"`}
-                </Alert>
-              )}
               <Table responsive hover>
                 <thead>
                   <tr>

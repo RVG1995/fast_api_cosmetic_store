@@ -345,6 +345,19 @@ export const adminAPI = {
       throw error;
     }
   },
+  
+  // Обновление заказа (универсальный PUT)
+  updateOrder: async (orderId, data) => {
+    try {
+      console.log(`Вызов API updateOrder для заказа ${orderId} с данными:`, data);
+      const response = await orderApi.put(`/admin/orders/${orderId}`, data);
+      console.log(`API updateOrder ответ успешно получен:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Ошибка в API updateOrder для заказа ${orderId}:`, error);
+      throw error;
+    }
+  },
 };
 
 // API для работы с контентом

@@ -492,7 +492,7 @@ async def create_boxberry_parcel(
         if order_data.get("dimensions"):
             dims = order_data.get("dimensions")
             parcel_data["sdata"]["weights"].update({
-                "weight": str(int(float(dims.get("weight", 500)))),  # переводим кг в граммы
+                "weight": str(int(float(dims.get("weight", 500)))),  # вес в граммах
                 "x": str(int(dims.get("width", 20))),
                 "y": str(int(dims.get("depth", 20))),
                 "z": str(int(dims.get("height", 10)))

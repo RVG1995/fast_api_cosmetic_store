@@ -234,17 +234,30 @@ const EditOrderModal = ({ order, show, onHide, onOrderUpdated, statuses }) => {
     setLoading(true);
     setError(null);
     try {
-      const updateData = {
-        items_to_add: editOrder.items.filter(i => !order.items.some(oi => oi.product_id === i.product_id)).map(i => ({
-          product_id: i.product_id,
-          quantity: i.quantity
-        })),
-        items_to_update: Object.fromEntries(
+      // 1. Сначала отправляем изменения товаров, если есть
+      let itemsChanged = false;
+      if (
+        editOrder.items.filter(i => !order.items.some(oi => oi.product_id === i.product_id)).length > 0 ||
+        Object.keys(
           editOrder.items
             .filter(i => order.items.some(oi => oi.product_id === i.product_id && oi.quantity !== i.quantity))
             .map(i => [order.items.find(oi => oi.product_id === i.product_id).id, i.quantity])
-        ),
-        items_to_remove: order.items.filter(oi => !editOrder.items.some(i => i.product_id === oi.product_id)).map(i => i.id),
+        ).length > 0 ||
+        order.items.filter(oi => !editOrder.items.some(i => i.product_id === oi.product_id)).length > 0
+      ) {
+        await adminAPI.updateOrderItems(order.id, {
+          items_to_add: editOrder.items.filter(i => !order.items.some(oi => oi.product_id === i.product_id)).map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+          items_to_update: Object.fromEntries(
+            editOrder.items
+              .filter(i => order.items.some(oi => oi.product_id === i.product_id && oi.quantity !== i.quantity))
+              .map(i => [order.items.find(oi => oi.product_id === i.product_id).id, i.quantity])
+          ),
+          items_to_remove: order.items.filter(oi => !editOrder.items.some(i => i.product_id === oi.product_id)).map(i => i.id)
+        });
+        itemsChanged = true;
+      }
+      // 2. Затем отправляем основные поля заказа (без товаров)
+      const updateData = {
         delivery_info: {
           delivery_type: editOrder.delivery_info?.delivery_type,
           boxberry_point_id: editOrder.delivery_info?.boxberry_point_id,
@@ -260,10 +273,12 @@ const EditOrderModal = ({ order, show, onHide, onOrderUpdated, statuses }) => {
         comment: editOrder.comment,
       };
       await adminAPI.updateOrder(order.id, updateData);
-      if (onOrderUpdated) onOrderUpdated();
+      // 3. После любых изменений делаем GET заказа и обновляем стейт
+      const freshOrder = await adminAPI.getOrderById(order.id);
+      onOrderUpdated(freshOrder);
       onHide();
-    } catch (e) {
-      setError("Ошибка сохранения заказа");
+    } catch (err) {
+      setError(err?.response?.data?.detail || err.message || 'Ошибка сохранения заказа');
     } finally {
       setLoading(false);
     }

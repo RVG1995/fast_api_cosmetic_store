@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import hashlib
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Body, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import pandas as pd
@@ -24,7 +24,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 from database import get_db
-from models import OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel, DeliveryInfoModel
+from models import OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel, DeliveryInfoModel,OrderModel
 from schemas import (
     OrderUpdate, OrderResponse, OrderDetailResponse, 
     OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics, BatchStatusUpdate,
@@ -48,6 +48,7 @@ from cache import (
 )
 from notification_api import check_notification_settings
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -64,6 +65,144 @@ router = APIRouter(
     tags=["admin_orders"],
     responses={404: {"description": "Not found"}},
 )
+
+# Переопределяем get_order_by_id с подгрузкой связей (если не было)
+async def get_order_with_all_relations(session, order_id):
+    result = await session.execute(
+        select(OrderModel)
+        .options(
+            selectinload(OrderModel.delivery_info),
+            selectinload(OrderModel.items),
+            selectinload(OrderModel.status),
+            selectinload(OrderModel.status_history),
+            selectinload(OrderModel.promo_code),
+        )
+        .where(OrderModel.id == order_id)
+    )
+    return result.scalar_one_or_none()
+
+# Вспомогательная функция для безопасного получения данных заказа
+async def get_safe_order_response(session, order_id):
+    """
+    Безопасно получает данные заказа и создаёт ответ без асинхронной загрузки вложенных объектов
+    """
+    # Загружаем заказ со всеми связанными данными
+    loaded_order = await get_order_with_all_relations(session, order_id)
+    if not loaded_order:
+        return None
+        
+    # Собираем основные данные о заказе в словарь
+    order_dict = {
+        "id": loaded_order.id,
+        "user_id": loaded_order.user_id,
+        "status_id": loaded_order.status_id,
+        "status": {
+            "id": loaded_order.status.id,
+            "name": loaded_order.status.name,
+            "description": loaded_order.status.description,
+            "color": loaded_order.status.color,
+            "allow_cancel": loaded_order.status.allow_cancel,
+            "is_final": loaded_order.status.is_final,
+            "sort_order": loaded_order.status.sort_order
+        },
+        "created_at": loaded_order.created_at,
+        "updated_at": loaded_order.updated_at,
+        "total_price": loaded_order.total_price,
+        "promo_code_id": loaded_order.promo_code_id,
+        "discount_amount": loaded_order.discount_amount,
+        "full_name": loaded_order.full_name,
+        "email": loaded_order.email,
+        "phone": loaded_order.phone,
+        "delivery_address": loaded_order.delivery_address,
+        "comment": loaded_order.comment,
+        "is_paid": loaded_order.is_paid,
+        "items": [
+            {
+                "id": item.id,
+                "order_id": item.order_id,
+                "product_id": item.product_id,
+                "product_name": item.product_name,
+                "product_price": item.product_price,
+                "quantity": item.quantity,
+                "total_price": item.total_price
+            } 
+            for item in loaded_order.items
+        ],
+        "order_number": f"{loaded_order.id}-{loaded_order.created_at.year}",
+        "personal_data_agreement": getattr(loaded_order, 'personal_data_agreement', None),
+        "is_payment_on_delivery": getattr(loaded_order, 'is_payment_on_delivery', True),
+        "receive_notifications": getattr(loaded_order, 'receive_notifications', None)
+    }
+    
+    # Получаем промокод отдельным запросом если необходимо
+    if loaded_order.promo_code_id:
+        promo_result = await session.execute(select(PromoCodeModel).where(PromoCodeModel.id == loaded_order.promo_code_id))
+        promo = promo_result.scalar_one_or_none()
+        if promo:
+            order_dict["promo_code"] = {
+                "id": promo.id,
+                "code": promo.code,
+                "discount_percent": promo.discount_percent,
+                "discount_amount": promo.discount_amount,
+                "valid_until": promo.valid_until,
+                "is_active": promo.is_active,
+                "created_at": promo.created_at,
+                "updated_at": promo.updated_at
+            }
+    
+    # Получаем информацию о доставке отдельным запросом
+    delivery_query = select(DeliveryInfoModel).where(DeliveryInfoModel.order_id == loaded_order.id)
+    delivery_result = await session.execute(delivery_query)
+    delivery_info = delivery_result.scalar_one_or_none()
+    
+    if delivery_info:
+        order_dict["delivery_info"] = {
+            "id": delivery_info.id,
+            "order_id": delivery_info.order_id,
+            "delivery_type": delivery_info.delivery_type,
+            "boxberry_point_id": delivery_info.boxberry_point_id,
+            "boxberry_point_address": delivery_info.boxberry_point_address,
+            "delivery_cost": delivery_info.delivery_cost,
+            "tracking_number": delivery_info.tracking_number,
+            "label_url_boxberry": delivery_info.label_url_boxberry
+        }
+    
+    # Получаем историю статусов отдельным запросом
+    status_history_query = select(OrderStatusHistoryModel).where(
+        OrderStatusHistoryModel.order_id == loaded_order.id
+    ).options(selectinload(OrderStatusHistoryModel.status))
+    status_history_result = await session.execute(status_history_query)
+    status_history_items = status_history_result.scalars().all()
+    
+    # Формируем историю статусов вручную
+    order_dict["status_history"] = []
+    for history in status_history_items:
+        history_dict = {
+            "id": history.id,
+            "order_id": history.order_id,
+            "status_id": history.status_id,
+            "changed_at": history.changed_at,
+            "changed_by_user_id": history.changed_by_user_id,
+            "notes": history.notes,
+        }
+        
+        if history.status:
+            history_dict["status"] = {
+                "id": history.status.id,
+                "name": history.status.name,
+                "description": history.status.description,
+                "color": history.status.color,
+                "allow_cancel": history.status.allow_cancel,
+                "is_final": history.status.is_final,
+                "sort_order": history.status.sort_order
+            }
+        else:
+            history_dict["status"] = None
+            
+        order_dict["status_history"].append(history_dict)
+    
+    # Создаем и возвращаем ответ из словаря
+    return OrderDetailResponseWithPromo.model_validate(order_dict)
 
 @router.get("", response_model=PaginatedResponse,dependencies=[Depends(get_admin_user)])
 async def list_all_orders(
@@ -260,9 +399,8 @@ async def get_order_admin(
             detail="Произошла ошибка при получении информации о заказе",
         ) from e 
 
-@router.put("/{order_id}", response_model=OrderResponse)
+@router.put("/{order_id}", response_model=OrderDetailResponseWithPromo)
 async def update_order_admin(
-    request: Request,
     order_id: int = Path(..., ge=1),
     order_data: OrderUpdate = Body(...),
     current_user: Dict[str, Any] = Depends(get_admin_user),
@@ -279,30 +417,41 @@ async def update_order_admin(
         logger.info("Данные заказа: %s", order_data.model_dump())
         
         # Проверяем существование заказа
-        order = await get_order_by_id(session, order_id)
-        if not order:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Заказ с ID {order_id} не найден"
-            )
+        updated_order = await get_order_with_all_relations(session, order_id)
+        if not updated_order:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+        
+        # --- ЗАПРЕТ НА ИЗМЕНЕНИЯ ДЛЯ ОПЛАЧЕННЫХ ---
+        if updated_order.is_paid:
+            allowed_fields = {'comment', 'status_id'}
+            forbidden_changes = [
+                f for f in order_data.model_fields_set
+                if f not in allowed_fields
+            ]
+            if forbidden_changes:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Редактирование невозможно: заказ уже оплачен. Разрешено менять только комментарий и статус."
+                )
         
         # Проверка статуса заказа - запрещаем редактирование для определенных статусов
         non_editable_statuses = ["Отправлен", "Доставлен", "Отменен", "Оплачен"]
-        if order.status and order.status.name in non_editable_statuses:
+        if updated_order.status and updated_order.status.name in non_editable_statuses:
             if order_data.status_id is None:  # Если не меняем статус, а только редактируем заказ
                 raise HTTPException(
-                    status_code=400, 
-                    detail=f"Редактирование заказа невозможно в статусе '{order.status.name}'"
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"Редактирование заказа невозможно в статусе '{updated_order.status.name}'"
                 )
             else:
                 # Если меняем статус, то другие изменения не применяем
-                logger.warning("Заказ в статусе %s, будет изменен только статус", order.status.name)
+                logger.warning("Заказ в статусе %s, будет изменен только статус", updated_order.status.name)
                 
                 # Проверяем, отличается ли новый статус от текущего
-                if order_data.status_id == order.status_id:
+                if order_data.status_id == updated_order.status_id:
                     logger.info("Статус заказа не изменился, пропускаем обновление")
-                    # Возвращаем заказ без изменений
-                    return OrderResponse.model_validate(order)
+                    # Используем тот же подход что и в конце функции
+                    # Вручную запрашиваем заказ со всеми связанными данными и формируем безопасный ответ
+                    return await get_safe_order_response(session, updated_order.id)
                 
                 # Проверяем существование нового статуса
                 new_status = await session.get(OrderStatusModel, order_data.status_id)
@@ -310,14 +459,14 @@ async def update_order_admin(
                     raise ValueError(f"Статус с ID {order_data.status_id} не найден")
                 
                 # Меняем только статус
-                order.status_id = order_data.status_id
-                order.updated_at = datetime.utcnow()
+                updated_order.status_id = order_data.status_id
+                updated_order.updated_at = datetime.utcnow()
                 
                 # Добавляем запись в историю статусов
                 status_note = order_data.comment if order_data.comment else "Статус обновлен администратором"
                 await OrderStatusHistoryModel.add_status_change(
                     session=session,
-                    order_id=order.id,
+                    order_id=updated_order.id,
                     status_id=order_data.status_id,
                     changed_by_user_id=current_user["user_id"],
                     notes=status_note
@@ -326,16 +475,20 @@ async def update_order_admin(
                 await session.commit()
                 
                 # Инвалидируем кэш
-                await invalidate_order_cache(order_id)
+                await invalidate_order_cache(updated_order.id)
                 await invalidate_statistics_cache()
                 
-                updated_order = await get_order_by_id(session, order_id)
-                return OrderResponse.model_validate(updated_order)
+                # Используем безопасную функцию для создания ответа
+                return await get_safe_order_response(session, updated_order.id)
         
         # Проверка оплаченных заказов - запрещаем редактирование товаров для оплаченных заказов
-        if order.is_paid and (order_data.items_to_add or order_data.items_to_update or order_data.items_to_remove):
+        if updated_order.is_paid and (
+            getattr(order_data, "items_to_add", None) or
+            getattr(order_data, "items_to_update", None) or
+            getattr(order_data, "items_to_remove", None)
+        ):
             raise HTTPException(
-                status_code=400, 
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Редактирование товаров невозможно для оплаченных заказов"
             )
         
@@ -344,31 +497,31 @@ async def update_order_admin(
         
         # Обновляем основные поля заказа
         if hasattr(order_data, 'full_name') and order_data.full_name is not None:
-            order.full_name = order_data.full_name
+            updated_order.full_name = order_data.full_name
             changes_made = True
         if hasattr(order_data, 'email') and order_data.email is not None:
-            order.email = order_data.email
+            updated_order.email = order_data.email
             changes_made = True
         if hasattr(order_data, 'phone') and order_data.phone is not None:
-            order.phone = order_data.phone
+            updated_order.phone = order_data.phone
             changes_made = True
         if hasattr(order_data, 'delivery_address') and order_data.delivery_address is not None:
-            order.delivery_address = order_data.delivery_address
+            updated_order.delivery_address = order_data.delivery_address
             changes_made = True
         if hasattr(order_data, 'comment') and order_data.comment is not None:
-            order.comment = order_data.comment
+            updated_order.comment = order_data.comment
             changes_made = True
         if hasattr(order_data, 'is_paid') and order_data.is_paid is not None:
-            order.is_paid = order_data.is_paid
+            updated_order.is_paid = order_data.is_paid
             changes_made = True
         if hasattr(order_data, 'is_payment_on_delivery') and order_data.is_payment_on_delivery is not None:
-            order.is_payment_on_delivery = order_data.is_payment_on_delivery
+            updated_order.is_payment_on_delivery = order_data.is_payment_on_delivery
             changes_made = True
         
         # Обновляем информацию о доставке
         if hasattr(order_data, 'delivery_info') and order_data.delivery_info is not None:
             # Получаем информацию о доставке для заказа
-            delivery_info_query = select(DeliveryInfoModel).filter(DeliveryInfoModel.order_id == order_id)
+            delivery_info_query = select(DeliveryInfoModel).filter(DeliveryInfoModel.order_id == updated_order.id)
             delivery_info_result = await session.execute(delivery_info_query)
             delivery_info = delivery_info_result.scalars().first()
             
@@ -384,47 +537,42 @@ async def update_order_admin(
                     delivery_info.boxberry_point_address = order_data.delivery_info.boxberry_point_address
                     changes_made = True
                 if order_data.delivery_info.delivery_cost is not None:
+                    # Если изменяется стоимость доставки
+                    old_delivery_cost = delivery_info.delivery_cost
                     delivery_info.delivery_cost = order_data.delivery_info.delivery_cost
+                    
+                    # Пересчитываем общую сумму заказа с новой стоимостью доставки
+                    if old_delivery_cost != order_data.delivery_info.delivery_cost:
+                        # Вычитаем старую стоимость доставки и добавляем новую
+                        updated_order.total_price = updated_order.total_price - old_delivery_cost + order_data.delivery_info.delivery_cost
+                        logger.info(f"Пересчитана общая сумма заказа: старая доставка {old_delivery_cost}, новая доставка {order_data.delivery_info.delivery_cost}, новая сумма {updated_order.total_price}")
+                    
                     changes_made = True
                 if order_data.delivery_info.tracking_number is not None:
                     delivery_info.tracking_number = order_data.delivery_info.tracking_number
                     changes_made = True
-                    logger.info("Обновлен трек-номер для заказа %s: %s", order_id, order_data.delivery_info.tracking_number)
+                    logger.info("Обновлен трек-номер для заказа %s: %s", updated_order.id, order_data.delivery_info.tracking_number)
                 if order_data.delivery_info.label_url_boxberry is not None:
                     delivery_info.label_url_boxberry = order_data.delivery_info.label_url_boxberry
                     changes_made = True
-            else:
-                # Если информация о доставке отсутствует, создаем её
-                delivery_info = DeliveryInfoModel(
-                    order_id=order_id,
-                    delivery_type=order_data.delivery_info.delivery_type or "boxberry_courier",
-                    boxberry_point_id=order_data.delivery_info.boxberry_point_id,
-                    boxberry_point_address=order_data.delivery_info.boxberry_point_address,
-                    delivery_cost=order_data.delivery_info.delivery_cost or 0,
-                    tracking_number=order_data.delivery_info.tracking_number,
-                    label_url_boxberry=order_data.delivery_info.label_url_boxberry
-                )
-                session.add(delivery_info)
-                changes_made = True
-                logger.info("Создана новая запись информации о доставке для заказа %s", order_id)
         
         # Обновляем статус заказа, если он предоставлен
-        if order_data.status_id is not None and order_data.status_id != order.status_id:
+        if order_data.status_id is not None and order_data.status_id != updated_order.status_id:
             # Проверяем существование статуса
-            status = await session.get(OrderStatusModel, order_data.status_id)
-            if not status:
+            status_order = await session.get(OrderStatusModel, order_data.status_id)
+            if not status_order:
                 logger.error("Статус с ID %s не найден", order_data.status_id)
                 raise ValueError(f"Статус с ID {order_data.status_id} не найден")
             
             # Устанавливаем новый статус
-            order.status_id = order_data.status_id
+            updated_order.status_id = order_data.status_id
             changes_made = True
             
             # Добавляем запись в историю статусов
             status_note = order_data.comment if order_data.comment else "Статус обновлен администратором"
             await OrderStatusHistoryModel.add_status_change(
                 session=session,
-                order_id=order.id,
+                order_id=updated_order.id,
                 status_id=order_data.status_id,
                 changed_by_user_id=current_user["user_id"],
                 notes=status_note
@@ -444,7 +592,7 @@ async def update_order_admin(
             if items_to_add or items_to_update or items_to_remove:
                 # Вызываем сервисную функцию для обновления товаров
                 updated_order = await update_order_items(
-                    order_id=order_id,
+                    order_id=updated_order.id,
                     items_to_add=items_to_add,
                     items_to_update=items_to_update,
                     items_to_remove=items_to_remove,
@@ -456,30 +604,27 @@ async def update_order_admin(
                     raise HTTPException(status_code=400, detail="Ошибка при обновлении элементов заказа")
                 
                 # Обновляем текущий заказ данными о товарах
-                order = updated_order
+                updated_order = await get_order_with_all_relations(session, updated_order.id)
                 changes_made = True
         
         if changes_made:
             # Обновляем дату обновления заказа
-            order.updated_at = datetime.utcnow()
+            updated_order.updated_at = datetime.utcnow()
             
             # Коммитим изменения
             await session.commit()
             
             # Инвалидируем кэш заказа
-            await invalidate_order_cache(order_id)
+            await invalidate_order_cache(updated_order.id)
             # Инвалидируем кэш статистики, если изменился статус
-            if order_data.status_id is not None and order_data.status_id != order.status_id:
+            if order_data.status_id is not None and order_data.status_id != updated_order.status_id:
                 await invalidate_statistics_cache()
-            logger.info("Кэш заказа %s инвалидирован после обновления", order_id)
+            logger.info("Кэш заказа %s инвалидирован после обновления", updated_order.id)
         else:
-            logger.info("Не обнаружено изменений для заказа %s", order_id)
+            logger.info("Не обнаружено изменений для заказа %s", updated_order.id)
         
-        # Вручную запрашиваем заказ со всеми связанными данными
-        loaded_order = await get_order_by_id(session, order_id)
-        
-        # Преобразуем модель в схему
-        return OrderResponse.model_validate(loaded_order)
+        # Используем вспомогательную функцию для безопасного создания ответа
+        return await get_safe_order_response(session, updated_order.id)
     except ValueError as e:
         logger.error("Ошибка при обновлении заказа: %s", str(e))
         raise HTTPException(
@@ -624,7 +769,7 @@ async def update_order_status(
             detail=f"Произошла ошибка при обновлении статуса заказа: {str(e)}",
         ) from e
 
-@router.post("/{order_id}/items", response_model=OrderItemsUpdateResponse)
+@router.post("/{order_id}/items", response_model=OrderDetailResponseWithPromo)
 async def update_order_items_endpoint(
     order_id: int,
     items_data: OrderItemsUpdate,
@@ -636,23 +781,23 @@ async def update_order_items_endpoint(
     
     try:
         # Получаем текущий статус заказа
-        order = await get_order_by_id(session, order_id)
-        if not order:
+        updated_order = await get_order_with_all_relations(session, order_id)
+        if not updated_order:
             raise HTTPException(status_code=404, detail="Заказ не найден")
         
         # Проверка статуса заказа - запрещаем редактировать товары для определенных статусов
         non_editable_statuses = ["Отправлен", "Доставлен", "Отменен", "Оплачен"]
-        if order.status and order.status.name in non_editable_statuses:
+        if updated_order.status and updated_order.status.name in non_editable_statuses:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Редактирование товаров невозможно для заказа в статусе '{order.status.name}'"
+                detail=f"Редактирование товаров невозможно для заказа в статусе '{updated_order.status.name}'"
             )
         
         # Проверка статуса оплаты - запрещаем редактировать товары для оплаченных заказов
-        if order.is_paid:
+        if updated_order.is_paid:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Редактирование товаров невозможно для оплаченных заказов"
+                detail="Редактирование товаров невозможно: заказ уже оплачен"
             )
         
         # Подготавливаем данные для обновления
@@ -662,7 +807,7 @@ async def update_order_items_endpoint(
         
         # Вызываем сервисную функцию
         updated_order = await update_order_items(
-            order_id=order_id,
+            order_id=updated_order.id,
             items_to_add=items_to_add,
             items_to_update=items_to_update,
             items_to_remove=items_to_remove,
@@ -713,27 +858,86 @@ async def update_order_items_endpoint(
             "order_number": f"{updated_order.id}-{updated_order.created_at.year}"
         }
         
-        # Добавляем данные о промокоде, если он есть
-        if hasattr(updated_order, 'promo_code') and updated_order.promo_code:
-            promo = updated_order.promo_code
-            order_dict["promo_code"] = {
-                "id": promo.id,
-                "code": promo.code,
-                "discount_percent": promo.discount_percent,
-                "discount_amount": promo.discount_amount,
-                "valid_until": promo.valid_until,
-                "is_active": promo.is_active,
-                "created_at": promo.created_at,
-                "updated_at": datetime.now()
+        # Получаем промокод отдельным запросом если необходимо
+        if updated_order.promo_code_id:
+            promo_result = await session.execute(select(PromoCodeModel).where(PromoCodeModel.id == updated_order.promo_code_id))
+            promo = promo_result.scalar_one_or_none()
+            if promo:
+                order_dict["promo_code"] = {
+                    "id": promo.id,
+                    "code": promo.code,
+                    "discount_percent": promo.discount_percent,
+                    "discount_amount": promo.discount_amount,
+                    "valid_until": promo.valid_until,
+                    "is_active": promo.is_active,
+                    "created_at": promo.created_at,
+                    "updated_at": datetime.now()
+                }
+        
+        # Получаем информацию о доставке отдельным запросом
+        delivery_query = select(DeliveryInfoModel).where(DeliveryInfoModel.order_id == updated_order.id)
+        delivery_result = await session.execute(delivery_query)
+        delivery_info = delivery_result.scalar_one_or_none()
+        
+        if delivery_info:
+            order_dict["delivery_info"] = {
+                "id": delivery_info.id,
+                "order_id": delivery_info.order_id,
+                "delivery_type": delivery_info.delivery_type,
+                "boxberry_point_id": delivery_info.boxberry_point_id,
+                "boxberry_point_address": delivery_info.boxberry_point_address,
+                "delivery_cost": delivery_info.delivery_cost,
+                "tracking_number": delivery_info.tracking_number,
+                "label_url_boxberry": delivery_info.label_url_boxberry
             }
         
-        return OrderItemsUpdateResponse(success=True, order=order_dict)
+        # Получаем историю статусов отдельным запросом
+        status_history_query = select(OrderStatusHistoryModel).where(
+            OrderStatusHistoryModel.order_id == updated_order.id
+        ).options(selectinload(OrderStatusHistoryModel.status))
+        status_history_result = await session.execute(status_history_query)
+        status_history_items = status_history_result.scalars().all()
+        
+        # Формируем историю статусов вручную
+        order_dict["status_history"] = []
+        for history in status_history_items:
+            history_dict = {
+                "id": history.id,
+                "order_id": history.order_id,
+                "status_id": history.status_id,
+                "changed_at": history.changed_at,
+                "changed_by_user_id": history.changed_by_user_id,
+                "notes": history.notes,
+            }
+            
+            if history.status:
+                history_dict["status"] = {
+                    "id": history.status.id,
+                    "name": history.status.name,
+                    "description": history.status.description,
+                    "color": history.status.color,
+                    "allow_cancel": history.status.allow_cancel,
+                    "is_final": history.status.is_final,
+                    "sort_order": history.status.sort_order
+                }
+            else:
+                history_dict["status"] = None
+                
+            order_dict["status_history"].append(history_dict)
+        
+        # Получаем все необходимые поля из модели напрямую
+        order_dict["personal_data_agreement"] = updated_order.personal_data_agreement
+        order_dict["is_payment_on_delivery"] = getattr(updated_order, 'is_payment_on_delivery', True)
+        order_dict["receive_notifications"] = getattr(updated_order, 'receive_notifications', None)
+        
+        # Создаем и возвращаем ответ из словаря вместо прямой валидации модели
+        return OrderDetailResponseWithPromo.model_validate(order_dict)
     except (HTTPException, ValueError, AttributeError, KeyError) as e:
         logger.error("Ошибка при обновлении элементов заказа: %s", str(e))
-        return OrderItemsUpdateResponse(
-            success=False, 
-            errors={"message": f"Ошибка при обновлении элементов заказа: {str(e)}"}
-        ) 
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ошибка при обновлении элементов заказа: {str(e)}"
+        )
 
 @router.post("/batch-status", response_model=List[OrderResponse])
 async def update_batch_status(
@@ -1503,3 +1707,32 @@ async def generate_orders_report(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при генерации отчета"
         ) from e
+
+
+@router.post("/{order_id}/payment-status", response_model=OrderResponse,dependencies=[Depends(get_admin_user)])
+async def update_order_payment_status(
+    order_id: int = Path(..., ge=1),
+    payment_data: dict = Body(...),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Обновить статус оплаты заказа (is_paid) отдельно от других изменений.
+    """
+    try:
+        order = await get_order_by_id(session, order_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Заказ с ID {order_id} не найден")
+        is_paid = payment_data.get("is_paid")
+        if is_paid is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Поле is_paid обязательно")
+        # Можно добавить бизнес-валидацию, если нужно
+        order.is_paid = bool(is_paid)
+        await session.commit()
+        await invalidate_order_cache(order_id)
+        updated_order = await get_order_by_id(session, order_id)
+        return OrderResponse.model_validate(updated_order)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Ошибка при обновлении статуса оплаты заказа: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ошибка при обновлении оплаты: {str(e)}")

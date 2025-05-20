@@ -1607,30 +1607,8 @@ const handleCloseBoxberryParcelModal = () => {
               <div className="mt-4">
                 <div className="d-flex justify-content-between align-items-center mb-2">
                   <h6 className="mb-0">Информация о доставке</h6>
-                  <Button 
-                    variant="outline-primary" 
-                    size="sm"
-                    onClick={() => setShowDeliveryForm(!showDeliveryForm)}
-                    disabled={order.is_paid || (order.status && ["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name))}
-                    title={
-                      order.is_paid && order.status && !["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name) ? 
-                        "Невозможно изменить информацию о доставке для оплаченного заказа" : 
-                        order.status && ["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name) ?
-                          `Невозможно изменить информацию о доставке для заказа в статусе "${order.status.name}"` :
-                          "Изменить информацию о доставке"
-                    }
-                  >
-                    {showDeliveryForm ? "Отменить" : "Изменить"}
-                  </Button>
+                  {/* Кнопка 'Изменить' убрана, теперь всё редактируется через EditOrderModal */}
                 </div>
-                
-                {(order.is_paid || (order.status && ["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name))) && !showDeliveryForm && (
-                  <Alert variant="info" className="mb-3">
-                    {order.is_paid && order.status && !["Оплачен", "Отправлен", "Доставлен", "Отменен"].includes(order.status.name) ? 
-                      "Нельзя изменить информацию о доставке, так как заказ уже оплачен" : 
-                      `Нельзя изменить информацию о доставке для заказа в статусе "${order.status.name}"`}
-                  </Alert>
-                )}
                 
                 {showDeliveryForm ? (
                   <Form className="mt-3">

@@ -358,6 +358,16 @@ export const adminAPI = {
       throw error;
     }
   },
+  
+  updateOrderItems: async (orderId, data) => {
+    try {
+      const response = await orderApi.post(`/admin/orders/${orderId}/items`, data);
+      return response.data;
+    } catch (error) {
+      console.error(`Ошибка в API updateOrderItems для заказа ${orderId}:`, error);
+      throw error;
+    }
+  },
 };
 
 // API для работы с контентом

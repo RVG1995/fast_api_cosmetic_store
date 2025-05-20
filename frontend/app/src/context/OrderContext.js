@@ -701,33 +701,24 @@ export const OrderProvider = ({ children }) => {
   // Обновление статуса оплаты заказа (для администраторов)
   const updateOrderPaymentStatus = useCallback(async (orderId, isPaid) => {
     console.log('Запрос на обновление статуса оплаты заказа:', { orderId, isPaid });
-    
     // Проверяем права администратора
     const userData = user;
     const isAdmin = userData?.is_admin || userData?.is_super_admin;
     console.log('Проверка прав администратора:', { isAdmin, userData });
-    
     if (!isAdmin) {
       console.error('Попытка обновить статус оплаты заказа без прав администратора');
       setError('Для обновления статуса оплаты заказа необходимы права администратора');
       return null;
     }
-    
     setLoading(true);
     setError(null);
-    
     try {
-      // Используем PUT эндпоинт для обновления заказа
-      const url = `${ORDER_SERVICE_URL}/admin/orders/${orderId}`;
+      // Используем отдельный эндпоинт для смены оплаты
+      const url = `${ORDER_SERVICE_URL}/admin/orders/${orderId}/payment-status`;
       const config = getConfig();
       const updateData = { is_paid: isPaid };
-      
-      console.log('Отправка запроса на обновление статуса оплаты:', { url, updateData, config: { headers: config.headers } });
-      
-      // Отправляем PUT запрос
-      const response = await axios.put(url, updateData, config);
+      const response = await axios.post(url, updateData, config);
       console.log('Ответ на запрос обновления статуса оплаты:', { status: response.status, data: response.data });
-      
       if (response.status >= 200 && response.status < 300) {
         return response.data;
       } else {
@@ -738,7 +729,6 @@ export const OrderProvider = ({ children }) => {
     } catch (err) {
       console.error('Ошибка при обновлении статуса оплаты заказа:', err);
       let errorMessage = 'Не удалось обновить статус оплаты заказа';
-      
       if (err.response) {
         errorMessage = err.response.data.detail || errorMessage;
       } else if (err.request) {
@@ -746,7 +736,6 @@ export const OrderProvider = ({ children }) => {
       } else {
         errorMessage = err.message || errorMessage;
       }
-      
       setError(errorMessage);
       return null;
     } finally {

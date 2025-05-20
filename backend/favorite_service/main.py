@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await setup_database()
-
+    await cache_service.initialize()
     yield 
     logger.info("Закрытие Redis-соединений...")
 

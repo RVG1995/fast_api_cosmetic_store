@@ -1834,6 +1834,13 @@ const handleCloseBoxberryParcelModal = () => {
                             ) : (
                               <span className="text-muted">Не создан</span>
                             )}
+                            <p>
+                              <strong>Статус в доставке:</strong>{" "}
+                              {order.delivery_info?.status_in_delivery_service
+                                ? order.delivery_info.status_in_delivery_service
+                                : <span className="text-muted">—</span>
+                              }
+                            </p>
                           </div>
                           
                           <Button 

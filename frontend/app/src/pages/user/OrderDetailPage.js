@@ -493,6 +493,15 @@ const OrderDetailPage = () => {
                   </div>
                 )}
                 <div className="order-info-item mt-2">
+                  <div className="order-info-label">Статус доставки:</div>
+                  <div className="order-info-value">
+                    {order.delivery_info?.status_in_delivery_service
+                      ? order.delivery_info.status_in_delivery_service
+                      : <span className="text-muted">Заказ ещё не передан в доставку</span>
+                    }
+                  </div>
+                </div>
+                <div className="order-info-item mt-2">
                   <div className="order-info-label">Способ оплаты:</div>
                   <div className="order-info-value">
                     {order.is_payment_on_delivery ? 'Оплата при получении' : 'Оплата на сайте'}

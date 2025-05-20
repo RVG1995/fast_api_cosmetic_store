@@ -378,11 +378,6 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
                       <h5>{point.Name}</h5>
                       <p className="mb-1">{point.Address}</p>
                       <p className="mb-0 small text-muted">Режим работы: {point.WorkShedule}</p>
-                      {point.DeliveryPeriod && (
-                        <div className="pickup-point-delivery">
-                          <small>Срок доставки: {point.DeliveryPeriod} {getDeliveryPeriodText(point.DeliveryPeriod)}</small>
-                        </div>
-                      )}
                     </div>
                   </ListGroup.Item>
                 ))}

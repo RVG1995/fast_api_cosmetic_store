@@ -1063,7 +1063,7 @@ const CheckoutPage = () => {
                         role="status"
                         aria-hidden="true"
                       />
-                      <span className="ms-2">Оформление заказа...</span>
+                      <span className="ms-2">Оформить заказ</span>
                     </>
                   ) : (
                     "Оформить заказ"
@@ -1137,7 +1137,7 @@ const CheckoutPage = () => {
                       <div>Итого:</div>
                       <div>
                         {discountAmount > 0 && (
-                          <span className="old-price">{formatPrice(cartTotal)} ₽</span>
+                          <span className="old-price">{formatPrice(cartTotal + deliveryCost)} ₽</span>
                         )}
                         <strong className={discountAmount > 0 ? "new-price" : ""}>
                           {formatPrice(finalTotal)} ₽

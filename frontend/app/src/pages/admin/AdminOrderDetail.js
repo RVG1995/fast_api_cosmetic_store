@@ -1932,33 +1932,6 @@ const handleCloseBoxberryParcelModal = () => {
                       )}
                     </td>
                   </tr>
-                  <tr>
-                    <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
-                    <td>
-                      <strong>
-                        {formatPrice(
-                          // Если у нас есть расчет для новой стоимости доставки
-                          (calculatedDeliveryCost && deliveryData.delivery_type)
-                            ? (
-                                // Считаем стоимость товаров
-                                order.items.reduce((total, item) => total + (item.unit_price || item.product_price || 0) * item.quantity, 0)
-                                // И добавляем новую стоимость доставки
-                                + calculatedDeliveryCost.price
-                              )
-                            : // Иначе считаем сумму всех товаров + существующая стоимость доставки
-                              (
-                                order.items.reduce((total, item) => total + (item.unit_price || item.product_price || 0) * item.quantity, 0) +
-                                (order.delivery_info?.delivery_cost || 0)
-                              )
-                        )}
-                      </strong>
-                      {calculatedDeliveryCost && deliveryData.delivery_type && (
-                        <div className="text-muted small">
-                          (обновится после сохранения)
-                        </div>
-                      )}
-                    </td>
-                  </tr>
                   {order.discount_amount > 0 && (
                     <tr>
                       <td colSpan="4" className="text-end"><em>Скидка по промокоду {order.promo_code?.code && (
@@ -1970,6 +1943,32 @@ const handleCloseBoxberryParcelModal = () => {
                       <td>-{formatPrice(order.discount_amount)}</td>
                     </tr>
                   )}
+                  <tr>
+                    <td colSpan="4" className="text-end"><strong>Итого:</strong></td>
+                    <td>
+                      <strong>
+                        {formatPrice(
+                          (
+                            (calculatedDeliveryCost && deliveryData.delivery_type)
+                              ? (
+                                  order.items.reduce((total, item) => total + (item.unit_price || item.product_price || 0) * item.quantity, 0)
+                                  + calculatedDeliveryCost.price
+                                )
+                              : (
+                                  order.items.reduce((total, item) => total + (item.unit_price || item.product_price || 0) * item.quantity, 0)
+                                  + (order.delivery_info?.delivery_cost || 0)
+                                )
+                          )
+                          - (order.discount_amount || 0)
+                        )}
+                      </strong>
+                      {calculatedDeliveryCost && deliveryData.delivery_type && (
+                        <div className="text-muted small">
+                          (обновится после сохранения)
+                        </div>
+                      )}
+                    </td>
+                  </tr>
                 </tfoot>
               </Table>
             </Card.Body>

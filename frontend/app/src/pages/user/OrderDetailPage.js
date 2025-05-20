@@ -472,11 +472,6 @@ const OrderDetailPage = () => {
                     </div>
                   </Col>
                 </Row>
-                {/* Стоимость доставки */}
-                <div className="order-info-item mt-2">
-                  <div className="order-info-label">Стоимость доставки:</div>
-                  <div className="order-info-value">{formatPrice(order.delivery_info?.delivery_cost || order.delivery_cost || 0)}</div>
-                </div>
                 {/* Пункт выдачи Boxberry */}
                 {(order.delivery_info?.boxberry_point_address || order.boxberry_point_address) && (
                   <div className="order-info-item mt-2">
@@ -540,31 +535,38 @@ const OrderDetailPage = () => {
                   ))}
                 </tbody>
                 <tfoot>
-                {order.delivery_cost !== null && order.delivery_cost !== undefined && (
+                <tr>
+                    <td colSpan="3" className="text-end fst-italic"><strong>Стоимость товаров:</strong></td>
+                    <td className="text-end fst-italic">
+                      <span>
+                        {formatPrice(
+                          order.items.reduce((total, item) => total + (item.unit_price || item.product_price || 0) * item.quantity, 0)
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                {order.discount_amount > 0 && (
                     <tr>
-                      <td colSpan="3" className="text-end">Стоимость доставки:</td>
-                      <td className="text-end">{formatPrice(order.delivery_cost)}</td>
+                      <td colSpan="3" className="text-end fst-italic"><strong>Скидка по промокоду {order.promo_code?.code && (
+                          <span>
+                            ({order.promo_code.code}
+                            {order.promo_code.discount_percent && <span> - {order.promo_code.discount_percent}%</span>})
+                          </span>
+                        )}:</strong>
+                      </td>
+                      <td className="text-end fst-italic">-{formatPrice(order.discount_amount)}</td>
                     </tr>
                   )}
+                    <tr>
+                      <td colSpan="3" className="text-end fst-italic"><strong>Стоимость доставки:</strong></td>
+                      <td className="text-end">{formatPrice(order.delivery_info?.delivery_cost || order.delivery_cost || 0)}</td>
+                    </tr>
                   <tr>
                     <td colSpan="3" className="text-end fw-bold">Итого:</td>
                     <td className="text-end fw-bold order-total-price">
                       {formatPrice(order.total_price)}
                     </td>
                   </tr>
-                  {order.discount_amount > 0 && (
-                    <tr>
-                      <td colSpan="3" className="text-end fst-italic">
-                        Скидка по промокоду {order.promo_code?.code && (
-                          <span>
-                            ({order.promo_code.code}
-                            {order.promo_code.discount_percent && <span> - {order.promo_code.discount_percent}%</span>})
-                          </span>
-                        )}:
-                      </td>
-                      <td className="text-end fst-italic">-{formatPrice(order.discount_amount)}</td>
-                    </tr>
-                  )}
                 </tfoot>
               </Table>
               

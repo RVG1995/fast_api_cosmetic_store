@@ -457,7 +457,12 @@ const CartPage = () => {
               </div>
               <div className="d-flex justify-content-between mb-2">
                 <span>Доставка:</span>
-                <span className="text-success">Бесплатно</span>
+                <span title="Стоимость доставки будет рассчитана на странице оформления заказа" style={{ cursor: 'help' }}>
+                  <i className="bi bi-truck"></i> —
+                </span>
+              </div>
+              <div className="text-muted small text-end" style={{ marginTop: '-8px' }}>
+                Стоимость будет рассчитана на следующем шаге
               </div>
               <hr />
               <div className="d-flex justify-content-between mb-3">

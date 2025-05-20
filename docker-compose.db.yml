@@ -102,6 +102,23 @@ services:
       - POSTGRES_DB=notifications_db
       - TZ=Europe/Moscow
 
+  favorite-db:
+    image: postgres:15
+    container_name: favorite-db
+    restart: always
+    ports:
+      - "5438:5432"
+    volumes:
+      - favorite-db-data:/var/lib/postgresql/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=favorite_db
+      - TZ=Europe/Moscow
+
+
   # Redis для cart_service (для Celery)
   redis:
     image: redis:alpine
@@ -138,3 +155,4 @@ volumes:
   review-db-data:
   notifications-db-data:
   redis-data:
+  favorite-db-data:

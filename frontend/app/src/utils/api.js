@@ -27,6 +27,7 @@ const cartApi = createApiInstance(API_URLS.CART_SERVICE);
 const orderApi = createApiInstance(API_URLS.ORDER_SERVICE);
 const reviewApi = createApiInstance(API_URLS.REVIEW_SERVICE);
 const deliveryApi = createApiInstance(API_URLS.DELIVERY_SERVICE);
+const favoriteApi = createApiInstance(API_URLS.FAVORITE_SERVICE);
 
 // Интерцептор для обработки ошибок и отладки
 const setupInterceptors = (api, serviceName) => {
@@ -100,6 +101,7 @@ setupInterceptors(cartApi, 'Cart');
 setupInterceptors(orderApi, 'Order');
 setupInterceptors(reviewApi, 'Review');
 setupInterceptors(deliveryApi, 'Delivery');
+setupInterceptors(favoriteApi, 'Favorite');
 
 // API для работы с аутентификацией
 export const authAPI = {
@@ -775,6 +777,12 @@ export const productAPI = {
     const response = await productApi.post('/products/open-batch', { product_ids: ids });
     return response.data;
   },
+
+  getProductsByIds: async (ids) => {
+    if (!ids || !ids.length) return [];
+    const resp = await productApi.post(`/products/open-batch`, { product_ids: ids });
+    return resp.data.items || resp.data || [];
+  },
 };
 
 // Экспортируем объект с методами для работы с корзиной
@@ -1262,7 +1270,20 @@ const apiExports = {
   cartAPI,
   cartService,
   reviewAPI,
-  deliveryAPI
+  deliveryAPI,
+  favoriteAPI: {
+    getFavorites: async () => {
+      return (await favoriteApi.get('/')).data;
+    },
+    addFavorite: async (productId) => {
+      return (await favoriteApi.post('/', { product_id: productId })).data;
+    },
+    removeFavorite: async (productId) => {
+      return (await favoriteApi.delete(`/${productId}`)).data;
+    },
+  }
 };
+
+export const favoriteAPI = apiExports.favoriteAPI;
 
 export default apiExports; 

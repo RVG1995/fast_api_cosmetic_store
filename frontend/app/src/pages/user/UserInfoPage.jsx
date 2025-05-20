@@ -405,6 +405,11 @@ function UserInfoPage() {
                   </Link>
                 </div>
               </div>
+              <div className="mb-3">
+                <Link to="/user/favorites" className="btn btn-outline-danger">
+                  <i className="bi bi-heart me-1"></i> Мои избранные товары
+                </Link>
+              </div>
             </div>
           </div>
         </div>

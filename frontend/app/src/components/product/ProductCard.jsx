@@ -7,11 +7,12 @@ import SimpleAddToCartButton from '../cart/SimpleAddToCartButton';
 import ProductRating from '../reviews/ProductRating';
 import { API_URLS } from '../../utils/constants';
 import './ProductCard.css';
+import FavoriteButton from '../atoms/FavoriteButton';
 
 /**
  * Компонент для отображения карточки товара в списке товаров
  */
-const ProductCard = memo(({ product }) => {
+const ProductCard = memo(({ product, isFavorite, onToggleFavorite }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [imageError, setImageError] = useState(false);
   
@@ -58,34 +59,43 @@ const ProductCard = memo(({ product }) => {
   
   return (
     <Card className="product-card h-100">
-      <Link to={`/products/${product.id}`} className="product-image-container">
-        {!imageError && imageUrl ? (
-          <ProgressiveImage 
-            src={imageUrl}
-            alt={product.name}
-            className="product-image"
-            placeholderClassName="product-image-placeholder"
+      <div className="relative">
+        <Link to={`/products/${product.id}`} className="product-image-container">
+          {!imageError && imageUrl ? (
+            <ProgressiveImage 
+              src={imageUrl}
+              alt={product.name}
+              className="product-image"
+              placeholderClassName="product-image-placeholder"
+            />
+          ) : (
+            <div className="no-image-placeholder">
+              <i className="bi bi-image text-muted"></i>
+              <span>Нет изображения</span>
+            </div>
+          )}
+          
+          {/* Бейджи для акций/скидок */}
+          {product.discount_percent > 0 && (
+            <Badge bg="danger" className="discount-badge">
+              -{product.discount_percent}%
+            </Badge>
+          )}
+          
+          {product.is_new && (
+            <Badge bg="success" className="new-badge">
+              Новинка
+            </Badge>
+          )}
+        </Link>
+        <div className="absolute top-2 right-2 z-10">
+          <FavoriteButton
+            productId={product.id}
+            isFavorite={isFavorite}
+            onToggle={onToggleFavorite}
           />
-        ) : (
-          <div className="no-image-placeholder">
-            <i className="bi bi-image text-muted"></i>
-            <span>Нет изображения</span>
-          </div>
-        )}
-        
-        {/* Бейджи для акций/скидок */}
-        {product.discount_percent > 0 && (
-          <Badge bg="danger" className="discount-badge">
-            -{product.discount_percent}%
-          </Badge>
-        )}
-        
-        {product.is_new && (
-          <Badge bg="success" className="new-badge">
-            Новинка
-          </Badge>
-        )}
-      </Link>
+        </div>
+      </div>
       
       <Card.Body className="d-flex flex-column">
         <div className="brand-category mb-1">
@@ -171,7 +181,9 @@ ProductCard.propTypes = {
     discount_percent: PropTypes.number,
     is_new: PropTypes.bool,
     brand_name: PropTypes.string
-  }).isRequired
+  }).isRequired,
+  isFavorite: PropTypes.bool.isRequired,
+  onToggleFavorite: PropTypes.func.isRequired
 };
 
 export default ProductCard; 

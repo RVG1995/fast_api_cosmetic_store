@@ -31,6 +31,7 @@ import ResetPasswordRequestPage from './pages/auth/ResetPasswordRequestPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import { NotificationProvider } from "./context/NotificationContext";
 import NotificationSettingsPage from './pages/user/NotificationSettingsPage';
+import FavoritesPage from './pages/user/FavoritesPage';
 // Импорт стилей перемещен в начало файла
 import './styles/App.css';
 
@@ -173,6 +174,14 @@ function App() {
                           <NotificationSettingsPage />
                         </PrivateRoute>
                       } />
+                      <Route 
+                        path="user/favorites" 
+                        element={
+                          <PrivateRoute>
+                            <FavoritesPage />
+                          </PrivateRoute>
+                        } 
+                      />
 
                       {/* Административные маршруты с ленивой загрузкой */}
                       <Route 

@@ -9,6 +9,8 @@ import CartUpdater from '../components/cart/CartUpdater';
 import ProductRating from '../components/reviews/ProductRating';
 import { useReviews } from '../context/ReviewContext';
 import { Badge } from 'react-bootstrap';
+import FavoriteButton from '../components/atoms/FavoriteButton';
+import { favoriteAPI } from '../utils/api';
 
 const HomePage = () => {
   const [products, setProducts] = useState([]);
@@ -28,6 +30,7 @@ const HomePage = () => {
   });
 
   const { fetchBatchProductRatings, productRatings } = useReviews();
+  const [favorites, setFavorites] = useState([]);
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {
@@ -227,6 +230,19 @@ const HomePage = () => {
     }
   }, [products, fetchBatchProductRatings]);
 
+  useEffect(() => {
+    if (!isAdmin) {
+      favoriteAPI.getFavorites().then(setFavorites).catch(() => setFavorites([]));
+    }
+  }, [isAdmin]);
+
+  const isFavorite = (productId) => favorites.some(f => f.product_id === productId);
+  const handleToggleFavorite = async (productId, willBeFavorite) => {
+    if (willBeFavorite) await favoriteAPI.addFavorite(productId);
+    else await favoriteAPI.removeFavorite(productId);
+    setFavorites(await favoriteAPI.getFavorites());
+  };
+
   if (loading) {
     return (
       <div className="container">
@@ -290,7 +306,14 @@ const HomePage = () => {
             <div className="product-cards row g-4">
               {displayProducts.map(product => (
                 <div key={product.id} className="col-md-3">
-                  <div className="product-card">
+                  <div className="product-card position-relative">
+                    <div className="position-absolute top-0 end-0 p-2 z-2">
+                      <FavoriteButton
+                        productId={product.id}
+                        isFavorite={isFavorite(product.id)}
+                        onToggle={handleToggleFavorite}
+                      />
+                    </div>
                     <Link to={`/products/${product.id}`} className="product-image-link">
                       <div className="product-image">
                         {product.image ? (

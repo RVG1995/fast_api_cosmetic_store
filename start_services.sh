@@ -257,6 +257,11 @@ if check_directory "$BACKEND_DIR"; then
         start_service "delivery_service" "$BACKEND_DIR/delivery_service" "python main.py"
         sleep 2
     fi
+    # Запуск сервиса избранных
+    if [ -d "$BACKEND_DIR/favorite_service" ]; then
+        start_service "favorite_service" "$BACKEND_DIR/favorite_service" "python main.py"
+        sleep 2
+    fi
     
     # Деактивация виртуального окружения не требуется, т.к. каждый сервис запускается в своем подпроцессе
 else

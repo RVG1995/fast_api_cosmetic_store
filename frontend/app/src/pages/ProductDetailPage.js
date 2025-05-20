@@ -10,6 +10,8 @@ import ReviewForm from '../components/reviews/ReviewForm';
 import ReviewStats from '../components/reviews/ReviewStats';
 import { useAuth } from '../context/AuthContext';
 import { useReviews } from '../context/ReviewContext';
+import FavoriteButton from '../components/atoms/FavoriteButton';
+import { favoriteAPI } from '../utils/api';
 
 const ProductDetailPage = () => {
   const { productId } = useParams();
@@ -21,6 +23,7 @@ const ProductDetailPage = () => {
   const [reviewReloadKey, setReviewReloadKey] = useState(0);
   const { user } = useAuth();
   const { fetchBatchProductRatings } = useReviews();
+  const [isFavorite, setIsFavorite] = useState(false);
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {
@@ -124,6 +127,21 @@ const ProductDetailPage = () => {
     }
   }, [relatedProducts, fetchBatchProductRatings]);
 
+  useEffect(() => {
+    if (product) {
+      favoriteAPI.getFavorites().then(favs => {
+        setIsFavorite(favs.some(f => f.product_id === product.id));
+      });
+    }
+  }, [product]);
+
+  const handleToggleFavorite = async (productId, willBeFavorite) => {
+    if (willBeFavorite) await favoriteAPI.addFavorite(productId);
+    else await favoriteAPI.removeFavorite(productId);
+    const favs = await favoriteAPI.getFavorites();
+    setIsFavorite(favs.some(f => f.product_id === productId));
+  };
+
   if (loading) {
     return (
       <div className="product-detail-container loading">
@@ -193,7 +211,14 @@ const ProductDetailPage = () => {
         </div>
 
         <div className="product-detail-info">
-          <h1 className="product-detail-title">{product.name}</h1>
+          <h1 className="product-detail-title flex items-center gap-2">
+            {product.name}
+            <FavoriteButton
+              productId={product.id}
+              isFavorite={isFavorite}
+              onToggle={handleToggleFavorite}
+            />
+          </h1>
           
           <div className="product-detail-price">
             <span className="price-value">{product.price} ₽</span>

@@ -9,6 +9,8 @@ import FilterSidebar from '../components/filters/FilterSidebar';
 import Pagination from '../components/common/Pagination';
 import '../styles/ProductsPage.css';
 import { useReviews } from '../context/ReviewContext';
+import FavoriteButton from '../components/atoms/FavoriteButton';
+import { favoriteAPI } from '../utils/api';
 
 /**
  * Страница со списком товаров и фильтрацией
@@ -25,6 +27,7 @@ const ProductsPage = () => {
   const [subcategories, setSubcategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [countries, setCountries] = useState([]);
+  const [favorites, setFavorites] = useState([]);
   
   const { fetchBatchProductRatings, productRatings } = useReviews();
   
@@ -229,6 +232,17 @@ const ProductsPage = () => {
     return products;
   }, [products, filters.sort, filters.page, filters.limit, productRatings]);
   
+  useEffect(() => {
+    favoriteAPI.getFavorites().then(setFavorites).catch(() => setFavorites([]));
+  }, []);
+
+  const isFavorite = (productId) => favorites.some(f => f.product_id === productId);
+  const handleToggleFavorite = async (productId, willBeFavorite) => {
+    if (willBeFavorite) await favoriteAPI.addFavorite(productId);
+    else await favoriteAPI.removeFavorite(productId);
+    setFavorites(await favoriteAPI.getFavorites());
+  };
+  
   return (
     <Container className="products-page py-4">
       <h1 className="mb-4">Каталог товаров</h1>
@@ -285,8 +299,12 @@ const ProductsPage = () => {
             <>
               <Row xs={1} sm={2} md={2} lg={3} className="g-4 mb-4">
                 {displayProducts.map(product => (
-                  <Col key={product.id}>
-                    <ProductCard product={product} />
+                  <Col key={product.id} md={3} className="mb-4">
+                    <ProductCard
+                      product={product}
+                      isFavorite={isFavorite(product.id)}
+                      onToggleFavorite={handleToggleFavorite}
+                    />
                   </Col>
                 ))}
               </Row>

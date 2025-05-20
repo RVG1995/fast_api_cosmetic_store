@@ -85,6 +85,7 @@ class DeliveryInfoModel(Base):
     delivery_cost: Mapped[float] = mapped_column(Float, nullable=False)  # Стоимость доставки
     tracking_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Номер отслеживания
     label_url_boxberry: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # URL на этикетку Boxberry
+    status_in_delivery_service: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Статус в доставке
     
     # Добавляем обратное отношение к OrderModel
     order = relationship("OrderModel", back_populates="delivery_info")

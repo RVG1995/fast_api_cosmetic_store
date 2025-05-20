@@ -164,7 +164,8 @@ async def get_safe_order_response(session, order_id):
             "boxberry_point_address": delivery_info.boxberry_point_address,
             "delivery_cost": delivery_info.delivery_cost,
             "tracking_number": delivery_info.tracking_number,
-            "label_url_boxberry": delivery_info.label_url_boxberry
+            "label_url_boxberry": delivery_info.label_url_boxberry,
+            "status_in_delivery_service": delivery_info.status_in_delivery_service
         }
     
     # Получаем историю статусов отдельным запросом

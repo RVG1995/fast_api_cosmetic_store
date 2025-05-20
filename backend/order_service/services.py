@@ -140,7 +140,8 @@ async def create_order(
         boxberry_point_id=order_data.delivery_info.boxberry_point_id,
         boxberry_point_address=order_data.delivery_info.boxberry_point_address,
         delivery_cost=order_data.delivery_info.delivery_cost,
-        tracking_number=order_data.delivery_info.tracking_number
+        tracking_number=order_data.delivery_info.tracking_number,
+        status_in_delivery_service=order_data.delivery_info.status_in_delivery_service
     )
     session.add(delivery_info)
     
@@ -390,7 +391,8 @@ async def update_order(
                 boxberry_point_id=order_data.delivery_info.boxberry_point_id,
                 boxberry_point_address=order_data.delivery_info.boxberry_point_address,
                 delivery_cost=order_data.delivery_info.delivery_cost or 0,
-                tracking_number=order_data.delivery_info.tracking_number
+                tracking_number=order_data.delivery_info.tracking_number,
+                status_in_delivery_service=order_data.delivery_info.status_in_delivery_service
             )
             session.add(delivery_info)
     

@@ -82,6 +82,7 @@ class DeliveryInfoCreate(BaseModel):
     delivery_cost: float = Field(..., description="Стоимость доставки")
     tracking_number: Optional[str] = Field(None, description="Номер отслеживания")
     label_url_boxberry: Optional[str] = Field(None, description="URL на этикетку Boxberry")
+    status_in_delivery_service: Optional[str] = Field(None, description="Статус в доставке")
     
     @field_validator('delivery_type')
     def validate_delivery_type(cls, v):
@@ -255,7 +256,8 @@ class DeliveryInfoUpdate(BaseModel):
     label_url_boxberry: Optional[str] = Field(None, description="URL на этикетку Boxberry")
     delivery_address: Optional[str] = Field(None, description="Адрес доставки")
     is_payment_on_delivery: Optional[bool] = Field(None, description="Оплата при получении")
-    
+    status_in_delivery_service: Optional[str] = Field(None, description="Статус в доставке")
+
     @field_validator('delivery_type')
     def validate_delivery_type(cls, v):
         """Валидирует тип доставки для обновления информации о доставке.
@@ -364,7 +366,7 @@ class DeliveryInfoResponse(BaseModel):
     delivery_cost: float
     tracking_number: Optional[str] = None
     label_url_boxberry: Optional[str] = None
-    
+    status_in_delivery_service: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 class OrderStatusResponse(BaseModel):
@@ -736,6 +738,21 @@ class DeliveryInfo(BaseModel):
     boxberry_point_id: Optional[int] = Field(None, description="ID пункта выдачи BoxBerry")
     delivery_cost: float = Field(..., description="Стоимость доставки в рублях")
     tracking_number: Optional[str] = Field(None, description="Номер отслеживания посылки")
-    
+    status_in_delivery_service: Optional[str] = Field(None, description="Статус в доставке")
     model_config = ConfigDict(from_attributes=True)
+
+class BoxberryOrderResponse(BaseModel):
+    """Схема для ответа с заказом Boxberry."""
+    order_id: int
+    tracking_number: str
     
+class BoxberryStatusUpdateRequest(BaseModel):
+    """Схема для запроса на обновление статуса доставки для заказа Boxberry."""
+    order_id: int
+    tracking_number: str
+    status_in_delivery_service: str
+
+class BoxberryStatusUpdateResponse(BaseModel):
+    """Схема для ответа на запрос на обновление статуса доставки для заказа Boxberry."""
+    order_id: int
+    updated: bool

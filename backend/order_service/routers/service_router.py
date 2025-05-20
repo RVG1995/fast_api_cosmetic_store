@@ -2,13 +2,14 @@
 Предоставляет интерфейсы для взаимодействия между микросервисами."""
 
 import logging
-from typing import Dict, Any
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, not_
 
 from database import get_db
-from models import PromoCodeModel
-from schemas import OrderDetailResponse, OrderDetailResponseWithPromo, PromoCodeResponse
+from models import PromoCodeModel, OrderModel, DeliveryInfoModel, OrderStatusModel
+from schemas import OrderDetailResponse, OrderDetailResponseWithPromo, PromoCodeResponse, BoxberryOrderResponse, BoxberryStatusUpdateRequest, BoxberryStatusUpdateResponse
 from services import get_order_by_id
 from dependencies import verify_service_jwt
 from cache import CacheKeys, get_cached_data, set_cached_data, DEFAULT_CACHE_TTL
@@ -93,3 +94,70 @@ async def get_order_service(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при получении информации о заказе",
         ) from e 
+    
+
+@router.get("/boxberry_delivery", response_model=List[BoxberryOrderResponse], dependencies=[Depends(verify_service_jwt)])
+async def get_orders_service_boxberry_delivery(
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Получить все boxberry заказы, не отменённые и не доставленные, с tracking_number.
+    Возвращает order_id и tracking_number.
+    """
+    try:
+        # Получаем id статусов "Отменен" и "Доставлен"
+        canceled_status = await session.execute(
+            select(OrderStatusModel.id).where(OrderStatusModel.name == "Отменен")
+        )
+        delivered_status = await session.execute(
+            select(OrderStatusModel.id).where(OrderStatusModel.name == "Доставлен")
+        )
+        canceled_id = canceled_status.scalar_one_or_none()
+        delivered_id = delivered_status.scalar_one_or_none()
+
+        # Делаем запрос
+        query = (
+            select(OrderModel.id, DeliveryInfoModel.tracking_number)
+            .join(DeliveryInfoModel, DeliveryInfoModel.order_id == OrderModel.id)
+            .where(
+                DeliveryInfoModel.delivery_type.in_(["boxberry_pickup_point", "boxberry_courier"]),
+                not_(OrderModel.status_id.in_([canceled_id, delivered_id])),
+                DeliveryInfoModel.tracking_number.isnot(None),
+                DeliveryInfoModel.tracking_number != ''
+            )
+        )
+        result = await session.execute(query)
+        orders = [BoxberryOrderResponse(order_id=row.id, tracking_number=row.tracking_number) for row in result.all()]
+        return orders
+    except Exception as e:
+        logger.error("Ошибка при получении boxberry заказов: %s", str(e))
+        raise HTTPException(status_code=500, detail="Ошибка при получении boxberry заказов") from e
+    
+
+
+
+@router.post("/boxberry_delivery/update_status", response_model=List[BoxberryStatusUpdateResponse], dependencies=[Depends(verify_service_jwt)])
+async def update_boxberry_delivery_status(
+    updates: List[BoxberryStatusUpdateRequest],
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Массовое обновление status_in_delivery_service для Boxberry по order_id и tracking_number.
+    Вход: [{order_id, tracking_number, status_in_delivery_service}]
+    Возвращает список с результатом для каждого заказа.
+    """
+    results = []
+    for update in updates:
+        query = select(DeliveryInfoModel).where(
+            DeliveryInfoModel.order_id == update.order_id,
+            DeliveryInfoModel.tracking_number == update.tracking_number
+        )
+        res = await session.execute(query)
+        delivery_info = res.scalar_one_or_none()
+        if delivery_info:
+            delivery_info.status_in_delivery_service = update.status_in_delivery_service
+            results.append(BoxberryStatusUpdateResponse(order_id=update.order_id, updated=True))
+        else:
+            results.append(BoxberryStatusUpdateResponse(order_id=update.order_id, updated=False))
+    await session.commit()
+    return results

@@ -1,0 +1,1 @@
+from .update_delivery_statuses import cron_update_boxberry_statuses

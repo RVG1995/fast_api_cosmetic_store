@@ -24,6 +24,46 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+    
+
+@router.get("/boxberry_delivery", response_model=List[BoxberryOrderResponse], dependencies=[Depends(verify_service_jwt)])
+async def get_orders_service_boxberry_delivery(
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Получить все boxberry заказы, не отменённые и не доставленные, с tracking_number.
+    Возвращает order_id и tracking_number.
+    """
+    try:
+        # Получаем id статусов "Отменен" и "Доставлен"
+        canceled_status = await session.execute(
+            select(OrderStatusModel.id).where(OrderStatusModel.name == "Отменен")
+        )
+        delivered_status = await session.execute(
+            select(OrderStatusModel.id).where(OrderStatusModel.name == "Доставлен")
+        )
+        canceled_id = canceled_status.scalar_one_or_none()
+        delivered_id = delivered_status.scalar_one_or_none()
+
+        # Делаем запрос
+        query = (
+            select(OrderModel.id, DeliveryInfoModel.tracking_number)
+            .join(DeliveryInfoModel, DeliveryInfoModel.order_id == OrderModel.id)
+            .where(
+                DeliveryInfoModel.delivery_type.in_(["boxberry_pickup_point", "boxberry_courier"]),
+                not_(OrderModel.status_id.in_([canceled_id, delivered_id])),
+                DeliveryInfoModel.tracking_number.isnot(None),
+                DeliveryInfoModel.tracking_number != ''
+            )
+        )
+        result = await session.execute(query)
+        orders = [BoxberryOrderResponse(order_id=row.id, tracking_number=row.tracking_number) for row in result.all()]
+        return orders
+    except Exception as e:
+        logger.error("Ошибка при получении boxberry заказов: %s", str(e))
+        raise HTTPException(status_code=500, detail="Ошибка при получении boxberry заказов") from e
+
+
 @router.get("/{order_id}", response_model=OrderDetailResponseWithPromo, dependencies=[Depends(verify_service_jwt)])
 async def get_order_service(
     order_id: int = Path(..., ge=1),
@@ -93,48 +133,7 @@ async def get_order_service(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при получении информации о заказе",
-        ) from e 
-    
-
-@router.get("/boxberry_delivery", response_model=List[BoxberryOrderResponse], dependencies=[Depends(verify_service_jwt)])
-async def get_orders_service_boxberry_delivery(
-    session: AsyncSession = Depends(get_db),
-):
-    """
-    Получить все boxberry заказы, не отменённые и не доставленные, с tracking_number.
-    Возвращает order_id и tracking_number.
-    """
-    try:
-        # Получаем id статусов "Отменен" и "Доставлен"
-        canceled_status = await session.execute(
-            select(OrderStatusModel.id).where(OrderStatusModel.name == "Отменен")
-        )
-        delivered_status = await session.execute(
-            select(OrderStatusModel.id).where(OrderStatusModel.name == "Доставлен")
-        )
-        canceled_id = canceled_status.scalar_one_or_none()
-        delivered_id = delivered_status.scalar_one_or_none()
-
-        # Делаем запрос
-        query = (
-            select(OrderModel.id, DeliveryInfoModel.tracking_number)
-            .join(DeliveryInfoModel, DeliveryInfoModel.order_id == OrderModel.id)
-            .where(
-                DeliveryInfoModel.delivery_type.in_(["boxberry_pickup_point", "boxberry_courier"]),
-                not_(OrderModel.status_id.in_([canceled_id, delivered_id])),
-                DeliveryInfoModel.tracking_number.isnot(None),
-                DeliveryInfoModel.tracking_number != ''
-            )
-        )
-        result = await session.execute(query)
-        orders = [BoxberryOrderResponse(order_id=row.id, tracking_number=row.tracking_number) for row in result.all()]
-        return orders
-    except Exception as e:
-        logger.error("Ошибка при получении boxberry заказов: %s", str(e))
-        raise HTTPException(status_code=500, detail="Ошибка при получении boxberry заказов") from e
-    
-
-
+        ) from e    
 
 @router.post("/boxberry_delivery/update_status", response_model=List[BoxberryStatusUpdateResponse], dependencies=[Depends(verify_service_jwt)])
 async def update_boxberry_delivery_status(

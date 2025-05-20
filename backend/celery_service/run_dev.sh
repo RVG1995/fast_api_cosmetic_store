@@ -3,13 +3,13 @@
 # Установка переменных окружения для режима разработки
 export REDIS_HOST=localhost
 export REDIS_PORT=6379
-export REDIS_DB=0
+export REDIS_DB=8
 export REDIS_PASSWORD=""
 export AUTH_SERVICE_URL=http://localhost:8000
 export CART_SERVICE_URL=http://localhost:8002
 export ORDER_SERVICE_URL=http://localhost:8003
 export PRODUCT_SERVICE_URL=http://localhost:8001
-export LOG_LEVEL=DEBUG
+export LOG_LEVEL=INFO
 
 # Добавляем текущую директорию в PYTHONPATH
 export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$(pwd)"

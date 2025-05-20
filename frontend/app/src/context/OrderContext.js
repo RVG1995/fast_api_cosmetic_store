@@ -1227,7 +1227,10 @@ export const OrderProvider = ({ children }) => {
       console.error('Ошибка при обработке посылки Boxberry:', err);
       const errorMsg = err.response?.data?.detail || err.message || 'Ошибка при обработке посылки Boxberry';
       setError(errorMsg);
-      throw err;
+      return {
+        success: false,
+        error: errorMsg
+      };
     } finally {
       setLoading(false);
     }

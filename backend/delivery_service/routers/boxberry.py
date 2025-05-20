@@ -731,6 +731,11 @@ async def create_boxberry_parcel(
                     detail=f"Ошибка запроса к BoxBerry API: {response.text}"
                 )
                 
+    except HTTPException as e:
+        # Если это ошибка дублирования или валидации — возвращаем как есть
+        if "уже существует" in str(e.detail).lower():
+            raise HTTPException(status_code=409, detail=str(e.detail))
+        raise
     except Exception as e:
         logger.exception(f"Ошибка при {'обновлении' if 'updateByTrack' in order_data else 'создании'} посылки в BoxBerry: {str(e)}")
         raise HTTPException(

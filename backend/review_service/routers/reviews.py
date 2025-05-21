@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
 from database import get_session
@@ -12,8 +12,7 @@ from schema import (
 )
 from services import (
     create_product_review, create_store_review,
-    get_product_reviews, get_store_reviews,
-    add_review_reaction, get_product_review_stats, get_store_review_stats,
+    get_product_reviews, get_store_reviews, get_product_review_stats, get_store_review_stats,
     get_review_by_id, get_batch_product_review_stats
 )
 from cache import (

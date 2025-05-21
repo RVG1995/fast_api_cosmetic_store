@@ -1,4 +1,3 @@
-import os
 import httpx
 import logging
 from typing import Dict, List, Optional, Any
@@ -12,17 +11,18 @@ from math import ceil
 from cache import (
     cache_get, cache_set, invalidate_review_cache,
     invalidate_product_reviews_cache, invalidate_store_reviews_cache,
-    invalidate_user_reviews_cache, CACHE_KEYS, CACHE_TTL
+    invalidate_user_reviews_cache, CACHE_KEYS, CACHE_TTL,cache_service
 )
 from sqlalchemy.sql import select, func
 from config import settings, logger
+from auth_utils import get_service_token
+import asyncio
 
 # Загружаем переменные окружения
 load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("review_service.services")
 
 # URL других сервисов
 ORDER_SERVICE_URL = settings.ORDER_SERVICE_URL
@@ -61,7 +61,7 @@ class OrderApi:
     """Класс для взаимодействия с API сервиса заказов"""
     
     @staticmethod
-    async def check_user_can_review_product(user_id: int, product_id: int, token: Optional[str] = None) -> bool:
+    async def check_user_can_review_product(user_id: int, product_id: int) -> bool:
         """
         Проверка, может ли пользователь оставить отзыв на товар
         (заказал товар и статус заказа 'delivered')
@@ -74,20 +74,26 @@ class OrderApi:
             if cached_result is not None:
                 logger.debug(f"Результат проверки возможности оставить отзыв получен из кэша: user_id={user_id}, product_id={product_id}, result={cached_result}")
                 return cached_result
-                
-            headers = {}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-                
-            url = f"{ORDER_SERVICE_URL}/orders/check-can-review"
             data = {
                 "user_id": user_id,
                 "product_id": product_id
             }
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(url, json=data, headers=headers)
-                
+            backoffs = [0.5, 1, 2]
+            async with httpx.AsyncClient() as client:
+                for delay in backoffs:
+                    token = await get_service_token()
+                    headers = {"Authorization": f"Bearer {token}"}
+                    response = await client.post(
+                        f"{ORDER_SERVICE_URL}/orders/service/check-can-review-product"
+                       , json=data, headers=headers,timeout=5.0
+                    )
+                    if response.status_code == 401:
+                        # token expired - clear cache and retry
+                        await cache_service.delete("service_token")
+                        await asyncio.sleep(delay)
+                        continue
+                    break
+
                 if response.status_code == 200:
                     result = response.json()
                     can_review = result.get("can_review", False)
@@ -105,7 +111,7 @@ class OrderApi:
             return False
     
     @staticmethod
-    async def check_user_can_review_store(user_id: int, token: Optional[str] = None) -> bool:
+    async def check_user_can_review_store(user_id: int) -> bool:
         """
         Проверка, может ли пользователь оставить отзыв на магазин
         (имеет хотя бы один заказ со статусом 'delivered')
@@ -118,18 +124,26 @@ class OrderApi:
             if cached_result is not None:
                 logger.debug(f"Результат проверки возможности оставить отзыв на магазин получен из кэша: user_id={user_id}, result={cached_result}")
                 return cached_result
-                
-            headers = {}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-                
-            url = f"{ORDER_SERVICE_URL}/orders/check-can-review-store"
+            
             data = {
                 "user_id": user_id
             }
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(url, json=data, headers=headers)
+            # perform with retry on 401
+            backoffs = [0.5, 1, 2]
+            async with httpx.AsyncClient() as client:
+                for delay in backoffs:
+                    token = await get_service_token()
+                    headers = {"Authorization": f"Bearer {token}"}
+                    response = await client.post(
+                        f"{ORDER_SERVICE_URL}/orders/service/check-can-review-store"
+                       , json=data, headers=headers,timeout=5.0
+                    )
+                    if response.status_code == 401:
+                        # token expired - clear cache and retry
+                        await cache_service.delete("service_token")
+                        await asyncio.sleep(delay)
+                        continue
+                    break
                 
                 if response.status_code == 200:
                     result = response.json()

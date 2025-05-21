@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { authAPI } from "../utils/api";
 import { useNavigate } from 'react-router-dom';
+import LoginModal from '../components/common/LoginModal';
 
 // Создаем контекст аутентификации
 const AuthContext = createContext({
@@ -26,6 +27,9 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const openLoginModal = () => setShowLoginModal(true);
+  const closeLoginModal = () => setShowLoginModal(false);
 
   const checkAuth = async () => {
     try {
@@ -199,12 +203,15 @@ export const AuthProvider = ({ children }) => {
     login,
     checkPermission,
     getUserProfile,
-    isAuthenticated: !!user
+    isAuthenticated: !!user,
+    openLoginModal,
+    closeLoginModal
   };
 
   return (
     <AuthContext.Provider value={contextValue}>
       {children}
+      {showLoginModal && <LoginModal onClose={closeLoginModal} />}
     </AuthContext.Provider>
   );
 };

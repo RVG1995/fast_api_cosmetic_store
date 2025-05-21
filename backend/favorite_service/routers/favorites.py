@@ -18,7 +18,7 @@ def _make_cache_key(prefix: str, *args, **kwargs) -> str:
 async def add_favorite(
     favorite: FavoriteIn,
     user_id: int = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_async_session()),
+    session: AsyncSession = Depends(get_async_session),
 ):
     q = await session.execute(
         select(Favorite).where(Favorite.user_id == user_id, Favorite.product_id == favorite.product_id)
@@ -37,7 +37,7 @@ async def add_favorite(
 async def remove_favorite(
     product_id: int,
     user_id: int = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_async_session()),
+    session: AsyncSession = Depends(get_async_session),
 ):
     q = await session.execute(
         select(Favorite).where(Favorite.user_id == user_id, Favorite.product_id == product_id)
@@ -52,7 +52,7 @@ async def remove_favorite(
 @router.get("/", response_model=list[FavoriteOut])
 async def list_favorites(
     user_id: int = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_async_session()),
+    session: AsyncSession = Depends(get_async_session),
 ):
     cache_key = _make_cache_key("list", user_id)
     cached = await cache_service.get(cache_key)

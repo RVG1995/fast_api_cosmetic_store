@@ -442,11 +442,7 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
           </Alert>
         )}
 
-        <div className="d-flex justify-content-end mb-3">
-          <Button variant="outline-success" onClick={handleBoxberryMap} disabled={!cityName || loading}>
-            Выбрать на карте
-          </Button>
-        </div>
+
       </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onClick={onHide}>

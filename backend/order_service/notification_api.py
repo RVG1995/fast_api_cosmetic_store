@@ -9,9 +9,9 @@ import httpx
 from cache import cache_service
 from config import settings
 from auth_utils import get_service_token
-from fastapi import Request, BaseHTTPMiddleware
-from fastapi.responses import JSONResponse
-import traceback
+#from fastapi import Request, BaseHTTPMiddleware
+#from fastapi.responses import JSONResponse
+#import traceback
 
 logger = logging.getLogger("order_service.notification_api")
 

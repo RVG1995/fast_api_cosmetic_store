@@ -1,11 +1,19 @@
 import { useFavorites } from '../../context/FavoritesContext';
+import { useAuth } from '../../context/AuthContext';
+import { useState } from 'react';
 
 const FavoriteButton = ({ productId, disabled }) => {
   const { isFavorite, addFavorite, removeFavorite, loading } = useFavorites();
+  const { isAuthenticated, openLoginModal } = useAuth();
 
   const handleClick = async (e) => {
     e.preventDefault();
     if (loading) return;
+    if (!isAuthenticated) {
+      if (openLoginModal) openLoginModal();
+      else alert('Войдите или зарегистрируйтесь, чтобы добавлять в избранное');
+      return;
+    }
     if (isFavorite(productId)) await removeFavorite(productId);
     else await addFavorite(productId);
   };

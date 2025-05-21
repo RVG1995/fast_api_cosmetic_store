@@ -1,6 +1,6 @@
 """Роутер для управления настройками уведомлений и обработки событий уведомлений."""
 
-from typing import List, Dict, Any
+from typing import List, Dict
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,8 +33,6 @@ EVENT_TYPE_PRODUCT_LOW_STOCK = "product.low_stock"
 # События, доступные только для администраторов
 ADMIN_ONLY_EVENT_TYPES = [
     EVENT_TYPE_REVIEW_CREATED,
-    EVENT_TYPE_SERVICE_ERROR,
-    EVENT_TYPE_PRODUCT_LOW_STOCK
 ]
 
 # События, доступные для обычных пользователей
@@ -43,6 +41,16 @@ USER_EVENT_TYPES = [
     EVENT_TYPE_ORDER_CREATED,
     EVENT_TYPE_ORDER_STATUS_CHANGED,
 ]
+
+# Маппинг event_type -> название на русском
+EVENT_TYPE_LABELS = {
+    "review.created": "Новый отзыв на товар",
+    "review.reply": "Ответ на ваш отзыв",
+    "service.critical_error": "Критическая ошибка сервиса",
+    "order.created": "Создание заказа",
+    "order.status_changed": "Изменение статуса заказа",
+    "product.low_stock": "Низкий остаток товара"
+}
 
 @router.get("/settings", response_model=List[NotificationSettingResponse])
 async def get_settings(user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
@@ -54,6 +62,10 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
     cached = await cache_get_settings(user_id)
     if cached is not None:
         logger.info("[GET /settings] cache hit user_id=%s", user_id)
+        # Добавляем event_type_label, если его нет (для старого кэша)
+        for s in cached:
+            if "event_type_label" not in s:
+                s["event_type_label"] = EVENT_TYPE_LABELS.get(s["event_type"], s["event_type"])
         return cached
     
     # Определяем доступные типы событий на основе роли пользователя
@@ -92,7 +104,13 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
             for setting in defaults:
                 await db.refresh(setting)
             # Кэшируем созданные настройки
-            data = [NotificationSettingResponse.model_validate(s).model_dump() for s in defaults]
+            data = [
+                {
+                    **NotificationSettingResponse.model_validate(s).model_dump(),
+                    "event_type_label": EVENT_TYPE_LABELS.get(s.event_type, s.event_type)
+                }
+                for s in defaults
+            ]
             await cache_set_settings(user_id, data)
             return data
         except (IntegrityError, SQLAlchemyError) as e:
@@ -102,7 +120,13 @@ async def get_settings(user: User = Depends(require_user), db: AsyncSession = De
             return defaults
     
     # Кэшируем существующие настройки
-    data = [NotificationSettingResponse.model_validate(s).model_dump() for s in settings]
+    data = [
+        {
+            **NotificationSettingResponse.model_validate(s).model_dump(),
+            "event_type_label": EVENT_TYPE_LABELS.get(s.event_type, s.event_type)
+        }
+        for s in settings
+    ]
     await cache_set_settings(user_id, data)
     return data
 
@@ -134,7 +158,13 @@ async def check_settings(
     )
     all_settings = result.scalars().all()
     # Формируем кэш
-    data = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+    data = [
+        {
+            **NotificationSettingResponse.model_validate(s).model_dump(),
+            "event_type_label": EVENT_TYPE_LABELS.get(s.event_type, s.event_type)
+        }
+        for s in all_settings
+    ]
     await cache_set_settings(int(user_id), data)
     # Поиск нужного события
     setting = next((s for s in all_settings if s.event_type == event_type), None)
@@ -201,7 +231,13 @@ async def create_setting(setting: NotificationSettingCreate, user: User = Depend
             select(NotificationSetting).where(NotificationSetting.user_id == user.id)
         )
         all_settings = result_all.scalars().all()
-        data_all = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+        data_all = [
+            {
+                **NotificationSettingResponse.model_validate(s).model_dump(),
+                "event_type_label": EVENT_TYPE_LABELS.get(s.event_type, s.event_type)
+            }
+            for s in all_settings
+        ]
         await cache_set_settings(user.id, data_all)
     except IntegrityError as exc:
         await db.rollback()
@@ -235,7 +271,13 @@ async def update_setting(event_type: str, update: NotificationSettingUpdate, use
         select(NotificationSetting).where(NotificationSetting.user_id == user.id)
     )
     all_settings = result_all.scalars().all()
-    data_all = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+    data_all = [
+        {
+            **NotificationSettingResponse.model_validate(s).model_dump(),
+            "event_type_label": EVENT_TYPE_LABELS.get(s.event_type, s.event_type)
+        }
+        for s in all_settings
+    ]
     await cache_set_settings(user.id, data_all)
     return obj
 
@@ -278,7 +320,13 @@ async def admin_delete_setting(
         select(NotificationSetting).where(NotificationSetting.user_id == user_id)
     )
     all_settings = result_all.scalars().all()
-    data_all = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+    data_all = [
+        {
+            **NotificationSettingResponse.model_validate(s).model_dump(),
+            "event_type_label": EVENT_TYPE_LABELS.get(s.event_type, s.event_type)
+        }
+        for s in all_settings
+    ]
     await cache_set_settings(user_id, data_all)
     return {"detail": "Deleted"}
 
@@ -359,7 +407,13 @@ async def activate_user_notifications(
             select(NotificationSetting).where(NotificationSetting.user_id == user_id)
         )
         all_settings = result_all.scalars().all()
-        data_all = [NotificationSettingResponse.model_validate(s).model_dump() for s in all_settings]
+        data_all = [
+            {
+                **NotificationSettingResponse.model_validate(s).model_dump(),
+                "event_type_label": EVENT_TYPE_LABELS.get(s.event_type, s.event_type)
+            }
+            for s in all_settings
+        ]
         await cache_set_settings(user_id, data_all)
         logger.info("Кэш обновлен для user_id=%s", user_id)
         

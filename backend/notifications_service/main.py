@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import engine, Base
-from settings_router import router as settings_router
+from router.settings_router import router as settings_router
 from cache import get_redis, close_redis
 
 logger = logging.getLogger(__name__)

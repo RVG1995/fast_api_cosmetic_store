@@ -34,6 +34,7 @@ class NotificationSettingResponse(NotificationSettingBase):
     created_at: datetime = Field(...)
     updated_at: datetime = Field(...)
     model_config = ConfigDict(from_attributes=True) 
+    event_type_label: str = Field(None, description="Человекочитаемое название типа события")
 
 class NotificationEvent(BaseModel):
     """Схема события уведомления."""

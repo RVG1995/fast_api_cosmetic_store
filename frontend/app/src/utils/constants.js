@@ -9,7 +9,7 @@ export const API_URL = 'http://localhost:8088/api';
 export const API_URLS = {
   AUTH_SERVICE: 'http://localhost:8088/api',
   PRODUCT_SERVICE: 'http://localhost:8088/api',
-  PRODUCT: 'http://localhost:8088/api',
+  PRODUCT: 'http://localhost:8088',
   CART_SERVICE: 'http://localhost:8088/api',
   ORDER_SERVICE: 'http://localhost:8088/api',
   REVIEW_SERVICE: 'http://localhost:8088/api',

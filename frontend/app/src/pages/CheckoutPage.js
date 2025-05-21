@@ -633,7 +633,15 @@ const CheckoutPage = () => {
     } catch (err) {
       console.error('Ошибка при создании заказа:', err);
       if (err.response && err.response.data && err.response.data.detail) {
-        setError(`Ошибка при создании заказа: ${err.response.data.detail}`);
+        const detail = err.response.data.detail;
+        if (
+          typeof detail === 'string' &&
+          (detail.includes('delivery_cost_positive') || detail.includes('стоимость доставки не может быть нулевой'))
+        ) {
+          setError('Ошибка: стоимость доставки не может быть нулевой. Пожалуйста, выберите другой способ доставки или попробуйте позже.');
+        } else {
+          setError(`Ошибка при создании заказа: ${detail}`);
+        }
       } else {
         setError('Произошла ошибка при оформлении заказа. Пожалуйста, попробуйте снова.');
       }

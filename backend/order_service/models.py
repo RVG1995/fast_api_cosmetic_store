@@ -76,6 +76,10 @@ class OrderStatusModel(Base):
 class DeliveryInfoModel(Base):
     """Модель информации о доставке."""
     __tablename__ = 'delivery_info'
+
+    __table_args__ = (
+        CheckConstraint('delivery_cost > 0', name='delivery_cost_positive'),
+    )
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)

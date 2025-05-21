@@ -53,6 +53,12 @@ async def get_cities(country_code: str = settings.BOXBERRY_COUNTRY_RUSSIA_CODE):
                 logger.info("Сохраняю данные о городах в кэш")
                 
                 return cities_data
+            elif response.status_code == 503:
+                logger.error("Boxberry API временно недоступен (503)")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Сервис Boxberry временно недоступен, попробуйте позже или выберите другой способ доставки"
+                )
             else:
                 logger.error("Ошибка при получении списка городов: %s", response.text)
                 raise HTTPException(status_code=response.status_code, 
@@ -151,6 +157,12 @@ async def get_pickup_points(city_code: str, country_code: str = settings.BOXBERR
                 logger.info("Сохраняю данные о пунктах выдачи в кэш для города %s", city_code)
                 
                 return result
+            elif response.status_code == 503:
+                logger.error("Boxberry API временно недоступен (503)")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Сервис Boxberry временно недоступен, попробуйте позже или выберите другой способ доставки"
+                )
             else:
                 logger.error("Ошибка при получении списка ПВЗ: %s", response.text)
                 raise HTTPException(status_code=response.status_code, 
@@ -203,6 +215,12 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                         # Сохраняем в кэш на 3 часа (10800 секунд)
                         await set_cached_data(courier_cities_cache_key, courier_cities, 10800)
                         logger.info("Сохраняю данные о городах с курьерской доставкой в кэш")
+                    elif response.status_code == 503:
+                        logger.error("Boxberry API временно недоступен (503)")
+                        raise HTTPException(
+                            status_code=503,
+                            detail="Сервис Boxberry временно недоступен, попробуйте позже или выберите другой способ доставки"
+                        )
                     else:
                         logger.error("Ошибка при получении списка городов с курьерской доставкой: %s", response.text)
                         raise HTTPException(
@@ -250,6 +268,12 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                         # Сохраняем в кэш на 12 часов (43200 секунд)
                         await set_cached_data(zips_cache_key, zip_codes_data, 43200)
                         logger.info("Сохраняю данные о почтовых индексах для курьерской доставки в кэш")
+                    elif response.status_code == 503:
+                        logger.error("Boxberry API временно недоступен (503)")
+                        raise HTTPException(
+                            status_code=503,
+                            detail="Сервис Boxberry временно недоступен, попробуйте позже или выберите другой способ доставки"
+                        )
                     else:
                         logger.error("Ошибка при получении списка почтовых индексов: %s", response.text)
                         raise HTTPException(
@@ -406,6 +430,12 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                         logger.error(f"Ошибка парсинга JSON ответа от Boxberry API: {e}")
                         logger.debug(f"Тело ответа: {response.text[:1000]}")  # Логируем первые 1000 символов
                         raise HTTPException(status_code=500, detail=f"Ошибка обработки ответа Boxberry API: {str(e)}")
+                elif response.status_code == 503:
+                    logger.error("Boxberry API временно недоступен (503)")
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Сервис Boxberry временно недоступен, попробуйте позже или выберите другой способ доставки"
+                    )
                 else:
                     logger.error(f"Ошибка при расчете стоимости доставки: HTTP {response.status_code}, {response.text}")
                     raise HTTPException(status_code=response.status_code, 
@@ -724,6 +754,12 @@ async def create_boxberry_parcel(
                         status_code=400,
                         detail="Неожиданный формат ответа от BoxBerry API"
                     )
+            elif response.status_code == 503:
+                logger.error("Boxberry API временно недоступен (503)")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Сервис Boxberry временно недоступен, попробуйте позже или выберите другой способ доставки"
+                )
             else:
                 logger.error(f"Ошибка запроса к BoxBerry API: HTTP {response.status_code}, {response.text}")
                 raise HTTPException(

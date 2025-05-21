@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
+from sqlalchemy.exc import IntegrityError
 
 from database import get_db
 from models import PromoCodeModel, DeliveryInfoModel
@@ -187,6 +188,17 @@ async def create_new_order(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        ) from e
+    except IntegrityError as e:
+        logger.error("IntegrityError при создании заказа: %s", str(e))
+        if 'delivery_cost_positive' in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Стоимость доставки не может быть нулевой. Пожалуйста, выберите другой способ доставки или попробуйте позже.'
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Ошибка целостности данных при создании заказа.'
         ) from e
     except Exception as e:
         logger.error("Непредвиденная ошибка при создании заказа: %s", str(e))

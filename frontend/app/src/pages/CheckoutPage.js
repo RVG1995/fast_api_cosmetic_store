@@ -684,6 +684,64 @@ const CheckoutPage = () => {
     );
   }
 
+  // --- PATCH: аналог calculate_dimensions с бэка ---
+  const calculateDimensions = (items, packageMultiplier = 1.2) => {
+    let allItems = [];
+    items.forEach(item => {
+      const quantity = item.quantity || 1;
+      for (let i = 0; i < quantity; i++) {
+        allItems.push({
+          weight: item.product.weight || 500,
+          height: item.product.height || 10,
+          width: item.product.width || 10,
+          depth: item.product.depth || 10
+        });
+      }
+    });
+    if (allItems.length === 0) {
+      return { weight: 500, height: 10, width: 10, depth: 10 };
+    }
+    // Сортируем по убыванию объёма
+    allItems.sort((a, b) => (b.height * b.width * b.depth) - (a.height * a.width * a.depth));
+    const totalWeight = allItems.reduce((sum, i) => sum + i.weight, 0);
+    if (allItems.length === 1) {
+      return {
+        weight: totalWeight,
+        height: Math.round(allItems[0].height * packageMultiplier),
+        width: Math.round(allItems[0].width * packageMultiplier),
+        depth: Math.round(allItems[0].depth * packageMultiplier)
+      };
+    }
+    const maxSide = Math.max(
+      ...allItems.map(i => i.height),
+      ...allItems.map(i => i.width),
+      ...allItems.map(i => i.depth)
+    );
+    let totalVolume = allItems.reduce((sum, i) => sum + i.height * i.width * i.depth, 0);
+    totalVolume *= packageMultiplier;
+    let side = Math.ceil(Math.pow(totalVolume, 1/3)) + 1;
+    side = Math.max(side, Math.round(maxSide * packageMultiplier));
+    return {
+      weight: totalWeight,
+      height: side,
+      width: side,
+      depth: side
+    };
+  };
+
+  const getBoxberryParams = () => {
+    const dims = calculateDimensions(cart && cart.items ? cart.items : []);
+    return {
+      ordersum: cartTotal,
+      paysum: isPaymentOnDelivery ? finalTotal : 0,
+      height: dims.height,
+      width: dims.width,
+      depth: dims.depth,
+      weight: dims.weight,
+      apiToken: process.env.REACT_APP_BOXBERRY_API_TOKEN || '1$861709724d3a5aebabae7f9d96941b70',
+    };
+  };
+
   // Основной рендер страницы оформления заказа
   return (
     <div className="checkout-container">
@@ -1170,6 +1228,7 @@ const CheckoutPage = () => {
         onHide={() => setShowBoxberryModal(false)}
         onPickupPointSelected={handlePickupPointSelected}
         selectedAddress=""
+        {...getBoxberryParams()}
       />
     </div>
   );

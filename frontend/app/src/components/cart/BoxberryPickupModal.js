@@ -19,7 +19,7 @@ const getDeliveryPeriodText = (days) => {
   }
 };
 
-const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddress }) => {
+const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddress, ordersum, paysum, height, width, depth, weight, apiToken }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [cityName, setCityName] = useState('');
@@ -240,6 +240,50 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
     );
   });
 
+  // --- PATCH: обработчик выбора через карту ---
+  const handleBoxberryMap = () => {
+    if (!cityName) {
+      setError('Сначала выберите город');
+      return;
+    }
+    if (!window.boxberry) {
+      setError('Виджет Boxberry не загружен');
+      return;
+    }
+    window.boxberry.open(
+      function boxberry_pvz_function(result) {
+        if (result && result.id) {
+          // Формируем объект ПВЗ в формате, совместимом с текущим selectedPoint
+          const pvz = {
+            Code: result.id,
+            Name: result.name,
+            Address: result.address,
+            WorkShedule: result.workschedule,
+            ...result
+          };
+          setSelectedPoint(pvz);
+          setCityName(result.name || cityName);
+          setCityInputValue(result.name || cityName);
+          setCityCode(null); // Boxberry не возвращает city_code
+          setPickupPoints([pvz]);
+          onPickupPointSelected(pvz);
+          onHide();
+        } else {
+          console.log('Boxberry карта: result пустой или нет id', result);
+        }
+      },
+      apiToken,
+      cityName,
+      '',
+      ordersum,
+      weight,
+      paysum,
+      height,
+      width,
+      depth // filter_city: запрещаем выбор ПВЗ не из выбранного города
+    );
+  };
+
   return (
     <Modal 
       show={show} 
@@ -274,6 +318,12 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
                     disabled={!cityInputValue.trim() || searchingCity}
                   >
                     {searchingCity ? <Spinner size="sm" animation="border" /> : "Найти"}
+                  </Button>
+                </div>
+                {/* КНОПКА КАРТЫ СРАЗУ ПОД ВВОДОМ ГОРОДА */}
+                <div className="d-flex justify-content-end mt-2 mb-2">
+                  <Button variant="outline-success" onClick={handleBoxberryMap} disabled={!cityName || loading}>
+                    Выбрать на карте
                   </Button>
                 </div>
                 
@@ -391,6 +441,12 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
             Введите город и нажмите "Найти" для поиска пунктов выдачи
           </Alert>
         )}
+
+        <div className="d-flex justify-content-end mb-3">
+          <Button variant="outline-success" onClick={handleBoxberryMap} disabled={!cityName || loading}>
+            Выбрать на карте
+          </Button>
+        </div>
       </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onClick={onHide}>

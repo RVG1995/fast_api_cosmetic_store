@@ -305,14 +305,19 @@ const HomePage = () => {
                         disabled={favLoading}
                       />
                     </div>
-                    <Link to={`/products/${product.id}`} className="product-image-link">
-                      <div className="product-image">
-                        {product.image ? (
-                          <img src={formatImageUrl(product.image)} alt={product.name} />
-                        ) : (
-                          <div className="no-image">Нет изображения</div>
-                        )}
-                      </div>
+                    <Link to={`/products/${product.id}`} className="product-image-container">
+                      {!product.image ? (
+                        <div className="no-image-placeholder">
+                          <i className="bi bi-image text-muted"></i>
+                          <span>Нет изображения</span>
+                        </div>
+                      ) : (
+                        <img 
+                          src={formatImageUrl(product.image)}
+                          alt={product.name}
+                          className="product-image"
+                        />
+                      )}
                     </Link>
                     <div className="product-details">
                       <Link to={`/products/${product.id}`} className="product-title-link">

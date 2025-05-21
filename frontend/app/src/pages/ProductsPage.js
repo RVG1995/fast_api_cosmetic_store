@@ -10,7 +10,7 @@ import Pagination from '../components/common/Pagination';
 import '../styles/ProductsPage.css';
 import { useReviews } from '../context/ReviewContext';
 import FavoriteButton from '../components/atoms/FavoriteButton';
-import { favoriteAPI } from '../utils/api';
+import { useFavorites } from '../context/FavoritesContext';
 
 /**
  * Страница со списком товаров и фильтрацией
@@ -27,9 +27,10 @@ const ProductsPage = () => {
   const [subcategories, setSubcategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [countries, setCountries] = useState([]);
-  const [favorites, setFavorites] = useState([]);
   
   const { fetchBatchProductRatings, productRatings } = useReviews();
+  
+  const { isFavorite, addFavorite, removeFavorite, loading: favLoading } = useFavorites();
   
   // Параметры фильтрации и сортировки
   const filters = useMemo(() => ({
@@ -232,15 +233,9 @@ const ProductsPage = () => {
     return products;
   }, [products, filters.sort, filters.page, filters.limit, productRatings]);
   
-  useEffect(() => {
-    favoriteAPI.getFavorites().then(setFavorites).catch(() => setFavorites([]));
-  }, []);
-
-  const isFavorite = (productId) => favorites.some(f => f.product_id === productId);
-  const handleToggleFavorite = async (productId, willBeFavorite) => {
-    if (willBeFavorite) await favoriteAPI.addFavorite(productId);
-    else await favoriteAPI.removeFavorite(productId);
-    setFavorites(await favoriteAPI.getFavorites());
+  const handleToggleFavorite = async (productId) => {
+    if (isFavorite(productId)) await removeFavorite(productId);
+    else await addFavorite(productId);
   };
   
   return (

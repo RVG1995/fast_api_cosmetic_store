@@ -11,7 +11,7 @@ import ReviewStats from '../components/reviews/ReviewStats';
 import { useAuth } from '../context/AuthContext';
 import { useReviews } from '../context/ReviewContext';
 import FavoriteButton from '../components/atoms/FavoriteButton';
-import { favoriteAPI } from '../utils/api';
+import { useFavorites } from '../context/FavoritesContext';
 
 const ProductDetailPage = () => {
   const { productId } = useParams();
@@ -23,7 +23,7 @@ const ProductDetailPage = () => {
   const [reviewReloadKey, setReviewReloadKey] = useState(0);
   const { user } = useAuth();
   const { fetchBatchProductRatings } = useReviews();
-  const [isFavorite, setIsFavorite] = useState(false);
+  const { isFavorite, addFavorite, removeFavorite, loading: favLoading } = useFavorites();
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {
@@ -127,19 +127,9 @@ const ProductDetailPage = () => {
     }
   }, [relatedProducts, fetchBatchProductRatings]);
 
-  useEffect(() => {
-    if (product) {
-      favoriteAPI.getFavorites().then(favs => {
-        setIsFavorite(favs.some(f => f.product_id === product.id));
-      });
-    }
-  }, [product]);
-
-  const handleToggleFavorite = async (productId, willBeFavorite) => {
-    if (willBeFavorite) await favoriteAPI.addFavorite(productId);
-    else await favoriteAPI.removeFavorite(productId);
-    const favs = await favoriteAPI.getFavorites();
-    setIsFavorite(favs.some(f => f.product_id === productId));
+  const handleToggleFavorite = async () => {
+    if (isFavorite(product.id)) await removeFavorite(product.id);
+    else await addFavorite(product.id);
   };
 
   if (loading) {
@@ -215,8 +205,7 @@ const ProductDetailPage = () => {
             {product.name}
             <FavoriteButton
               productId={product.id}
-              isFavorite={isFavorite}
-              onToggle={handleToggleFavorite}
+              disabled={favLoading}
             />
           </h1>
           

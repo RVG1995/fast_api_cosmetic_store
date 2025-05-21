@@ -60,5 +60,6 @@ async def list_favorites(
         return cached
     q = await session.execute(select(Favorite).where(Favorite.user_id == user_id))
     result = q.scalars().all()
-    await cache_service.set(cache_key, result, ttl=DEFAULT_CACHE_TTL)
-    return result 
+    data = [FavoriteOut.model_validate(fav).model_dump() for fav in result]
+    await cache_service.set(cache_key, data, ttl=DEFAULT_CACHE_TTL)
+    return data 

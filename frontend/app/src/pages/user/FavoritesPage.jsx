@@ -1,55 +1,38 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { favoriteAPI, productAPI } from '../../utils/api';
+import React, { useEffect, useState } from 'react';
+import { productAPI } from '../../utils/api';
 import ProductCard from '../../components/product/ProductCard';
 import Pagination from '../../components/common/Pagination';
 import { useAuth } from '../../context/AuthContext';
+import { useFavorites } from '../../context/FavoritesContext';
 
 const PAGE_SIZE = 12;
 
 const FavoritesPage = () => {
   const { isAuthenticated } = useAuth();
-  const [favorites, setFavorites] = useState([]);
+  const { favorites, loading: favLoading, addFavorite, removeFavorite } = useFavorites();
   const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
-  const fetchFavorites = useCallback(async (pageNum = 1) => {
-    setLoading(true);
-    try {
-      const favs = await favoriteAPI.getFavorites();
-      setFavorites(favs);
-      setTotal(favs.length);
-      // Получаем продукты по id
-      const ids = favs.slice((pageNum-1)*PAGE_SIZE, pageNum*PAGE_SIZE).map(f => f.product_id);
-      if (ids.length) {
-        const prods = await productAPI.getProductsByIds(ids);
-        setProducts(prods);
-      } else {
-        setProducts([]);
-      }
-    } catch (e) {
-      setFavorites([]);
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    if (isAuthenticated) fetchFavorites(page);
-  }, [isAuthenticated, page, fetchFavorites]);
+    const ids = favorites.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE).map(f => f.product_id);
+    setTotal(favorites.length);
+    if (ids.length) {
+      productAPI.getProductsByIds(ids).then(setProducts);
+    } else {
+      setProducts([]);
+    }
+  }, [favorites, page]);
 
-  const handleToggleFavorite = async (productId, willBeFavorite) => {
-    if (willBeFavorite) await favoriteAPI.addFavorite(productId);
-    else await favoriteAPI.removeFavorite(productId);
-    fetchFavorites(page);
+  const handleToggleFavorite = async (productId) => {
+    if (favorites.some(f => f.product_id === productId)) await removeFavorite(productId);
+    else await addFavorite(productId);
   };
 
   return (
     <div className="container py-4">
       <h2 className="mb-4">Избранные товары</h2>
-      {loading ? (
+      {favLoading ? (
         <div>Загрузка...</div>
       ) : products.length === 0 ? (
         <div>Нет избранных товаров</div>

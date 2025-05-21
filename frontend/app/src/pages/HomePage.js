@@ -10,7 +10,7 @@ import ProductRating from '../components/reviews/ProductRating';
 import { useReviews } from '../context/ReviewContext';
 import { Badge } from 'react-bootstrap';
 import FavoriteButton from '../components/atoms/FavoriteButton';
-import { favoriteAPI } from '../utils/api';
+import { useFavorites } from '../context/FavoritesContext';
 
 const HomePage = () => {
   const [products, setProducts] = useState([]);
@@ -30,7 +30,7 @@ const HomePage = () => {
   });
 
   const { fetchBatchProductRatings, productRatings } = useReviews();
-  const [favorites, setFavorites] = useState([]);
+  const { isFavorite, addFavorite, removeFavorite, loading: favLoading } = useFavorites();
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {
@@ -230,17 +230,9 @@ const HomePage = () => {
     }
   }, [products, fetchBatchProductRatings]);
 
-  useEffect(() => {
-    if (!isAdmin) {
-      favoriteAPI.getFavorites().then(setFavorites).catch(() => setFavorites([]));
-    }
-  }, [isAdmin]);
-
-  const isFavorite = (productId) => favorites.some(f => f.product_id === productId);
-  const handleToggleFavorite = async (productId, willBeFavorite) => {
-    if (willBeFavorite) await favoriteAPI.addFavorite(productId);
-    else await favoriteAPI.removeFavorite(productId);
-    setFavorites(await favoriteAPI.getFavorites());
+  const handleToggleFavorite = async (productId) => {
+    if (isFavorite(productId)) await removeFavorite(productId);
+    else await addFavorite(productId);
   };
 
   if (loading) {
@@ -310,8 +302,7 @@ const HomePage = () => {
                     <div className="position-absolute top-0 end-0 p-2 z-2">
                       <FavoriteButton
                         productId={product.id}
-                        isFavorite={isFavorite(product.id)}
-                        onToggle={handleToggleFavorite}
+                        disabled={favLoading}
                       />
                     </div>
                     <Link to={`/products/${product.id}`} className="product-image-link">

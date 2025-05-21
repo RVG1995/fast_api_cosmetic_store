@@ -6,6 +6,7 @@
   border-radius: 0.5rem;
   overflow: hidden;
   height: 100%;
+  position: relative;
 }
 
 .product-card:hover {
@@ -91,13 +92,12 @@
 .product-title {
   font-size: 1rem;
   font-weight: 600;
-  margin-bottom: 0.5rem;
-  min-height: 2.4rem; /* Фиксированная минимальная высота для заголовка */
-  max-height: 2.4rem;
+  margin-bottom: 0.75rem;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  word-break: break-word;
 }
 
 .product-title-link {
@@ -220,12 +220,15 @@
 
 /* Специальные стили для страницы каталога */
 .catalog-title {
-  min-height: 3rem !important;
-  max-height: 3rem !important;
-  margin-bottom: 0.25rem !important;
+  margin-bottom: 0.75rem !important;
   font-size: 1.1rem !important;
   line-height: 1.5 !important;
   font-weight: 600 !important;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
 }
 
 .catalog-title-link {
@@ -252,4 +255,11 @@
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+}
+
+.favorite-btn-wrapper {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
 } 

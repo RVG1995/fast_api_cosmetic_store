@@ -88,7 +88,7 @@ const ProductCard = memo(({ product, isFavorite, onToggleFavorite }) => {
             </Badge>
           )}
         </Link>
-        <div className="absolute top-2 right-2 z-10">
+        <div className="favorite-btn-wrapper">
           <FavoriteButton
             productId={product.id}
             isFavorite={isFavorite}

@@ -756,3 +756,23 @@ class BoxberryStatusUpdateResponse(BaseModel):
     """Схема для ответа на запрос на обновление статуса доставки для заказа Boxberry."""
     order_id: int
     updated: bool
+
+class BoxberryStatusFunnelBase(BaseModel):
+    boxberry_status_code: int = Field(..., description="Код статуса Boxberry")
+    boxberry_status_name: str = Field(..., description="Название статуса Boxberry")
+    order_status_id: int = Field(..., description="ID статуса заказа")
+    active: bool = True
+
+class BoxberryStatusFunnelCreate(BoxberryStatusFunnelBase):
+    pass
+
+class BoxberryStatusFunnelUpdate(BaseModel):
+    boxberry_status_code: Optional[int] = None
+    boxberry_status_name: Optional[str] = None
+    order_status_id: Optional[int] = None
+    active: Optional[bool] = None
+
+class BoxberryStatusFunnelResponse(BoxberryStatusFunnelBase):
+    id: int
+    order_status: Optional[OrderStatusResponse] = None
+    model_config = ConfigDict(from_attributes=True)

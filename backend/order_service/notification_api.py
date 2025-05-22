@@ -9,9 +9,6 @@ import httpx
 from cache import cache_service
 from config import settings
 from auth_utils import get_service_token
-#from fastapi import Request, BaseHTTPMiddleware
-#from fastapi.responses import JSONResponse
-#import traceback
 
 logger = logging.getLogger("order_service.notification_api")
 
@@ -141,47 +138,3 @@ async def send_low_stock_notification(low_stock_products: List[Dict[str, Any]]) 
     except (httpx.HTTPError, httpx.TimeoutException, httpx.RequestError) as e:
         logger.error("Ошибка при отправке уведомления: %s", str(e))
         return False
-
-'''
-NOTIFICATIONS_URL = os.getenv("NOTIFICATIONS_URL", "http://localhost:8088/api/notifications/errors")
-
-async def send_error_notification(service_name: str, error_message: str, stacktrace: str = "", request_info: dict = None):
-    payload = {
-        "service": service_name,
-        "error_message": error_message,
-        "stacktrace": stacktrace,
-        "request_info": request_info or {}
-    }
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(NOTIFICATIONS_URL, json=payload, timeout=5)
-    except Exception as e:
-        # Не логируем рекурсивно, чтобы не зациклить
-        print(f"Ошибка при отправке уведомления об ошибке: {e}")
-
-
-class ErrorNotificationMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        try:
-            response = await call_next(request)
-            return response
-        except Exception as exc:
-            # Логируем ошибку и отправляем уведомление
-            error_message = str(exc)
-            stacktrace = traceback.format_exc()
-            await send_error_notification(
-                service_name="order_service",
-                error_message=error_message,
-                stacktrace=stacktrace,
-                request_info={
-                    "url": str(request.url),
-                    "method": request.method,
-                    "headers": dict(request.headers)
-                }
-            )
-            # Возвращаем стандартный ответ 500
-            return JSONResponse(
-                status_code=500,
-                content={"detail": "Внутренняя ошибка сервера"}
-            )
-'''

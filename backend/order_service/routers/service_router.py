@@ -6,13 +6,15 @@ from typing import Dict, Any,List
 from fastapi import APIRouter, Depends, HTTPException, Path, status,Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, not_,text
+from datetime import datetime
 
 from database import get_db
-from models import PromoCodeModel, OrderModel, DeliveryInfoModel, OrderStatusModel
+from models import PromoCodeModel, OrderModel, DeliveryInfoModel, OrderStatusModel, BoxberryStatusFunnelModel, OrderStatusHistoryModel
 from schemas import OrderDetailResponse, OrderDetailResponseWithPromo, PromoCodeResponse, BoxberryOrderResponse, BoxberryStatusUpdateRequest, BoxberryStatusUpdateResponse
 from services import get_order_by_id
 from dependencies import verify_service_jwt
 from cache import CacheKeys, get_cached_data, set_cached_data, DEFAULT_CACHE_TTL
+from config import settings
 
 # Настройка логирования
 logger = logging.getLogger("service_order_router")
@@ -155,6 +157,44 @@ async def update_boxberry_delivery_status(
         delivery_info = res.scalar_one_or_none()
         if delivery_info:
             delivery_info.status_in_delivery_service = update.status_in_delivery_service
+
+            # --- ВОРОНКА: поддержка поиска по коду и по имени ---
+            boxberry_status_name = update.status_in_delivery_service
+            # 1. Пытаемся найти по имени
+            funnel_rule = await session.execute(
+                select(BoxberryStatusFunnelModel)
+                .where(BoxberryStatusFunnelModel.boxberry_status_name == boxberry_status_name)
+                .where(BoxberryStatusFunnelModel.active == True)
+            )
+            funnel = funnel_rule.scalar_one_or_none()
+            # 2. Если не нашли по имени, ищем по коду (ищем код по имени через config)
+            if not funnel:
+                code = None
+                for k, v in settings.BOXBERRY_STATUSES.items():
+                    if v == boxberry_status_name:
+                        code = k
+                        break
+                if code is not None:
+                    funnel_rule = await session.execute(
+                        select(BoxberryStatusFunnelModel)
+                        .where(BoxberryStatusFunnelModel.boxberry_status_code == int(code))
+                        .where(BoxberryStatusFunnelModel.active == True)
+                    )
+                    funnel = funnel_rule.scalar_one_or_none()
+            if funnel:
+                order = await session.get(OrderModel, update.order_id)
+                if order and order.status_id != funnel.order_status_id:
+                    order.status_id = funnel.order_status_id
+                    order.updated_at = datetime.utcnow()
+                    await OrderStatusHistoryModel.add_status_change(
+                        session=session,
+                        order_id=order.id,
+                        status_id=funnel.order_status_id,
+                        changed_by_user_id=None,
+                        notes=f"Автоматически по Boxberry: {boxberry_status_name}"
+                    )
+            # --- КОНЕЦ ВОРОНКИ ---
+
             results.append(BoxberryStatusUpdateResponse(order_id=update.order_id, updated=True))
         else:
             results.append(BoxberryStatusUpdateResponse(order_id=update.order_id, updated=False))

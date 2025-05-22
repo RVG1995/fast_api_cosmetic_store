@@ -9,7 +9,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy import exc as sqlalchemy_exc
 
-from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel, PromoCodeUsageModel, DeliveryInfoModel
+from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel, PromoCodeUsageModel, DeliveryInfoModel, BoxberryStatusFunnelModel
 from schemas import OrderCreate, OrderUpdate, OrderStatusHistoryCreate, OrderFilterParams, OrderStatistics
 from dependencies import check_products_availability, get_products_info
 from product_api import get_product_api
@@ -1119,4 +1119,37 @@ async def calculate_discount(
         # На всякий случай
         discount = 0.0
     
-    return discount 
+    return discount
+
+# --- CRUD для BoxberryStatusFunnel ---
+async def get_boxberry_funnel_all(session: AsyncSession) -> list:
+    result = await session.execute(select(BoxberryStatusFunnelModel).order_by(BoxberryStatusFunnelModel.boxberry_status_code))
+    return result.scalars().all()
+
+async def get_boxberry_funnel_by_id(session: AsyncSession, funnel_id: int) -> Optional[BoxberryStatusFunnelModel]:
+    return await session.get(BoxberryStatusFunnelModel, funnel_id)
+
+async def create_boxberry_funnel(session: AsyncSession, data) -> BoxberryStatusFunnelModel:
+    funnel = BoxberryStatusFunnelModel(**data.model_dump())
+    session.add(funnel)
+    await session.commit()
+    await session.refresh(funnel)
+    return funnel
+
+async def update_boxberry_funnel(session: AsyncSession, funnel_id: int, data) -> Optional[BoxberryStatusFunnelModel]:
+    funnel = await get_boxberry_funnel_by_id(session, funnel_id)
+    if not funnel:
+        return None
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(funnel, k, v)
+    await session.commit()
+    await session.refresh(funnel)
+    return funnel
+
+async def delete_boxberry_funnel(session: AsyncSession, funnel_id: int) -> bool:
+    funnel = await get_boxberry_funnel_by_id(session, funnel_id)
+    if not funnel:
+        return False
+    await session.delete(funnel)
+    await session.commit()
+    return True 

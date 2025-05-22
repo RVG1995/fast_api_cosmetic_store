@@ -263,6 +263,20 @@ const AdminDashboard = () => {
           </div>
         </div>
         
+        {/* Управление воронкой Boxberry */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-diagram-3 admin-card-icon"></i>
+              <h3>Воронка Boxberry</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Настройка соответствия статусов Boxberry и статусов заказа.</p>
+              <Link to="/admin/boxberry-funnel" className="btn btn-primary">Настроить воронку</Link>
+            </div>
+          </div>
+        </div>
+        
         {/* Блок для суперадминов */}
         {isSuperAdmin() && (
           <div className="col-md-4 mb-4">

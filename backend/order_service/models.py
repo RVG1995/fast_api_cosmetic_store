@@ -584,3 +584,19 @@ class PromoCodeUsageModel(Base):
         except SQLAlchemyError as e:
             logging.error("Ошибка при проверке использования промокода: %s", str(e))
             return False
+
+class BoxberryStatusFunnelModel(Base):
+    """Маппинг статусов Boxberry -> статусов заказа."""
+    __tablename__ = "boxberry_status_funnel"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    boxberry_status_code: Mapped[int] = mapped_column(nullable=False, unique=True)
+    boxberry_status_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    order_status_id: Mapped[int] = mapped_column(ForeignKey("order_statuses.id", ondelete="RESTRICT"), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Связь с моделью статуса заказа
+    order_status = relationship("OrderStatusModel")
+
+    def __repr__(self):
+        return f"<BoxberryStatusFunnel(code={self.boxberry_status_code}, order_status_id={self.order_status_id}, active={self.active})>"

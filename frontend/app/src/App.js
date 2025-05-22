@@ -55,6 +55,7 @@ const AdminPromoCodes = lazy(() => import('./pages/admin/AdminPromoCodes'));
 const AdminReviewsPage = lazy(() => import('./pages/admin/reviews/AdminReviewsPage'));
 const AdminReviewDetailPage = lazy(() => import('./pages/admin/reviews/AdminReviewDetailPage'));
 const AdminReports = lazy(() => import('./pages/admin/AdminReports')); // Новый компонент для формирования отчетов
+const AdminBoxberryFunnel = lazy(() => import('./pages/admin/AdminBoxberryFunnel'));
 
 // Удаляем временную замену ProductsPage
 // const ProductsPage = HomePage;
@@ -366,6 +367,16 @@ function App() {
                             <AdminRoute>
                               <Suspense fallback={<Loading />}>
                                 <AdminReports />
+                              </Suspense>
+                            </AdminRoute>
+                          } 
+                        />
+                        <Route 
+                          path="admin/boxberry-funnel" 
+                          element={
+                            <AdminRoute>
+                              <Suspense fallback={<Loading />}>
+                                <AdminBoxberryFunnel />
                               </Suspense>
                             </AdminRoute>
                           } 

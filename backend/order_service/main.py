@@ -18,6 +18,7 @@ from routers.promo_codes import router as promo_codes_router, admin_router as pr
 from cache import close_redis, cache_service
 from init_data import init_order_statuses
 from config import settings, get_cors_origins
+from routers.boxberry_funnel import router as boxberry_funnel_router
 
 # Настройка логирования
 logging.basicConfig(
@@ -85,6 +86,7 @@ app.include_router(service_orders_router)
 app.include_router(order_statuses_router)
 app.include_router(promo_codes_router)
 app.include_router(promo_codes_admin_router)
+app.include_router(boxberry_funnel_router)
 
 if __name__ == "__main__":
     import uvicorn

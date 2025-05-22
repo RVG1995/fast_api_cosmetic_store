@@ -78,9 +78,9 @@ const Loading = () => (
 
 function App() {
   return (
-    <FavoritesProvider>
-      <BrowserRouter>
-        <ScrollToTop />
+    <BrowserRouter>
+      <ScrollToTop />
+      <FavoritesProvider>
         <AuthProvider>
           <NotificationProvider>
             <CategoryProvider>
@@ -388,8 +388,8 @@ function App() {
             </CategoryProvider>
           </NotificationProvider>
         </AuthProvider>
-      </BrowserRouter>
-    </FavoritesProvider>
+      </FavoritesProvider>
+    </BrowserRouter>
   );
 }
 

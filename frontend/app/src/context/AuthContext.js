@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { authAPI } from "../utils/api";
 import { useNavigate } from 'react-router-dom';
 import LoginModal from '../components/common/LoginModal';
+import { useFavorites } from './FavoritesContext';
 
 // Создаем контекст аутентификации
 const AuthContext = createContext({
@@ -28,8 +29,12 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const openLoginModal = () => setShowLoginModal(true);
+  const openLoginModal = () => {
+    console.log('openLoginModal called');
+    setShowLoginModal(true);
+  };
   const closeLoginModal = () => setShowLoginModal(false);
+  const { resetFavorites, fetchFavorites } = useFavorites();
 
   const checkAuth = async () => {
     try {
@@ -93,8 +98,8 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       await authAPI.login(credentials);
-      // После успешного логина сразу делаем новый запрос для получения данных пользователя
       await checkAuth();
+      await fetchFavorites();
       return { success: true };
     } catch (error) {
       console.error("Ошибка при входе:", error);
@@ -110,11 +115,13 @@ export const AuthProvider = ({ children }) => {
       await authAPI.logout();
       setUser(null);
       setError(null);
+      resetFavorites();
       navigate('/login');
     } catch (error) {
       console.error("Ошибка при выходе:", error);
       setUser(null);
       setError(error.response?.data?.detail || error.message);
+      resetFavorites();
     }
   };
 
@@ -204,14 +211,15 @@ export const AuthProvider = ({ children }) => {
     checkPermission,
     getUserProfile,
     isAuthenticated: !!user,
-    openLoginModal,
-    closeLoginModal
+    openLoginModal: typeof openLoginModal === 'function' ? openLoginModal : () => alert('Войдите или зарегистрируйтесь, чтобы добавлять в избранное'),
+    closeLoginModal: typeof closeLoginModal === 'function' ? closeLoginModal : () => {},
   };
+  console.log('AuthProvider render', { showLoginModal, user });
 
   return (
     <AuthContext.Provider value={contextValue}>
       {children}
-      {showLoginModal && <LoginModal onClose={closeLoginModal} />}
+      {showLoginModal && (console.log('LoginModal rendered'), <LoginModal onClose={closeLoginModal} />)}
     </AuthContext.Provider>
   );
 };

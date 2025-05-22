@@ -4,10 +4,13 @@ import { useState } from 'react';
 
 const FavoriteButton = ({ productId, disabled }) => {
   const { isFavorite, addFavorite, removeFavorite, loading } = useFavorites();
-  const { isAuthenticated, openLoginModal } = useAuth();
+  const { isAuthenticated, openLoginModal, user } = useAuth();
+
+  console.log('FavoriteButton rendered', { isAuthenticated, loading, disabled, user, productId });
 
   const handleClick = async (e) => {
     e.preventDefault();
+    console.log('FavoriteButton handleClick', { isAuthenticated, loading, disabled, user, productId });
     if (loading) return;
     if (!isAuthenticated) {
       if (openLoginModal) openLoginModal();

@@ -1,16 +1,22 @@
+import Modal from 'react-bootstrap/Modal';
+import Button from 'react-bootstrap/Button';
 import React from 'react';
 
-const LoginModal = ({ onClose }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-    <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full">
-      <h2 className="text-xl font-bold mb-4">Вход в аккаунт</h2>
-      <p className="mb-4">Чтобы добавить в избранное, войдите или зарегистрируйтесь.</p>
-      <div className="flex justify-end gap-2">
+const LoginModal = ({ onClose }) => {
+  return (
+    <Modal show={true} onHide={onClose} centered>
+      <Modal.Header closeButton>
+        <Modal.Title>Вход в аккаунт</Modal.Title>
+      </Modal.Header>
+      <Modal.Body>
+        Чтобы добавить в избранное, войдите или зарегистрируйтесь.
+      </Modal.Body>
+      <Modal.Footer>
         <a href="/login" className="btn btn-primary">Войти</a>
-        <button className="btn btn-secondary" onClick={onClose}>Закрыть</button>
-      </div>
-    </div>
-  </div>
-);
+        <Button variant="secondary" onClick={onClose}>Закрыть</Button>
+      </Modal.Footer>
+    </Modal>
+  );
+};
 
 export default LoginModal; 

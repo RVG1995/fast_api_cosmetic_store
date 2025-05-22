@@ -38,6 +38,8 @@ export const FavoritesProvider = ({ children }) => {
 
   const isFavorite = (productId) => favorites.some(f => f.product_id === productId);
 
+  const resetFavorites = () => setFavorites([]);
+
   return (
     <FavoritesContext.Provider value={{
       favorites,
@@ -47,6 +49,7 @@ export const FavoritesProvider = ({ children }) => {
       addFavorite,
       removeFavorite,
       isFavorite,
+      resetFavorites,
     }}>
       {children}
     </FavoritesContext.Provider>

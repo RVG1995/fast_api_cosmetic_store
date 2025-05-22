@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status,Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, not_,text
 from datetime import datetime
-
+import httpx
 from database import get_db
 from models import PromoCodeModel, OrderModel, DeliveryInfoModel, OrderStatusModel, BoxberryStatusFunnelModel, OrderStatusHistoryModel
 from schemas import OrderDetailResponse, OrderDetailResponseWithPromo, PromoCodeResponse, BoxberryOrderResponse, BoxberryStatusUpdateRequest, BoxberryStatusUpdateResponse
@@ -147,6 +147,12 @@ async def update_boxberry_delivery_status(
     Вход: [{order_id, tracking_number, status_in_delivery_service}]
     Возвращает список с результатом для каждого заказа.
     """
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{settings.DELIVERY_SERVICE_URL}/delivery/boxberry/statuses")
+        if response.status_code == 200:
+            statuses = response.json()
+
     results = []
     for update in updates:
         query = select(DeliveryInfoModel).where(
@@ -170,9 +176,9 @@ async def update_boxberry_delivery_status(
             # 2. Если не нашли по имени, ищем по коду (ищем код по имени через config)
             if not funnel:
                 code = None
-                for k, v in settings.BOXBERRY_STATUSES.items():
-                    if v == boxberry_status_name:
-                        code = k
+                for status in statuses:
+                    if status["name"] == boxberry_status_name:
+                        code = status["code"]
                         break
                 if code is not None:
                     funnel_rule = await session.execute(

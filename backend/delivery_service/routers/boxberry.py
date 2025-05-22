@@ -2,6 +2,7 @@
 
 import logging
 import re
+from typing import List
 
 from fastapi import APIRouter, HTTPException, Body, Depends
 import httpx
@@ -778,3 +779,11 @@ async def create_boxberry_parcel(
             status_code=500,
             detail=f"Ошибка при {'обновлении' if 'updateByTrack' in order_data else 'создании'} посылки в BoxBerry: {str(e)}"
         )
+
+@router.get("/statuses", response_model=List[dict])
+async def get_boxberry_statuses():
+    """Получить список Boxberry статусов (код+имя) из конфига."""
+    return [
+        {"code": int(code), "name": name}
+        for code, name in settings.BOXBERRY_STATUSES.items()
+    ]

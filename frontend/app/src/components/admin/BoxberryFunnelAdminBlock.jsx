@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import Modal from 'react-bootstrap/Modal';
 import Button from 'react-bootstrap/Button';
+import { API_URLS } from '../../utils/constants';
 
-const API_BASE = process.env.REACT_APP_ORDER_API_URL || "http://localhost:8003";
 
 export default function BoxberryFunnelAdminBlock() {
   const [rules, setRules] = useState([]);
@@ -21,9 +21,9 @@ export default function BoxberryFunnelAdminBlock() {
     setLoading(true);
     try {
       const [rulesRes, statusesRes, boxberryRes] = await Promise.all([
-        axios.get(`${API_BASE}/boxberry-funnel`, { withCredentials: true }),
-        axios.get(`${API_BASE}/order-statuses`, { withCredentials: true }),
-        axios.get(`${API_BASE}/boxberry-funnel/boxberry-statuses`, { withCredentials: true }),
+        axios.get(`${API_URLS.ORDER_SERVICE}/boxberry-funnel`, { withCredentials: true }),
+        axios.get(`${API_URLS.ORDER_SERVICE}/order-statuses`, { withCredentials: true }),
+        axios.get(`${API_URLS.DELIVERY_SERVICE}/delivery/boxberry/statuses`),
       ]);
       setRules(rulesRes.data);
       setOrderStatuses(statusesRes.data);
@@ -56,7 +56,7 @@ export default function BoxberryFunnelAdminBlock() {
 
   async function handleDelete(id) {
     if (!window.confirm("Удалить правило?")) return;
-    await axios.delete(`${API_BASE}/boxberry-funnel/${id}`, { withCredentials: true });
+    await axios.delete(`${API_URLS.ORDER_SERVICE}/boxberry-funnel/${id}`, { withCredentials: true });
     fetchAll();
   }
 
@@ -71,9 +71,9 @@ export default function BoxberryFunnelAdminBlock() {
     };
     try {
       if (editRule.id) {
-        await axios.put(`${API_BASE}/boxberry-funnel/${editRule.id}`, payload, { withCredentials: true });
+        await axios.put(`${API_URLS.ORDER_SERVICE}/boxberry-funnel/${editRule.id}`, payload, { withCredentials: true });
       } else {
-        await axios.post(`${API_BASE}/boxberry-funnel`, payload, { withCredentials: true });
+        await axios.post(`${API_URLS.ORDER_SERVICE}/boxberry-funnel`, payload, { withCredentials: true });
       }
       setShowModal(false);
       setEditRule(null);

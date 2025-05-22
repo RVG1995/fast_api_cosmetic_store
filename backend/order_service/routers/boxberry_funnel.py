@@ -3,13 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from database import get_db
 from dependencies import get_admin_user
-from models import BoxberryStatusFunnelModel, OrderStatusModel
-from schemas import BoxberryStatusFunnelCreate, BoxberryStatusFunnelUpdate, BoxberryStatusFunnelResponse, OrderStatusResponse
+from models import OrderStatusModel
+from schemas import BoxberryStatusFunnelCreate, BoxberryStatusFunnelUpdate, BoxberryStatusFunnelResponse
 from services import (
     get_boxberry_funnel_all, get_boxberry_funnel_by_id,
     create_boxberry_funnel, update_boxberry_funnel, delete_boxberry_funnel
 )
-from config import settings
 from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(
@@ -23,13 +22,6 @@ async def list_boxberry_funnel(session: AsyncSession = Depends(get_db)):
     funnels = await get_boxberry_funnel_all(session)
     return funnels
 
-@router.get("/boxberry-statuses", response_model=List[dict])
-async def get_boxberry_statuses():
-    """Получить список Boxberry статусов (код+имя) из конфига."""
-    return [
-        {"code": int(code), "name": name}
-        for code, name in settings.BOXBERRY_STATUSES.items()
-    ]
 
 @router.get("/{funnel_id}", response_model=BoxberryStatusFunnelResponse)
 async def get_boxberry_funnel_view(funnel_id: int, session: AsyncSession = Depends(get_db)):

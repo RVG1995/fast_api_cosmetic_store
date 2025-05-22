@@ -4,7 +4,6 @@ import BoxberryFunnelAdminBlock from "../../components/admin/BoxberryFunnelAdmin
 export default function AdminBoxberryFunnel() {
   return (
     <div className="container py-4">
-      <h2 className="mb-4">Воронка статусов Boxberry → статусы заказа</h2>
       <BoxberryFunnelAdminBlock />
     </div>
   );

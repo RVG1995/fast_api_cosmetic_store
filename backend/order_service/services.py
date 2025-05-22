@@ -1123,7 +1123,9 @@ async def calculate_discount(
 
 # --- CRUD для BoxberryStatusFunnel ---
 async def get_boxberry_funnel_all(session: AsyncSession) -> list:
-    result = await session.execute(select(BoxberryStatusFunnelModel).order_by(BoxberryStatusFunnelModel.boxberry_status_code))
+    result = await session.execute(
+        select(BoxberryStatusFunnelModel).options(selectinload(BoxberryStatusFunnelModel.order_status))
+    )
     return result.scalars().all()
 
 async def get_boxberry_funnel_by_id(session: AsyncSession, funnel_id: int) -> Optional[BoxberryStatusFunnelModel]:
@@ -1152,4 +1154,6 @@ async def delete_boxberry_funnel(session: AsyncSession, funnel_id: int) -> bool:
         return False
     await session.delete(funnel)
     await session.commit()
-    return True 
+    return True
+
+

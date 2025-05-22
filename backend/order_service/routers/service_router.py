@@ -147,9 +147,9 @@ async def update_boxberry_delivery_status(
     Вход: [{order_id, tracking_number, status_in_delivery_service}]
     Возвращает список с результатом для каждого заказа.
     """
-
+    statuses = []
     async with httpx.AsyncClient() as client:
-        response = await client.get(f"{settings.DELIVERY_SERVICE_URL}/delivery/boxberry/statuses")
+        response = await client.get(f"{settings.DELIVERY_SERVICE_URL}/delivery/boxberry/statuses", timeout=10)
         if response.status_code == 200:
             statuses = response.json()
 

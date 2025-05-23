@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 import { API_URLS } from '../utils/constants';
+import { deliveryAPI } from '../utils/api';
 
 // URL сервиса заказов
 const ORDER_SERVICE_URL = API_URLS.ORDER_SERVICE;
@@ -23,12 +24,13 @@ export const OrderProvider = ({ children }) => {
   const [currentOrder, setCurrentOrder] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [promoCode, setPromoCode] = useState(null);
 
   // Функция для получения конфигурации запроса
   const getConfig = useCallback(() => {
-    // Для работы с куками
+    console.log('getConfig: document.cookie =', document.cookie);
     return {
-      withCredentials: true, 
+      withCredentials: true,
       headers: {
         'Content-Type': 'application/json'
       }
@@ -156,33 +158,26 @@ export const OrderProvider = ({ children }) => {
   // Получение статистики заказов пользователя
   const getUserOrderStatistics = useCallback(async () => {
     console.log('Вызов getUserOrderStatistics');
-    
-    if (!isAuthenticated()) {
+    if (!user) {
       console.error('Попытка получить статистику заказов без авторизации');
       setError('Для просмотра статистики необходима авторизация');
       return null;
     }
-    
     setLoading(true);
     setError(null);
-    
     const url = `${ORDER_SERVICE_URL}/orders/statistics`;
     console.log('URL запроса статистики заказов:', url);
-    
     try {
       const config = getConfig();
       console.log('Заголовки запроса:', {
         Authorization: config?.headers?.Authorization ? 'Bearer xxx...' : 'Отсутствует',
         ContentType: config?.headers?.['Content-Type']
       });
-      
       const response = await axios.get(url, config);
       console.log('Ответ от сервера getUserOrderStatistics:', response.status, response.data);
-      
       return response.data;
     } catch (error) {
       console.error('Ошибка при получении статистики заказов:', error);
-      
       if (error.response) {
         if (error.response.status === 401) {
           setError('Для просмотра статистики необходима авторизация');
@@ -194,16 +189,14 @@ export const OrderProvider = ({ children }) => {
       } else {
         setError(`Ошибка запроса: ${error.message}`);
       }
-      
       return null;
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, getConfig]);
+  }, [user, getConfig]);
 
   // Создание нового заказа
-  const createOrder = useCallback(async (orderData) => {
-    console.log('Вызов createOrder с данными:', orderData);
+  const createOrder = async (orderData) => {
     setLoading(true);
     setError(null);
     
@@ -212,44 +205,70 @@ export const OrderProvider = ({ children }) => {
     console.log("Статус аутентификации при создании заказа:", userAuthenticated ? "Пользователь аутентифицирован" : "Пользователь не аутентифицирован");
     
     console.log("Исходные данные заказа:", orderData);
+    console.log("Текущий промокод в контексте:", promoCode);
     console.log("URL:", `${ORDER_SERVICE_URL}/orders`);
     
     try {
       // Проверка наличия обязательных полей
-      if (!orderData.fullName && !orderData.shipping_address?.full_name) {
+      if (!orderData.fullName && !orderData.full_name && !orderData.shipping_address?.full_name) {
         setError("Необходимо указать ФИО получателя");
         return null;
       }
       
-      if (!orderData.region && !orderData.shipping_address?.state) {
-        setError("Необходимо указать регион доставки");
-        return null;
-      }
-      
-      if (!orderData.city && !orderData.shipping_address?.city) {
-        setError("Необходимо указать город");
-        return null;
-      }
-      
-      if (!orderData.street && !orderData.shipping_address?.address_line1) {
-        setError("Необходимо указать адрес");
+      if (!orderData.delivery_address && !orderData.shipping_address?.address) {
+        setError("Необходимо указать адрес доставки");
         return null;
       }
       
       // Подготовка данных в новом формате
       const newOrderData = {
         items: orderData.items,
-        full_name: orderData.shipping_address?.full_name || orderData.fullName || "",
+        full_name: orderData.shipping_address?.full_name || orderData.full_name || orderData.fullName || "",
         email: orderData.contact_email || orderData.email || "",
         phone: orderData.contact_phone || orderData.phone || "",
-        region: orderData.shipping_address?.state || orderData.region || "",
-        city: orderData.shipping_address?.city || orderData.city || "",
-        street: orderData.shipping_address?.address_line1 || orderData.street || "",
-        comment: orderData.notes || orderData.comment || ""
+        delivery_address: orderData.shipping_address?.address || orderData.delivery_address || "",
+        comment: orderData.notes || orderData.comment || "",
+        personal_data_agreement: Boolean(orderData.personal_data_agreement || orderData.personalDataAgreement),
+        receive_notifications: Boolean(orderData.receive_notifications)
       };
       
+      // Добавляем информацию о доставке в объект delivery_info
+      if (orderData.delivery_info) {
+        // Если есть, просто копируем его как есть
+        newOrderData.delivery_info = orderData.delivery_info;
+      } else {
+        // Если нет, собираем delivery_info из отдельных полей для обратной совместимости
+        newOrderData.delivery_info = {
+          delivery_type: orderData.delivery_type || "",
+          delivery_cost: orderData.delivery_cost || 0,
+          boxberry_point_id: orderData.boxberry_point_id || null,
+          boxberry_point_address: orderData.boxberry_point_address || null,
+          tracking_number: null
+        };
+      }
+      
+      // Добавляем информацию о способе оплаты
+      if (orderData.hasOwnProperty('is_payment_on_delivery')) {
+        newOrderData.is_payment_on_delivery = orderData.is_payment_on_delivery;
+      }
+      
+      // Добавляем промокод, если он есть
+      if (promoCode) {
+        // Если есть promoCode.code, используем его (текстовый код промокода)
+        if (promoCode.code) {
+          newOrderData.promo_code = promoCode.code;
+          console.log("Добавлен промокод в данные заказа:", promoCode.code);
+        }
+        
+        // Если есть promoCode.id, используем его (ID промокода в базе данных)
+        if (promoCode.id) {
+          newOrderData.promo_code_id = promoCode.id;
+          console.log("Добавлен ID промокода в данные заказа:", promoCode.id);
+        }
+      }
+      
       // Проверяем итоговый объект на наличие всех обязательных полей
-      const requiredFields = ['full_name', 'phone', 'region', 'city', 'street'];
+      const requiredFields = ['full_name', 'phone', 'delivery_address', 'personal_data_agreement'];
       const missingFields = requiredFields.filter(field => !newOrderData[field]);
       
       if (missingFields.length > 0) {
@@ -257,9 +276,8 @@ export const OrderProvider = ({ children }) => {
           full_name: 'ФИО получателя',
           email: 'Email',
           phone: 'Телефон',
-          region: 'Регион',
-          city: 'Город',
-          street: 'Адрес'
+          delivery_address: 'Адрес доставки',
+          personal_data_agreement: 'Согласие на обработку персональных данных'
         };
         
         const errorMsg = `Необходимо заполнить следующие поля: ${missingFields.map(f => fieldNames[f]).join(', ')}`;
@@ -273,50 +291,68 @@ export const OrderProvider = ({ children }) => {
       const config = getConfig();
       console.log("Используемые заголовки:", config);
       
+      console.log("Финальные данные заказа для отправки:", JSON.stringify(newOrderData));
+      
       const response = await axios.post(
         `${ORDER_SERVICE_URL}/orders`, 
         newOrderData,
         config
       );
       
-      console.log("Ответ сервера:", response.data);
-      return response.data;
-    } catch (err) {
-      console.error("Полная ошибка при создании заказа:", err);
-      console.error("Ответ сервера:", err.response);
+      const data = response.data;
+      console.log("Ответ сервера после создания заказа:", data);
       
-      let errorMessage = 'Не удалось создать заказ';
+      // Очищаем промокод после успешного создания заказа
+      clearPromoCode();
       
-      // Обработка ошибок валидации (422 Unprocessable Entity)
-      if (err.response?.status === 422 && err.response?.data?.detail) {
-        const validationErrors = err.response.data.detail;
-        if (Array.isArray(validationErrors)) {
-          // Собираем сообщения об ошибках валидации
-          errorMessage = validationErrors.map(error => {
-            const field = error.loc[error.loc.length - 1];
-            return `Ошибка в поле "${field}": ${error.msg}`;
+      setLoading(false);
+      return data;
+    } catch (error) {
+      console.error("Ошибка при создании заказа:", error);
+      
+      if (error.response) {
+        console.error("Детали ошибки:", error.response.data);
+        
+        // Проверяем формат ошибки
+        if (error.response.data.detail && Array.isArray(error.response.data.detail)) {
+          const errorMessages = error.response.data.detail.map(err => {
+            // Извлекаем понятное сообщение из ошибки
+            if (typeof err.msg === 'string') {
+              // Удаляем префикс "Value error, " если он есть
+              const cleanMsg = err.msg.replace('Value error, ', '');
+              
+              // Добавляем название поля, если оно есть
+              const fieldName = err.loc && err.loc.length > 1 ? err.loc[1] : '';
+              const fieldLabels = {
+                'full_name': 'ФИО',
+                'email': 'Email',
+                'phone': 'Телефон',
+                'delivery_address': 'Адрес доставки',
+                'comment': 'Комментарий',
+                'promo_code': 'Промокод'
+              };
+              
+              const fieldLabel = fieldLabels[fieldName] || fieldName;
+              
+              return fieldLabel ? `${fieldLabel}: ${cleanMsg}` : cleanMsg;
+            }
+            return typeof err === 'object' ? JSON.stringify(err) : String(err);
           }).join('. ');
-        } else if (typeof validationErrors === 'string') {
-          errorMessage = validationErrors;
+          
+          setError(errorMessages);
+        } else if (error.response.data.detail && typeof error.response.data.detail === 'string') {
+          setError(error.response.data.detail);
+        } else {
+          setError("Ошибка при создании заказа. Попробуйте еще раз.");
         }
-      } 
-      // Дополнительная проверка на ошибку авторизации
-      else if (err.response?.status === 401) {
-        errorMessage = "Для оформления заказа необходима авторизация. Пожалуйста, войдите в систему.";
-      } 
-      // Другие ошибки от сервера
-      else if (err.response?.data?.detail) {
-        errorMessage = typeof err.response.data.detail === 'string' 
-          ? err.response.data.detail 
-          : 'Ошибка на сервере';
+      } else {
+        setError("Ошибка соединения с сервером. Проверьте подключение к интернету.");
       }
       
-      setError(errorMessage);
-      return null;
-    } finally {
       setLoading(false);
+      return null;
     }
-  }, [isAuthenticated, getConfig, setError, setLoading]);
+  };
 
   // Отмена заказа
   const cancelOrder = useCallback(async (orderId, reason) => {
@@ -665,33 +701,24 @@ export const OrderProvider = ({ children }) => {
   // Обновление статуса оплаты заказа (для администраторов)
   const updateOrderPaymentStatus = useCallback(async (orderId, isPaid) => {
     console.log('Запрос на обновление статуса оплаты заказа:', { orderId, isPaid });
-    
     // Проверяем права администратора
     const userData = user;
     const isAdmin = userData?.is_admin || userData?.is_super_admin;
     console.log('Проверка прав администратора:', { isAdmin, userData });
-    
     if (!isAdmin) {
       console.error('Попытка обновить статус оплаты заказа без прав администратора');
       setError('Для обновления статуса оплаты заказа необходимы права администратора');
       return null;
     }
-    
     setLoading(true);
     setError(null);
-    
     try {
-      // Используем PUT эндпоинт для обновления заказа
-      const url = `${ORDER_SERVICE_URL}/admin/orders/${orderId}`;
+      // Используем отдельный эндпоинт для смены оплаты
+      const url = `${ORDER_SERVICE_URL}/admin/orders/${orderId}/payment-status`;
       const config = getConfig();
       const updateData = { is_paid: isPaid };
-      
-      console.log('Отправка запроса на обновление статуса оплаты:', { url, updateData, config: { headers: config.headers } });
-      
-      // Отправляем PUT запрос
-      const response = await axios.put(url, updateData, config);
+      const response = await axios.post(url, updateData, config);
       console.log('Ответ на запрос обновления статуса оплаты:', { status: response.status, data: response.data });
-      
       if (response.status >= 200 && response.status < 300) {
         return response.data;
       } else {
@@ -702,7 +729,6 @@ export const OrderProvider = ({ children }) => {
     } catch (err) {
       console.error('Ошибка при обновлении статуса оплаты заказа:', err);
       let errorMessage = 'Не удалось обновить статус оплаты заказа';
-      
       if (err.response) {
         errorMessage = err.response.data.detail || errorMessage;
       } else if (err.request) {
@@ -710,7 +736,6 @@ export const OrderProvider = ({ children }) => {
       } else {
         errorMessage = err.message || errorMessage;
       }
-      
       setError(errorMessage);
       return null;
     } finally {
@@ -858,6 +883,359 @@ export const OrderProvider = ({ children }) => {
     }
   }, [user, getConfig, setCurrentOrder]);
 
+  // Проверка промокода
+  const checkPromoCode = useCallback(async (code, email, phone) => {
+    console.log(`Проверка промокода: ${code}, email: ${email}, phone: ${phone}`);
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const config = getConfig();
+      const response = await axios.post(
+        `${ORDER_SERVICE_URL}/promo-codes/check`, 
+        { code, email, phone },
+        config
+      );
+      
+      console.log("Ответ сервера при проверке промокода:", response.data);
+      
+      if (response.data.is_valid) {
+        // Сохраняем информацию о промокоде в состоянии
+        setPromoCode({
+          code,
+          discountPercent: response.data.discount_percent,
+          discountAmount: response.data.discount_amount,
+          message: response.data.message,
+          // Сохраняем ID промокода
+          promoCodeId: response.data.promo_code?.id
+        });
+      } else {
+        setPromoCode(null);
+        setError(response.data.message);
+      }
+      
+      return response.data;
+    } catch (err) {
+      console.error("Ошибка при проверке промокода:", err);
+      setPromoCode(null);
+      
+      // Обработка объектов ошибок и преобразование их в строки
+      let errorMessage = "Не удалось проверить промокод";
+      
+      if (err.response?.data?.detail) {
+        if (Array.isArray(err.response.data.detail)) {
+          // Если ошибка представлена массивом объектов (валидация FastAPI)
+          errorMessage = err.response.data.detail
+            .map(item => {
+              if (typeof item === 'string') return item;
+              if (typeof item === 'object') return item.msg || JSON.stringify(item);
+              return String(item);
+            })
+            .join('. ');
+        } else if (typeof err.response.data.detail === 'object') {
+          // Если ошибка - объект
+          errorMessage = err.response.data.detail.msg || JSON.stringify(err.response.data.detail);
+        } else {
+          // Если ошибка - строка или другой тип
+          errorMessage = String(err.response.data.detail);
+        }
+      }
+      
+      setError(errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [getConfig]);
+  
+  // Очистка промокода
+  const clearPromoCode = useCallback(() => {
+    setPromoCode(null);
+  }, []);
+
+  // Расчет скидки на основе промокода
+  const calculateDiscount = useCallback((totalPrice) => {
+    if (!promoCode) return 0;
+    
+    if (promoCode.discountPercent) {
+      // Скидка в процентах
+      return Math.floor(totalPrice * promoCode.discountPercent / 100);
+    } else if (promoCode.discountAmount) {
+      // Фиксированная скидка
+      return Math.min(promoCode.discountAmount, totalPrice);
+    }
+    
+    return 0;
+  }, [promoCode]);
+
+  // Создание заказа из админки
+  const createAdminOrder = async (orderData) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Создаем объект delivery_info из переданных данных
+      const deliveryInfo = {
+        delivery_type: orderData.delivery_type || "boxberry_pickup_point",
+        delivery_cost: orderData.delivery_cost ? parseFloat(orderData.delivery_cost) : 0,
+        boxberry_point_id: orderData.boxberry_point_id ? parseInt(orderData.boxberry_point_id, 10) : null,
+        boxberry_point_address: orderData.boxberry_point_address || null,
+        tracking_number: null
+      };
+      
+      // Логируем данные пункта выдачи для отладки
+      if (orderData.delivery_type && orderData.delivery_type.includes('pickup_point')) {
+        console.log('ID пункта выдачи в запросе:', orderData.boxberry_point_id, 
+                    'преобразован в:', deliveryInfo.boxberry_point_id)
+      }
+      
+      console.log('Сформирован объект delivery_info:', deliveryInfo);
+      
+      // Преобразуем данные для отправки
+      const processedData = {
+        ...orderData,
+        items: orderData.items.map(item => ({
+          product_id: parseInt(item.product_id || item.product_id),
+          quantity: parseInt(item.quantity)
+        })),
+        // Добавляем объект delivery_info
+        delivery_info: deliveryInfo,
+        // Добавляем флаг способа оплаты
+        is_payment_on_delivery: Boolean(orderData.is_payment_on_delivery)
+      };
+      
+      const response = await axios.post(
+        `${ORDER_SERVICE_URL}/admin/orders`, 
+        processedData, 
+        { withCredentials: true }
+      );
+      
+      console.log('Ответ от сервера createAdminOrder:', response.data);
+      return response.data;
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || err.message || 'Ошибка при создании заказа';
+      console.error('Ошибка при создании заказа из админки:', errorMsg);
+      setError(errorMsg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Создание или обновление посылки Boxberry для заказа
+  const createBoxberryParcel = async (orderId) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      console.log(`Запрос на создание/обновление посылки Boxberry для заказа: ${orderId}`);
+      
+      // Получаем текущий заказ, если его нет в состоянии
+      let orderData = currentOrder;
+      if (!orderData || orderData.id !== orderId) {
+        orderData = await getAdminOrderById(orderId);
+        if (!orderData) {
+          throw new Error('Не удалось получить данные заказа');
+        }
+      }
+      
+      // Логируем полученные данные для отладки проблем с типом доставки
+      console.log('Данные о доставке в заказе:', {
+        delivery_type: orderData.delivery_type,
+        delivery_info: orderData.delivery_info,
+        boxberry_point_id: orderData.boxberry_point_id
+      });
+      
+      // Рассчитываем сумму товаров напрямую из товаров заказа
+      const itemsTotal = orderData.items.reduce(
+        (sum, item) => sum + (item.product_price || 0) * (item.quantity || 1), 
+        0
+      );
+      console.log('Рассчитанная сумма товаров в заказе:', itemsTotal);
+      
+      // Формируем данные для создания/обновления посылки
+      // Рассчитываем стоимость доставки
+      const deliveryCost = orderData.delivery_info?.delivery_cost || orderData.delivery_cost || 0;
+      
+      // Рассчитываем итоговую сумму (товары + доставка)
+      const totalWithDelivery = itemsTotal + deliveryCost;
+      console.log('Рассчитанная общая сумма заказа (товары + доставка):', totalWithDelivery);
+      
+      const parcelData = {
+        order_number: orderData.order_number,
+        price: itemsTotal, // сумма товаров без доставки, рассчитанная из списка товаров
+        payment_sum: orderData.is_payment_on_delivery ? totalWithDelivery : 0, // если оплата при получении, используем актуальную сумму
+        delivery_cost: deliveryCost,
+        // Предпочтительно использовать delivery_info.delivery_type, если доступен
+        delivery_type: orderData.delivery_info?.delivery_type || orderData.delivery_type || "boxberry_pickup_point",
+        delivery_address: orderData.delivery_address,
+        boxberry_point_id: orderData.delivery_info?.boxberry_point_id || orderData.boxberry_point_id,
+        full_name: orderData.full_name,
+        phone: orderData.phone,
+        email: orderData.email,
+        items: orderData.items.map(item => ({
+          product_id: item.product_id,
+          product_name: item.product_name,
+          product_price: item.product_price,
+          quantity: item.quantity
+        })),
+        // Добавляем информацию о весе и габаритах в соответствии с API Boxberry
+        weights: {
+          weight: 500,  // вес посылки в граммах
+          x: 20,        // ширина в см
+          y: 20,        // глубина в см
+          z: 10         // высота в см
+        }
+      };
+      
+      // Обработка данных для курьерской доставки Boxberry
+      const deliveryType = orderData.delivery_info?.delivery_type || orderData.delivery_type;
+      if (deliveryType === 'boxberry_courier') {
+        // Извлекаем почтовый индекс из адреса если он там есть
+        const extractZipFromAddress = (address) => {
+          if (!address) return null;
+          const zipRegex = /\b(\d{6})\b/; // Российский почтовый индекс - 6 цифр
+          const match = address.match(zipRegex);
+          return match ? match[1] : null;
+        };
+        
+        // Получаем почтовый индекс
+        const zipCode = extractZipFromAddress(orderData.delivery_address);
+        
+        // Получаем город из адреса
+        const getCityFromAddress = (address) => {
+          if (!address) return null;
+          // Адрес обычно начинается с названия города
+          const parts = address.split(',');
+          if (parts.length > 0) {
+            // Убираем "г" или "г." в начале
+            const cityPart = parts[0].trim();
+            return cityPart.replace(/^г\.?\s+/, '');
+          }
+          return null;
+        };
+        
+        const cityName = getCityFromAddress(orderData.delivery_address);
+        
+        // Добавляем данные для курьерской доставки
+        parcelData.zip_code = zipCode;
+        parcelData.city_name = cityName;
+        
+        // Формируем полные данные адреса для API
+        const addressParts = orderData.delivery_address.split(',').map(part => part.trim());
+        let street = '';
+        let house = '';
+        let flat = '';
+        
+        // Извлекаем улицу и дом из адреса, если они есть
+        // Проходим по частям адреса (пропуская первую часть, которая обычно город)
+        if (addressParts.length > 1) {
+          // Исключаем город и индекс
+          const addressWithoutCity = addressParts.slice(1).join(', ');
+          
+          // Ищем улицу
+          const streetMatch = addressWithoutCity.match(/ул(?:ица)?\s+([а-яА-Яa-zA-Z\s\-\.]+)/i);
+          if (streetMatch) {
+            street = streetMatch[1].trim();
+          }
+          
+          // Ищем дом
+          const houseMatch = addressWithoutCity.match(/д(?:ом)?\s*\.?\s*(\d+[\-\/]?\d*\w*)/i);
+          if (houseMatch) {
+            house = houseMatch[1].trim();
+          }
+          
+          // Ищем квартиру
+          const flatMatch = addressWithoutCity.match(/кв(?:артира)?\s*\.?\s*(\d+)/i);
+          if (flatMatch) {
+            flat = flatMatch[1].trim();
+          }
+        }
+        
+        // Формируем данные адреса для API
+        parcelData.address_data = {
+          postal_code: zipCode,
+          city: cityName,
+          settlement: cityName,
+          street_with_type: street ? `ул ${street}` : "",
+          house: house || "",
+          house_type_full: "дом",
+          flat: flat || "",
+          flat_type_full: "кв."
+        };
+        
+        // Формируем корректный формат kurdost для курьерской доставки Boxberry
+        parcelData.kurdost = {
+          index: zipCode || "",
+          citi: cityName || "",
+          addressp: street && house ? `ул ${street}, дом ${house}${flat ? `, кв ${flat}` : ''}` : orderData.delivery_address
+        };
+        
+        console.log('Подготовлены данные курьерской доставки:', {
+          address_data: parcelData.address_data,
+          kurdost: parcelData.kurdost
+        });
+      }
+      
+      let response;
+      
+      // Если у заказа уже есть трек-номер, обновляем существующую посылку
+      const existingTrackingNumber = orderData.delivery_info?.tracking_number;
+      if (existingTrackingNumber) {
+        console.log(`Заказ ${orderId} уже имеет трек-номер ${existingTrackingNumber}, обновляем посылку`);
+        console.log('Данные для обновления посылки:', parcelData);
+        response = await deliveryAPI.updateBoxberryParcel(parcelData, existingTrackingNumber);
+      } else {
+        // Иначе создаем новую посылку
+        console.log(`Заказ ${orderId} не имеет трек-номера, создаем новую посылку`);
+        response = await deliveryAPI.createBoxberryParcel(parcelData);
+      }
+      
+      // Если получен трек-номер, обновляем заказ
+      if (response && (response.track || response.track_number || response.tracking_number)) {
+        const trackingNumber = response.track || response.track_number || response.tracking_number;
+        
+        // Обновляем заказ с трек-номером, если он изменился
+        if (trackingNumber !== orderData.delivery_info?.tracking_number) {
+          await axios.put(
+            `${ORDER_SERVICE_URL}/admin/orders/${orderId}`,
+            { 
+              delivery_info: {
+                tracking_number: trackingNumber
+              }
+            },
+            { withCredentials: true }
+          );
+          
+          // Обновляем текущий заказ
+          const updatedOrder = await getAdminOrderById(orderId);
+          setCurrentOrder(updatedOrder);
+        }
+        
+        return {
+          success: true,
+          trackingNumber,
+          label: response.label,
+          message: existingTrackingNumber ? 
+            "Посылка успешно обновлена" : 
+            "Посылка успешно создана и трек-номер сохранен"
+        };
+      } else {
+        throw new Error('Не удалось получить трек-номер');
+      }
+    } catch (err) {
+      console.error('Ошибка при обработке посылки Boxberry:', err);
+      const errorMsg = err.response?.data?.detail || err.message || 'Ошибка при обработке посылки Boxberry';
+      setError(errorMsg);
+      return {
+        success: false,
+        error: errorMsg
+      };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Значение контекста
   const contextValue = {
     orders,
@@ -876,7 +1254,15 @@ export const OrderProvider = ({ children }) => {
     getUserOrders,
     getAllOrders,
     getAdminOrderById,
-    getUserOrderStatistics
+    getUserOrderStatistics,
+    
+    // Функции для работы с промокодами
+    promoCode,
+    checkPromoCode,
+    clearPromoCode,
+    calculateDiscount,
+    createAdminOrder,
+    createBoxberryParcel
   };
 
   return (

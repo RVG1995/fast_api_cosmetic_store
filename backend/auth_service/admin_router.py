@@ -1,14 +1,16 @@
+"""Модуль для административных эндпоинтов аутентификации и управления пользователями."""
+
 import os
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import UserModel
 from schema import AdminUserReadShema
-from router import get_current_user
+from auth_utils import get_admin_user, get_super_admin_user
 from database import get_session
-
+from utils import verify_service_jwt
 # Получаем сервисный ключ из переменных окружения
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
 
@@ -23,32 +25,9 @@ async def verify_service_key(service_key: str = Header(None, alias="service-key"
         )
     return True
 
-async def get_admin_user(
-    current_user: UserModel = Depends(get_current_user),
-) -> UserModel:
-    """Проверяет, что текущий пользователь - администратор"""
-    if not (current_user.is_admin or current_user.is_super_admin):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недостаточно прав доступа",
-        )
-    return current_user
-
-async def get_super_admin_user(
-    current_user: UserModel = Depends(get_current_user),
-) -> UserModel:
-    """Проверяет, что текущий пользователь - суперадминистратор"""
-    if not current_user.is_super_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недостаточно прав доступа",
-        )
-    return current_user
-
-@router.get("/users", response_model=List[AdminUserReadShema])
+@router.get("/users", response_model=List[AdminUserReadShema], dependencies=[Depends(get_admin_user)])
 async def get_all_users(
-    session: AsyncSession = Depends(get_session),
-    _: UserModel = Depends(get_admin_user)  # Проверка прав администратора
+    session: AsyncSession = Depends(get_session)
 ):
     """Получить список всех пользователей (только для админов)"""
     stmt = select(UserModel)
@@ -56,11 +35,10 @@ async def get_all_users(
     users = result.scalars().all()
     return users
 
-@router.patch("/users/{user_id}/activate")
+@router.patch("/users/{user_id}/activate", dependencies=[Depends(get_admin_user)])
 async def admin_activate_user(
     user_id: int,
-    session: AsyncSession = Depends(get_session),
-    _: UserModel = Depends(get_admin_user)
+    session: AsyncSession = Depends(get_session)
 ):
     """Активировать пользователя (только для админов)"""
     user = await UserModel.get_by_id(session, user_id)
@@ -72,11 +50,10 @@ async def admin_activate_user(
     await session.commit()
     return {"message": f"Пользователь {user.email} активирован"}
 
-@router.patch("/users/{user_id}/make-admin")
+@router.patch("/users/{user_id}/make-admin", dependencies=[Depends(get_super_admin_user)])
 async def make_user_admin(
     user_id: int,
-    session: AsyncSession = Depends(get_session),
-    _: UserModel = Depends(get_super_admin_user)  # Только суперадмин
+    session: AsyncSession = Depends(get_session)
 ):
     """Предоставить пользователю права администратора (только для суперадмина)"""
     user = await UserModel.get_by_id(session, user_id)
@@ -87,11 +64,10 @@ async def make_user_admin(
     await session.commit()
     return {"message": f"Пользователю {user.email} предоставлены права администратора"}
 
-@router.patch("/users/{user_id}/remove-admin")
+@router.patch("/users/{user_id}/remove-admin", dependencies=[Depends(get_super_admin_user)])
 async def remove_admin_rights(
     user_id: int,
-    session: AsyncSession = Depends(get_session),
-    _: UserModel = Depends(get_super_admin_user)  # Только суперадмин
+    session: AsyncSession = Depends(get_session)
 ):
     """Отозвать права администратора у пользователя (только для суперадмина)"""
     user = await UserModel.get_by_id(session, user_id)
@@ -109,11 +85,10 @@ async def remove_admin_rights(
     await session.commit()
     return {"message": f"У пользователя {user.email} отозваны права администратора"}
 
-@router.delete("/users/{user_id}")
+@router.delete("/users/{user_id}", dependencies=[Depends(get_super_admin_user)])
 async def delete_user(
     user_id: int,
-    session: AsyncSession = Depends(get_session),
-    _: UserModel = Depends(get_super_admin_user)  # Только суперадмин
+    session: AsyncSession = Depends(get_session)
 ):
     """Удалить пользователя (только для суперадмина)"""
     user = await UserModel.get_by_id(session, user_id)
@@ -124,25 +99,20 @@ async def delete_user(
     await session.commit()
     return {"message": f"Пользователь {user.email} удален"}
 
-@router.get("/check-access")
-async def check_admin_access(
-    admin_user: UserModel = Depends(get_admin_user)
-):
+@router.get("/check-access", dependencies=[Depends(get_admin_user)])
+async def check_admin_access():
     """Эндпоинт для проверки прав администратора"""
     return {"status": "success", "message": "У вас есть права администратора"}
 
-@router.get("/check-super-access")
-async def check_super_admin_access(
-    super_admin_user: UserModel = Depends(get_super_admin_user)
-):
+@router.get("/check-super-access", dependencies=[Depends(get_super_admin_user)])
+async def check_super_admin_access():
     """Эндпоинт для проверки прав суперадминистратора"""
     return {"status": "success", "message": "У вас есть права суперадминистратора"}
 
-@router.get("/users/{user_id}", response_model=AdminUserReadShema)
+@router.get("/users/{user_id}", response_model=AdminUserReadShema, dependencies=[Depends(verify_service_jwt)])
 async def get_user_by_id(
     user_id: int,
-    session: AsyncSession = Depends(get_session),
-    is_service: bool = Depends(verify_service_key)
+    session: AsyncSession = Depends(get_session)
 ):
     """Получить информацию о конкретном пользователе по ID (для межсервисных запросов)"""
     user = await UserModel.get_by_id(session, user_id)

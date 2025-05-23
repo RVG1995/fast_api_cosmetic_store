@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { productAPI } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,8 @@ import CartUpdater from '../components/cart/CartUpdater';
 import ProductRating from '../components/reviews/ProductRating';
 import { useReviews } from '../context/ReviewContext';
 import { Badge } from 'react-bootstrap';
+import FavoriteButton from '../components/atoms/FavoriteButton';
+import { useFavorites } from '../context/FavoritesContext';
 
 const HomePage = () => {
   const [products, setProducts] = useState([]);
@@ -27,7 +29,8 @@ const HomePage = () => {
     pageSize: 8
   });
 
-  const { fetchBatchProductRatings } = useReviews();
+  const { fetchBatchProductRatings, productRatings } = useReviews();
+  const { isFavorite, addFavorite, removeFavorite, loading: favLoading } = useFavorites();
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {
@@ -51,20 +54,43 @@ const HomePage = () => {
   const fetchProducts = async (page = 1) => {
     try {
       setLoading(true);
-      const response = await productAPI.getProducts(page, pagination.pageSize, {}, sortOption !== 'newest' ? sortOption : null);
-      console.log('API ответ продуктов:', response);
       
-      // Обновляем товары и информацию о пагинации
-      const { items, total, limit } = response.data;
-      setProducts(Array.isArray(items) ? items : []);
+      // Определяем тип сортировки
+      const isRatingSort = sortOption === 'rating_desc' || sortOption === 'rating_asc';
       
-      // Обновляем информацию о пагинации
-      setPagination({
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalItems: total,
-        pageSize: limit
-      });
+      // Для сортировки по рейтингу запрашиваем все товары с базовой сортировкой
+      if (isRatingSort) {
+        const response = await productAPI.getProducts(1, 50, {}, 'newest'); // большой лимит для всех товаров
+        console.log('API ответ продуктов (с сортировкой по рейтингу):', response);
+        
+        // Обновляем товары и информацию о пагинации
+        const { items, total, limit } = response.data;
+        setProducts(Array.isArray(items) ? items : []);
+        
+        // Обновляем информацию о пагинации
+        setPagination({
+          currentPage: page,
+          totalPages: Math.ceil(total / pagination.pageSize),
+          totalItems: total,
+          pageSize: pagination.pageSize
+        });
+      } else {
+        // Обычная сортировка с сервера (newest, price_asc, price_desc)
+        const response = await productAPI.getProducts(page, pagination.pageSize, {}, sortOption);
+        console.log('API ответ продуктов (обычная сортировка):', response);
+        
+        // Обновляем товары и информацию о пагинации
+        const { items, total, limit } = response.data;
+        setProducts(Array.isArray(items) ? items : []);
+        
+        // Обновляем информацию о пагинации
+        setPagination({
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          totalItems: total,
+          pageSize: limit
+        });
+      }
       
       setError(null);
     } catch (err) {
@@ -94,6 +120,36 @@ const HomePage = () => {
     setSortOption(e.target.value);
     // fetchProducts будет вызван через useEffect
   };
+
+  // Client-side сортировка по рейтингу
+  const displayProducts = useMemo(() => {
+    // Для сортировки по рейтингу
+    if (sortOption === 'rating_desc' || sortOption === 'rating_asc') {
+      // Копируем массив для сортировки
+      const sortedItems = [...products];
+      
+      // Сортируем по рейтингу
+      if (sortOption === 'rating_desc') {
+        sortedItems.sort((a, b) =>
+          (productRatings[b.id]?.average_rating || 0) -
+          (productRatings[a.id]?.average_rating || 0)
+        );
+      } else { // rating_asc
+        sortedItems.sort((a, b) =>
+          (productRatings[a.id]?.average_rating || 0) -
+          (productRatings[b.id]?.average_rating || 0)
+        );
+      }
+      
+      // Применяем пагинацию на клиенте
+      const startIndex = (pagination.currentPage - 1) * pagination.pageSize;
+      const endIndex = startIndex + pagination.pageSize;
+      return sortedItems.slice(startIndex, endIndex);
+    }
+    
+    // Для не-рейтинговых сортировок возвращаем как есть (пагинация с сервера)
+    return products;
+  }, [products, sortOption, productRatings, pagination.currentPage, pagination.pageSize]);
 
   // Компонент пагинации
   const Pagination = () => {
@@ -174,6 +230,11 @@ const HomePage = () => {
     }
   }, [products, fetchBatchProductRatings]);
 
+  const handleToggleFavorite = async (productId) => {
+    if (isFavorite(productId)) await removeFavorite(productId);
+    else await addFavorite(productId);
+  };
+
   if (loading) {
     return (
       <div className="container">
@@ -213,6 +274,8 @@ const HomePage = () => {
                 <option value="newest">Новые сначала</option>
                 <option value="price_asc">Цена (по возрастанию)</option>
                 <option value="price_desc">Цена (по убыванию)</option>
+                <option value="rating_asc">Рейтинг (по возрастанию)</option>
+                <option value="rating_desc">Рейтинг (по убыванию)</option>
               </select>
             </div>
             {checkAdminRights() && (
@@ -233,17 +296,28 @@ const HomePage = () => {
         ) : (
           <>
             <div className="product-cards row g-4">
-              {products.map(product => (
+              {displayProducts.map(product => (
                 <div key={product.id} className="col-md-3">
-                  <div className="product-card">
-                    <Link to={`/products/${product.id}`} className="product-image-link">
-                      <div className="product-image">
-                        {product.image ? (
-                          <img src={formatImageUrl(product.image)} alt={product.name} />
-                        ) : (
-                          <div className="no-image">Нет изображения</div>
-                        )}
-                      </div>
+                  <div className="product-card position-relative">
+                    <div className="position-absolute top-0 end-0 p-2 z-2">
+                      <FavoriteButton
+                        productId={product.id}
+                        disabled={favLoading}
+                      />
+                    </div>
+                    <Link to={`/products/${product.id}`} className="product-image-container">
+                      {!product.image ? (
+                        <div className="no-image-placeholder">
+                          <i className="bi bi-image text-muted"></i>
+                          <span>Нет изображения</span>
+                        </div>
+                      ) : (
+                        <img 
+                          src={formatImageUrl(product.image)}
+                          alt={product.name}
+                          className="product-image"
+                        />
+                      )}
                     </Link>
                     <div className="product-details">
                       <Link to={`/products/${product.id}`} className="product-title-link">

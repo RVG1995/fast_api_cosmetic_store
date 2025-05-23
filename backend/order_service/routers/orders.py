@@ -1,35 +1,38 @@
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Body
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
-import logging
+"""API эндпоинты сервиса заказов для пользователей.
+Предоставляет интерфейсы как для авторизованных, так и для анонимных пользователей."""
+
 import os
+import logging
+from typing import Optional, Dict, Any
 from dotenv import load_dotenv
-from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Body
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
+from sqlalchemy.exc import IntegrityError
 
 from database import get_db
-from models import OrderModel, OrderStatusModel, OrderStatusHistoryModel
+from models import PromoCodeModel, DeliveryInfoModel
 from schemas import (
-    OrderCreate, OrderUpdate, OrderResponse, OrderDetailResponse, 
-    OrderStatusHistoryCreate, PaginatedResponse, OrderStatistics, BatchStatusUpdate,
-    OrderItemsUpdate, OrderItemsUpdateResponse
+    OrderCreate, OrderResponse, OrderDetailResponse, 
+    PaginatedResponse, OrderStatistics, PromoCodeResponse, 
+    OrderResponseWithPromo, OrderDetailResponseWithPromo, OrderItemCreate,
+    DeliveryInfoCreate
 )
 from services import (
-    create_order, get_order_by_id, get_orders, update_order, 
-    change_order_status, cancel_order, get_order_statistics, get_user_order_statistics,
-    update_order_items
+    create_order, get_order_by_id, get_orders, 
+    cancel_order, get_user_order_statistics
 )
 from dependencies import (
-    get_current_user, get_admin_user, get_order_filter_params,
-    check_products_availability, get_products_info, clear_user_cart
+    get_current_user, get_order_filter_params,
+    check_products_availability
 )
-from auth import User
 from cache import (
     get_cached_order, cache_order, invalidate_order_cache,
     get_cached_user_orders, cache_user_orders,
-    get_cached_order_statistics, cache_order_statistics, invalidate_statistics_cache,
-    get_cached_orders_list, cache_orders_list, invalidate_cache, CacheKeys, invalidate_user_orders_cache
+    get_cached_order_statistics, cache_order_statistics, 
+    CacheKeys, invalidate_statistics_cache
 )
+from notification_api import check_notification_settings
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -47,14 +50,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-# Создание роутера для админ-панели
-admin_router = APIRouter(
-    prefix="/admin/orders",
-    tags=["admin_orders"],
-    responses={404: {"description": "Not found"}},
-)
-
-@router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=OrderResponseWithPromo, status_code=status.HTTP_201_CREATED)
 async def create_new_order(
     order_data: OrderCreate,
     current_user: Optional[Dict[str, Any]] = Depends(get_current_user),
@@ -66,7 +62,9 @@ async def create_new_order(
     - **order_data**: Данные для создания заказа
     """
     try:
-        logger.info(f"Получен запрос на создание заказа: {order_data}")
+        logger.info("Получен запрос на создание заказа: %s", order_data)
+        logger.info("Поля запроса: %s", order_data.model_dump().keys())
+        logger.info("Стоимость доставки: %s", order_data.delivery_info.delivery_cost if hasattr(order_data, 'delivery_info') else None)
         
         # Получаем ID пользователя из токена (если пользователь авторизован)
         user_id = current_user.get("user_id") if current_user else None
@@ -76,7 +74,7 @@ async def create_new_order(
         
         # Проверяем наличие товаров
         product_ids = [item.product_id for item in order_data.items]
-        availability = await check_products_availability(product_ids, token)
+        availability = await check_products_availability(product_ids)
         
         # Проверяем, все ли товары доступны
         unavailable_products = [pid for pid, available in availability.items() if not available]
@@ -84,6 +82,20 @@ async def create_new_order(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Товары с ID {unavailable_products} недоступны для заказа",
+            )
+            
+        # Проверяем тип доставки
+        if not order_data.delivery_info.delivery_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо выбрать способ доставки",
+            )
+            
+        # Для пунктов выдачи проверяем, что указан адрес пункта
+        if order_data.delivery_info.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not order_data.delivery_info.boxberry_point_address:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимо указать адрес пункта выдачи",
             )
         
         # Создаем заказ
@@ -96,11 +108,11 @@ async def create_new_order(
         )
         
         # Если пользователь авторизован, очищаем его корзину
-        if user_id:
-            try:
-                await clear_user_cart(user_id)
-            except Exception as e:
-                logger.warning(f"Не удалось очистить корзину пользователя: {str(e)}")
+        # if user_id:
+        #     try:
+        #         await clear_user_cart(user_id)
+        #     except Exception as e:
+        #         logger.warning(f"Не удалось очистить корзину пользователя: {str(e)}")
         
         # Явно коммитим сессию, чтобы убедиться, что все связанные данные загружены
         await session.commit()
@@ -108,31 +120,92 @@ async def create_new_order(
         # Вручную запрашиваем заказ со всеми связанными данными
         loaded_order = await get_order_by_id(session, order.id)
         
-        # Отправляем подтверждение заказа на email
-        from app.services.order_service import send_email_message
-        if order_data.email:
-            logger.info(f"Отправка подтверждения заказа на email: {order_data.email}")
-            task_id = await send_email_message(loaded_order)
-            logger.info(f"Задача подтверждения заказа {order.id} отправлена в RabbitMQ, task_id: {task_id}")
+        # Если у заказа есть промокод, загружаем его
+        if loaded_order.promo_code_id:
+            # Загружаем промокод
+            promo_code = await session.get(PromoCodeModel, loaded_order.promo_code_id)
+            if promo_code:
+                # Создаем словарь с данными промокода для передачи в RabbitMQ
+                loaded_order.promo_code_dict = {
+                    "code": promo_code.code,
+                    "discount_percent": promo_code.discount_percent or 0
+                }
+                logger.info("Для нового заказа %s загружен промокод %s", loaded_order.id, promo_code.code)
+        
+        # Отправляем подтверждение заказа на email через Notifications Service
+        try:
+            # Проверяем, авторизован ли пользователь
+            if user_id:
+                # Для авторизованных пользователей всегда проверяем настройки уведомлений
+                logger.info("Отправка уведомления о создании заказа для авторизованного пользователя: %s", user_id)
+                await check_notification_settings(loaded_order.user_id, "order.created", loaded_order.id)
+            else:
+                # Для неавторизованных пользователей проверяем согласие на получение уведомлений
+                if loaded_order.receive_notifications and loaded_order.email:
+                    logger.info("Отправка уведомления о создании заказа для неавторизованного пользователя на email: %s", order_data.email)
+                    # Для неавторизованных пользователей отправляем уведомление напрямую, без проверки настроек
+                    # Здесь можно использовать другой метод для отправки, который не проверяет настройки пользователя
+                    # Например, direct_notification_service или аналогичный
+                    await check_notification_settings(None, "order.created", loaded_order.id)
+                else:
+                    logger.info("Уведомление о создании заказа не отправлено: неавторизованный пользователь не дал согласие или не указал email")
+        except (ConnectionError, TimeoutError, ValueError) as e:
+            logger.error("Ошибка при отправке email о заказе: %s", str(e))
         
         # Явно инвалидируем кэш заказов перед возвратом ответа
         await invalidate_order_cache(order.id)
-        logger.info(f"Кэш заказа {order.id} и связанных списков инвалидирован перед возвратом ответа")
+        await invalidate_statistics_cache()  # Также инвалидируем кэш статистики и отчетов
+        logger.info("Кэш заказа %s и связанных списков инвалидирован перед возвратом ответа", order.id)
         
-        # Преобразуем модель в схему
-        return OrderResponse.model_validate(loaded_order)
+        # Преобразуем модель в схему без промокода
+        order_response = OrderResponse.model_validate(loaded_order)
+        
+        # Создаем расширенный ответ с возможностью добавления промокода
+        response_with_promo = OrderResponseWithPromo(**order_response.model_dump())
+        
+        # Если у заказа есть промокод, загружаем его данные вручную
+        if loaded_order.promo_code_id:
+            try:
+                promo_code = await session.get(PromoCodeModel, loaded_order.promo_code_id)
+                if promo_code:
+                    response_with_promo.promo_code = PromoCodeResponse.model_validate(promo_code)
+                    logger.info("Для нового заказа %s загружен промокод %s", loaded_order.id, promo_code.code)
+            except (ValueError, AttributeError, KeyError) as e:
+                logger.warning("Не удалось загрузить промокод %s для заказа %s: %s", loaded_order.promo_code_id, loaded_order.id, str(e))
+        
+        # Кэшируем результат в любом случае, но с разными ключами
+        cache_key = f"{CacheKeys.ORDER_PREFIX}{order.id}"
+        if user_id:
+            # Для авторизованных пользователей - отдельный кэш
+            cache_key = f"{CacheKeys.ORDER_PREFIX}{order.id}:user:{user_id}"
+        
+        await cache_order(order.id, response_with_promo, cache_key=cache_key)
+        logger.info("Данные о заказе %s добавлены в кэш с ключом %s", order.id, cache_key)
+        
+        return response_with_promo
     except ValueError as e:
-        logger.error(f"Ошибка при создании заказа: {str(e)}")
+        logger.error("Ошибка при создании заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
-        )
+        ) from e
+    except IntegrityError as e:
+        logger.error("IntegrityError при создании заказа: %s", str(e))
+        if 'delivery_cost_positive' in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Стоимость доставки не может быть нулевой. Пожалуйста, выберите другой способ доставки или попробуйте позже.'
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Ошибка целостности данных при создании заказа.'
+        ) from e
     except Exception as e:
-        logger.error(f"Непредвиденная ошибка при создании заказа: {str(e)}")
+        logger.error("Непредвиденная ошибка при создании заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при создании заказа",
-        )
+        ) from e
 
 @router.get("", response_model=PaginatedResponse)
 async def list_my_orders(
@@ -175,7 +248,7 @@ async def list_my_orders(
         # Пытаемся получить данные из кэша
         cached_orders = await get_cached_user_orders(user_id, cache_key)
         if cached_orders:
-            logger.info(f"Данные о заказах пользователя {user_id} получены из кэша")
+            logger.info("Данные о заказах пользователя %s получены из кэша", user_id)
             return cached_orders
         
         # Если данных нет в кэше, получаем из БД
@@ -186,8 +259,32 @@ async def list_my_orders(
         )
         
         # Формируем ответ с преобразованием моделей в схемы
+        order_responses = []
+        for order in orders:
+            # Создаем базовый объект OrderResponse без промокода
+            order_response = OrderResponse.model_validate(order)
+            
+            # Если у заказа есть промокод, создаем OrderResponseWithPromo
+            if order.promo_code_id:
+                # Создаем расширенный ответ с информацией о промокоде
+                with_promo = OrderResponseWithPromo(**order_response.model_dump())
+                
+                try:
+                    # Получаем промокод и устанавливаем его
+                    promo_code = await session.get(PromoCodeModel, order.promo_code_id)
+                    if promo_code:
+                        with_promo.promo_code = PromoCodeResponse.model_validate(promo_code)
+                        logger.info("Для заказа %s загружен промокод %s", order.id, promo_code.code)
+                except (ValueError, AttributeError, KeyError) as e:
+                    logger.warning("Не удалось загрузить промокод %s для заказа %s: %s", order.promo_code_id, order.id, str(e))
+                
+                order_responses.append(with_promo)
+            else:
+                # Заказ без промокода, используем обычный OrderResponse
+                order_responses.append(order_response)
+        
         response = PaginatedResponse(
-            items=[OrderResponse.model_validate(order) for order in orders],
+            items=order_responses,
             total=total,
             page=filters.page,
             size=filters.size,
@@ -196,15 +293,15 @@ async def list_my_orders(
         
         # Кэшируем результат
         await cache_user_orders(user_id, cache_key, response)
-        logger.info(f"Данные о заказах пользователя {user_id} добавлены в кэш")
+        logger.info("Данные о заказах пользователя %s добавлены в кэш", user_id)
         
         return response
     except Exception as e:
-        logger.error(f"Ошибка при получении списка заказов пользователя: {str(e)}")
+        logger.error("Ошибка при получении списка заказов пользователя: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при получении списка заказов",
-        )
+        ) from e
 
 @router.get("/statistics", response_model=OrderStatistics)
 async def get_user_statistics(
@@ -233,7 +330,7 @@ async def get_user_statistics(
         # Пытаемся получить данные из кэша
         cached_statistics = await get_cached_order_statistics(user_id)
         if cached_statistics:
-            logger.info(f"Статистика заказов пользователя {user_id} получена из кэша")
+            logger.info("Статистика заказов пользователя %s получена из кэша", user_id)
             return cached_statistics
         
         # Если данных нет в кэше, получаем из БД
@@ -241,17 +338,17 @@ async def get_user_statistics(
         
         # Кэшируем результат
         await cache_order_statistics(statistics, user_id)
-        logger.info(f"Статистика заказов пользователя {user_id} добавлена в кэш")
+        logger.info("Статистика заказов пользователя %s добавлена в кэш", user_id)
         
         return statistics
     except Exception as e:
-        logger.error(f"Ошибка при получении статистики заказов пользователя: {str(e)}")
+        logger.error("Ошибка при получении статистики заказов пользователя: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при получении статистики заказов"
-        )
+        ) from e
 
-@router.get("/{order_id}", response_model=OrderDetailResponse)
+@router.get("/{order_id}", response_model=OrderDetailResponseWithPromo)
 async def get_order(
     order_id: int = Path(..., ge=1),
     current_user: Optional[Dict[str, Any]] = Depends(get_current_user),
@@ -272,35 +369,19 @@ async def get_order(
             )
         
         # Определяем пользователя
-        user_id = None
+        user_id = current_user["user_id"]
         
-        # Если запрос от внутреннего сервиса, разрешаем получение заказа без проверки user_id
-        if current_user.get("is_service"):
-            logger.info(f"Внутренний запрос от сервиса {current_user.get('service_name')} для заказа {order_id}")
-            user_id = None  # None означает получение заказа без проверки принадлежности конкретному пользователю
-        else:
-            # Получаем ID пользователя из токена для обычных пользователей
-            user_id = current_user["user_id"]
-        
-        # Пытаемся получить данные из кэша, если запрос не от сервиса
-        # Для запросов от сервисов всегда получаем свежие данные
-        if not current_user.get("is_service"):
-            cached_order = await get_cached_order(order_id)
-            if cached_order:
-                # Проверка доступа пользователя к заказу
-                if user_id and cached_order.user_id != user_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"У вас нет доступа к заказу с ID {order_id}",
-                    )
-                logger.info(f"Данные о заказе {order_id} получены из кэша")
-                return cached_order
+        # Пытаемся получить данные из кэша
+        cached_order = await get_cached_order(order_id, user_id)
+        if cached_order:
+            logger.info("Данные о заказе %s получены из кэша для пользователя %s", order_id, user_id)
+            return cached_order
             
         # Получаем заказ
         order = await get_order_by_id(
             session=session,
             order_id=order_id,
-            user_id=user_id  # Если user_id=None и запрос от сервиса, то заказ будет получен без проверки пользователя
+            user_id=user_id
         )
         
         if not order:
@@ -309,23 +390,39 @@ async def get_order(
                 detail=f"Заказ с ID {order_id} не найден",
             )
         
-        # Преобразуем модель в схему
+        # Преобразуем модель в схему без промокода
         order_response = OrderDetailResponse.model_validate(order)
         
-        # Кэшируем результат, если запрос не от сервиса
-        if not current_user.get("is_service"):
-            await cache_order(order_id, order_response)
-            logger.info(f"Данные о заказе {order_id} добавлены в кэш")
+        # Создаем расширенный ответ с возможностью добавления промокода
+        response_with_promo = OrderDetailResponseWithPromo(**order_response.model_dump())
         
-        return order_response
+        # Вручную обрабатываем промокод
+        if order.promo_code_id:
+            try:
+                promo_code = await session.get(PromoCodeModel, order.promo_code_id)
+                if promo_code:
+                    response_with_promo.promo_code = PromoCodeResponse.model_validate(promo_code)
+                    logger.info("Для заказа %s загружен промокод %s", order.id, promo_code.code)
+            except (ValueError, AttributeError, KeyError) as e:
+                logger.warning("Не удалось загрузить промокод %s для заказа %s: %s", order.promo_code_id, order.id, str(e))
+        
+        # Кэшируем результат
+        cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}"
+        if user_id:
+            cache_key = f"{CacheKeys.ORDER_PREFIX}{order_id}:user:{user_id}"
+            
+        await cache_order(order_id, response_with_promo, cache_key=cache_key)
+        logger.info("Данные о заказе %s добавлены в кэш с ключом %s", order_id, cache_key)
+        
+        return response_with_promo
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка при получении информации о заказе: {str(e)}")
+        logger.error("Ошибка при получении информации о заказе: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при получении информации о заказе",
-        )
+        ) from e
 
 @router.post("/{order_id}/cancel", response_model=OrderResponse)
 async def cancel_order_endpoint(
@@ -378,28 +475,29 @@ async def cancel_order_endpoint(
         await invalidate_order_cache(order_id)
         # Инвалидируем кэш статистики
         await invalidate_statistics_cache()
-        logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после отмены заказа")
+        logger.info("Кэш заказа %s и статистики инвалидирован после отмены заказа", order_id)
         
         # Преобразуем модель в схему
         return OrderResponse.model_validate(loaded_order)
     except ValueError as e:
-        logger.error(f"Ошибка при отмене заказа: {str(e)}")
+        logger.error("Ошибка при отмене заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
-        )
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Непредвиденная ошибка при отмене заказа: {str(e)}")
+        logger.error("Непредвиденная ошибка при отмене заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при отмене заказа",
-        )
+        ) from e
 
 @router.post("/{order_id}/reorder", status_code=status.HTTP_201_CREATED)
 async def reorder_endpoint(
     order_id: int = Path(..., ge=1),
+    personal_data_agreement: bool = Body(..., embed=True, description="Согласие на обработку персональных данных"),
     current_user: Dict[str, Any] = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
@@ -414,6 +512,12 @@ async def reorder_endpoint(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Для повторения заказа необходимо авторизоваться"
+            )
+        # Проверяем согласие на обработку персональных данных
+        if not personal_data_agreement:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для повторения заказа необходимо согласие на обработку персональных данных"
             )
         
         user_id = current_user.get("user_id")
@@ -445,7 +549,7 @@ async def reorder_endpoint(
             product_ids.append(item.product_id)
         
         # Проверяем доступность товаров
-        availability = await check_products_availability(product_ids, token)
+        availability = await check_products_availability(product_ids)
         
         # Проверяем, все ли товары доступны
         unavailable_products = [pid for pid, available in availability.items() if not available]
@@ -455,12 +559,6 @@ async def reorder_endpoint(
                 detail=f"Товары с ID {unavailable_products} больше недоступны для заказа"
             )
         
-        # Получаем информацию о товарах
-        products_info = await get_products_info(product_ids, token)
-        
-        # Создаем новые данные для заказа на основе старого
-        from schemas import OrderCreate, OrderItemCreate
-        
         # Преобразуем товары в формат для создания заказа
         order_items = []
         for item in original_order.items:
@@ -469,15 +567,30 @@ async def reorder_endpoint(
                 quantity=item.quantity
             ))
         
+        # Получаем информацию о доставке из оригинального заказа
+        delivery_info_query = select(DeliveryInfoModel).filter(DeliveryInfoModel.order_id == order_id)
+        delivery_info_result = await session.execute(delivery_info_query)
+        delivery_info = delivery_info_result.scalars().first()
+        
+        # Создаем объект DeliveryInfoCreate
+        delivery_info_create = DeliveryInfoCreate(
+            delivery_type=delivery_info.delivery_type if delivery_info else "boxberry_courier",
+            boxberry_point_id=delivery_info.boxberry_point_id if delivery_info else None,
+            boxberry_point_address=delivery_info.boxberry_point_address if delivery_info else None,
+            delivery_cost=delivery_info.delivery_cost if delivery_info else 0,
+            tracking_number=None  # Трек-номер всегда будет новый
+        )
+        
+        # Создаем данные для нового заказа, сохраняя настройки доставки
         new_order_data = OrderCreate(
             full_name=original_order.full_name,
             email=original_order.email,
             phone=original_order.phone,
-            region=original_order.region,
-            city=original_order.city,
-            street=original_order.street,
+            delivery_address=original_order.delivery_address,
             comment=f"Повторный заказ на основе заказа #{original_order.id}",
-            items=order_items
+            personal_data_agreement=personal_data_agreement,
+            items=order_items,
+            delivery_info=delivery_info_create
         )
         
         # Создаем новый заказ
@@ -506,182 +619,33 @@ async def reorder_endpoint(
     except HTTPException:
         raise
     except ValueError as e:
-        logger.error(f"Ошибка при повторении заказа: {str(e)}")
+        logger.error("Ошибка при повторении заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from e
     except Exception as e:
-        logger.error(f"Непредвиденная ошибка при повторении заказа: {str(e)}")
+        logger.error("Непредвиденная ошибка при повторении заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при повторении заказа"
-        )
+        ) from e
 
-# Административные маршруты
-@admin_router.get("", response_model=PaginatedResponse)
-async def list_all_orders(
-    filters = Depends(get_order_filter_params),
-    current_user: Dict[str, Any] = Depends(get_admin_user),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Получение списка всех заказов с пагинацией и фильтрацией (только для администраторов).
-    
-    - **page**: Номер страницы
-    - **size**: Размер страницы
-    - **status_id**: ID статуса заказа
-    - **user_id**: ID пользователя
-    - **id**: ID заказа
-    - **date_from**: Дата начала периода (YYYY-MM-DD)
-    - **date_to**: Дата окончания периода (YYYY-MM-DD)
-    - **order_by**: Поле для сортировки
-    - **order_dir**: Направление сортировки
-    """
-    try:
-        # Логируем запрос с параметрами фильтрации
-        logger.info(f"Запрос списка всех заказов с параметрами: page={filters.page}, size={filters.size}, "
-                   f"status_id={filters.status_id}, user_id={filters.user_id}, id={filters.id}, "
-                   f"date_from={filters.date_from}, date_to={filters.date_to}, username={filters.username}")
-        
-        # Создаем ключ для кэша на основе параметров фильтрации
-        cache_key = f"p{filters.page}_s{filters.size}_st{filters.status_id or 'all'}_u{filters.user_id or 'all'}_id{filters.id or 'all'}_df{filters.date_from or 'all'}_dt{filters.date_to or 'all'}_un{filters.username or 'all'}_ob{filters.order_by or 'default'}_od{filters.order_dir or 'default'}"
-        
-        # Пытаемся получить данные из кэша
-        cached_orders = await get_cached_orders_list(cache_key)
-        if cached_orders:
-            logger.info(f"Данные о всех заказах получены из кэша")
-            return cached_orders
-        
-        # Получаем заказы
-        orders, total = await get_orders(
-            session=session,
-            filters=filters
-        )
-        
-        # Формируем ответ с преобразованием моделей в схемы
-        response = PaginatedResponse(
-            items=[OrderResponse.model_validate(order) for order in orders],
-            total=total,
-            page=filters.page,
-            size=filters.size,
-            pages=0  # Будет вычислено в валидаторе
-        )
-        
-        # Кэшируем результат
-        await cache_orders_list(cache_key, response)
-        logger.info(f"Данные о всех заказах добавлены в кэш с ключом: {cache_key}")
-        
-        return response
-    except Exception as e:
-        logger.error(f"Ошибка при получении списка заказов: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Произошла ошибка при получении списка заказов",
-        )
-
-@admin_router.get("/statistics", response_model=OrderStatistics)
-async def get_admin_orders_statistics(
-    session: AsyncSession = Depends(get_db),
-    admin_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    """
-    Получение статистики по всем заказам (только для администраторов)
-    """
-    try:
-        # Пытаемся получить данные из кэша
-        cached_statistics = await get_cached_order_statistics()
-        if cached_statistics:
-            logger.info("Статистика всех заказов получена из кэша")
-            return cached_statistics
-        
-        # Если данных нет в кэше, получаем из БД
-        statistics = await get_order_statistics(session)
-        
-        # Кэшируем результат
-        await cache_order_statistics(statistics)
-        logger.info("Статистика всех заказов добавлена в кэш")
-        
-        return statistics
-    except Exception as e:
-        logger.error(f"Ошибка при получении статистики заказов: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка при получении статистики заказов"
-        )
-
-@admin_router.get("/{order_id}", response_model=OrderDetailResponse)
-async def get_order_admin(
+@router.post("/{order_id}/unsubscribe", status_code=status.HTTP_200_OK)
+async def unsubscribe_notifications(
     order_id: int = Path(..., ge=1),
-    current_user: Dict[str, Any] = Depends(get_admin_user),
+    email: str = Body(..., embed=True),
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Получение подробной информации о заказе по ID (только для администраторов).
+    Отменить подписку на уведомления по email для неавторизованного пользователя.
     
     - **order_id**: ID заказа
+    - **email**: Email, указанный при создании заказа для подтверждения
     """
     try:
-        logger.info(f"Запрос заказа администратором. ID заказа: {order_id}, ID пользователя: {current_user.get('user_id')}")
-        
-        # Пытаемся получить данные из кэша
-        cached_order = await get_cached_order(order_id)
-        if cached_order:
-            logger.info(f"Данные о заказе {order_id} получены из кэша")
-            return cached_order
-        
         # Получаем заказ
-        order = await get_order_by_id(
-            session=session,
-            order_id=order_id
-        )
-        
-        if not order:
-            logger.warning(f"Заказ с ID {order_id} не найден для администратора")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Заказ с ID {order_id} не найден",
-            )
-        
-        logger.info(f"Заказ с ID {order_id} успешно найден для администратора")
-        
-        # Преобразуем модель в схему
-        order_response = OrderDetailResponse.model_validate(order)
-        
-        # Кэшируем результат
-        await cache_order(order_id, order_response)
-        logger.info(f"Данные о заказе {order_id} добавлены в кэш")
-        
-        return order_response
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Ошибка при получении информации о заказе: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Произошла ошибка при получении информации о заказе",
-        )
-
-@admin_router.put("/{order_id}", response_model=OrderResponse)
-async def update_order_admin(
-    order_id: int = Path(..., ge=1),
-    order_data: OrderUpdate = Body(...),
-    current_user: Dict[str, Any] = Depends(get_admin_user),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Обновление информации о заказе (только для администраторов).
-    
-    - **order_id**: ID заказа
-    - **order_data**: Данные для обновления
-    """
-    try:
-        # Обновляем заказ
-        order = await update_order(
-            session=session,
-            order_id=order_id,
-            order_data=order_data
-        )
+        order = await get_order_by_id(session, order_id)
         
         if not order:
             raise HTTPException(
@@ -689,331 +653,39 @@ async def update_order_admin(
                 detail=f"Заказ с ID {order_id} не найден",
             )
         
-        # Добавляем запись в историю статусов, если статус был изменен
-        if order_data.status_id is not None:
-            # Используем комментарий, если он предоставлен, иначе используем стандартное сообщение
-            status_note = order_data.comment if order_data.comment else "Статус обновлен администратором"
-            
-            await OrderStatusHistoryModel.add_status_change(
-                session=session,
-                order_id=order.id,
-                status_id=order_data.status_id,
-                changed_by_user_id=current_user["user_id"],
-                notes=status_note
-            )
-        
-        # Коммитим сессию
-        await session.commit()
-        
-        # Вручную запрашиваем заказ со всеми связанными данными
-        loaded_order = await get_order_by_id(session, order.id)
-        
-        # Инвалидируем кэш заказа
-        await invalidate_order_cache(order_id)
-        # Инвалидируем кэш статистики, если изменился статус
-        if order_data.status_id is not None:
-            await invalidate_statistics_cache()
-        logger.info(f"Кэш заказа {order_id} инвалидирован после обновления заказа")
-        
-        # Преобразуем модель в схему
-        return OrderResponse.model_validate(loaded_order)
-    except ValueError as e:
-        logger.error(f"Ошибка при обновлении заказа: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Непредвиденная ошибка при обновлении заказа: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Произошла ошибка при обновлении заказа",
-        )
-
-@admin_router.post("/{order_id}/status", response_model=OrderResponse)
-async def update_order_status(
-    order_id: int = Path(..., ge=1),
-    status_data: dict = Body(...),
-    current_user: Dict[str, Any] = Depends(get_admin_user),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Обновление статуса заказа (только для администраторов).
-    Упрощенный эндпоинт для обновления только статуса.
-    
-    - **order_id**: ID заказа
-    - **status_data**: Данные о новом статусе:
-      - status_id: ID нового статуса
-      - comment: Комментарий к изменению статуса (опционально)
-    """
-    try:
-        logger.info(f"Запрос на обновление статуса заказа. ID: {order_id}, данные: {status_data}")
-        
-        # Проверяем наличие обязательного поля status_id
-        if not status_data.get("status_id"):
+        # Проверяем принадлежность к пользователю
+        if order.user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Не указан ID статуса",
+                detail="Данный метод доступен только для заказов, созданных без регистрации",
             )
         
-        # Создаем объект OrderUpdate только с нужными полями
-        status_id = status_data.get("status_id")
-        comment = status_data.get("comment")
-        
-        # Проверяем, что статус существует
-        status_name = await session.get(OrderStatusModel, status_id)
-        if not status_name:
+        # Проверяем email
+        if order.email.lower() != email.lower():
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Статус с ID {status_id} не найден",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Указанный email не совпадает с email, указанным при создании заказа",
             )
         
-        # Получаем текущий заказ
-        order = await get_order_by_id(session, order_id)
-        if not order:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Заказ с ID {order_id} не найден",
-            )
-        
-        # Обновляем статус заказа
-        order.status_id = status_id
+        # Обновляем флаг получения уведомлений
+        order.receive_notifications = False
         session.add(order)
-        
-        # Добавляем запись в историю статусов
-        status_note = comment if comment else "Статус обновлен администратором"
-        await OrderStatusHistoryModel.add_status_change(
-            session=session,
-            order_id=order_id,
-            status_id=status_id,
-            changed_by_user_id=current_user["user_id"],
-            notes=status_note
-        )
-        
-        # Получаем информацию о новом статусе
-        new_status = await session.get(OrderStatusModel, status_id)
-        new_status_name = new_status.name if new_status else "Неизвестный"
-        
-        # Получаем информацию о старом статусе
-        old_status = await session.get(OrderStatusModel, order.status_id)
-        old_status_name = old_status.name if old_status else "Неизвестный"
-        
-        # Фиксируем изменения в базе данных
         await session.commit()
         
         # Инвалидируем кэш заказа
         await invalidate_order_cache(order_id)
-        # Инвалидируем кэш статистики
-        await invalidate_statistics_cache()
-        logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после изменения статуса с '{old_status_name}' на '{new_status_name}'")
+        logger.info("Кэш заказа %s инвалидирован после отмены подписки на уведомления", order_id)
         
-        # Отправляем уведомление об изменении статуса
-        from app.services.order_service import update_order_status        
-        # Обновляем заказ в сессии
-        updated_order = await get_order_by_id(session, order_id)
-
-        if order.email:
-            await update_order_status(updated_order, new_status_name)
-            logger.info(f"Отправка уведомления об изменении статуса заказа {order_id} с '{old_status_name}' на '{new_status_name}' на email: {order.email}")
-        
-
-        
-        return OrderResponse.model_validate(updated_order)
+        return {
+            "success": True,
+            "message": "Вы успешно отписались от уведомлений о заказе"
+        }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка при обновлении статуса заказа: {str(e)}")
+        logger.error("Ошибка при отмене подписки на уведомления: %s", str(e))
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Произошла ошибка при обновлении статуса заказа: {str(e)}",
-        )
-
-@admin_router.post("/{order_id}/items", response_model=OrderItemsUpdateResponse)
-async def update_order_items_endpoint(
-    order_id: int,
-    items_data: OrderItemsUpdate,
-    session: AsyncSession = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_admin_user)
-):
-    """Обновление товаров в заказе (админский доступ)"""
-    logger.info(f"Запрос на обновление элементов заказа {order_id}: items_to_add={items_data.items_to_add} items_to_update={items_data.items_to_update} items_to_remove={items_data.items_to_remove}")
-    
-    # Получаем текущий статус заказа
-    order = await get_order_by_id(session, order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Заказ не найден")
-        
-    # Проверка статуса заказа - запрещаем редактировать товары для определенных статусов
-    non_editable_statuses = ["Отправлен", "Доставлен", "Отменен", "Оплачен"]
-    if order.status and order.status.name in non_editable_statuses:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Редактирование товаров невозможно для заказа в статусе '{order.status.name}'"
-        )
-    
-    # Получаем токен из объекта current_user
-    token = current_user.get("token")
-    
-    # Формируем данные для обновления
-    items_dict = {
-        "items_to_add": [item.dict() for item in items_data.items_to_add] if items_data.items_to_add else [],
-        "items_to_update": items_data.items_to_update if items_data.items_to_update else {},
-        "items_to_remove": items_data.items_to_remove if items_data.items_to_remove else []
-    }
-    
-    # Вызываем сервисную функцию из services.py
-    success, updated_order, errors = await update_order_items(
-        session, order_id, items_dict, current_user["user_id"], token
-    )
-    
-    if not success:
-        raise HTTPException(status_code=400, detail=errors)
-    
-    if errors:
-        return {"success": True, "order": updated_order, "errors": errors}
-    else:
-        return {"success": True, "order": updated_order, "errors": None}
-
-@admin_router.post("/batch-status", response_model=List[OrderResponse])
-async def update_batch_status(
-    update_data: BatchStatusUpdate,
-    current_user: Dict[str, Any] = Depends(get_admin_user),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Обновление статуса для нескольких заказов одновременно (только для администраторов).
-    
-    - **update_data**: Данные для массового обновления статусов
-    """
-    try:
-        # Проверяем существование статуса
-        status = await session.get(OrderStatusModel, update_data.status_id)
-        if not status:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Статус с ID {update_data.status_id} не найден",
-            )
-        
-        updated_orders = []
-        for order_id in update_data.order_ids:
-            try:
-                # Создаем данные для обновления
-                order_data = OrderUpdate(status_id=update_data.status_id)
-                
-                # Обновляем заказ
-                order = await update_order(
-                    session=session,
-                    order_id=order_id,
-                    order_data=order_data
-                )
-                
-                if order:
-                    # Добавляем запись в историю статусов
-                    await OrderStatusHistoryModel.add_status_change(
-                        session=session,
-                        order_id=order.id,
-                        status_id=update_data.status_id,
-                        changed_by_user_id=current_user["user_id"],
-                        notes=update_data.notes or "Массовое обновление статуса"
-                    )
-                    
-                    loaded_order = await get_order_by_id(session, order.id)
-                    updated_orders.append(loaded_order)
-            except Exception as e:
-                logger.error(f"Ошибка при обновлении заказа {order_id}: {str(e)}")
-                # Продолжаем с другими заказами
-        
-        # Коммитим сессию
-        await session.commit()
-        
-        # Преобразуем модели в схемы
-        return [OrderResponse.model_validate(order) for order in updated_orders]
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Непредвиденная ошибка при массовом обновлении статусов: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Произошла ошибка при массовом обновлении статусов",
-        )
-
-@router.post("/check-can-review", status_code=status.HTTP_200_OK)
-async def check_can_review(
-    request_data: Dict[str, Any] = Body(...),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Проверка, может ли пользователь оставить отзыв на товар
-    (заказал товар и заказ доставлен)
-    """
-    try:
-        user_id = request_data.get("user_id")
-        product_id = request_data.get("product_id")
-        
-        if not user_id or not product_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Необходимо указать user_id и product_id"
-            )
-        
-        # Проверяем, есть ли завершенные заказы с этим товаром у пользователя
-        query = text("""
-            SELECT COUNT(*) FROM orders o
-            JOIN order_items oi ON o.id = oi.order_id
-            WHERE o.user_id = :user_id 
-            AND oi.product_id = :product_id
-            AND o.status_id = 5
-        """)
-        
-        result = await session.execute(
-            query, 
-            {"user_id": user_id, "product_id": product_id}
-        )
-        count = result.scalar_one()
-        
-        return {"can_review": count > 0}
-    except Exception as e:
-        logger.error(f"Ошибка при проверке возможности оставить отзыв: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка при проверке возможности оставить отзыв"
-        )
-
-@router.post("/check-can-review-store", status_code=status.HTTP_200_OK)
-async def check_can_review_store(
-    request_data: Dict[str, Any] = Body(...),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Проверка, может ли пользователь оставить отзыв на магазин
-    (имеет хотя бы один завершенный заказ)
-    """
-    try:
-        user_id = request_data.get("user_id")
-        
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Необходимо указать user_id"
-            )
-        
-        # Проверяем, есть ли завершенные заказы у пользователя
-        query = text("""
-            SELECT COUNT(*) FROM orders o
-            WHERE o.user_id = :user_id 
-            AND o.status_id = 5
-        """)
-        
-        result = await session.execute(query, {"user_id": user_id})
-        count = result.scalar_one()
-        
-        return {"can_review": count > 0}
-    except Exception as e:
-        logger.error(f"Ошибка при проверке возможности оставить отзыв на магазин: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка при проверке возможности оставить отзыв на магазин"
-        ) 
+            detail="Произошла ошибка при отмене подписки на уведомления",
+        ) from e

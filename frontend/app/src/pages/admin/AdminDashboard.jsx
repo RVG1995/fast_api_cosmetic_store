@@ -65,6 +65,19 @@ const AdminDashboard = () => {
           </div>
         </div>
 
+        <div className="col-md-4 mb-4">
+          <div className="card h-100 shadow-sm">
+            <div className="card-body text-center">
+              <i className="bi bi-diagram-3 fs-1 text-info mb-3"></i>
+              <h3 className="fs-5">Воронка Boxberry</h3>
+              <p className="mb-4">Настройка соответствия статусов Boxberry и заказов</p>
+              <Link to="/admin/boxberry-funnel" className="btn btn-info">
+                Перейти
+              </Link>
+            </div>
+          </div>
+        </div>
+
         {isSuperAdmin() && (
           <div className="col-md-4 mb-4">
             <div className="card h-100 shadow-sm border-danger">

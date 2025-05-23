@@ -117,6 +117,13 @@ class ReviewRead(BaseModel):
                 elif reaction.reaction_type == 'dislike':
                     dislikes += 1
             data['reaction_stats'] = {"likes": likes, "dislikes": dislikes}
+        # Если есть метод get_reaction_stats, используем его
+        elif hasattr(obj, 'get_reaction_stats') and callable(obj.get_reaction_stats):
+            try:
+                data['reaction_stats'] = obj.get_reaction_stats()
+            except Exception as e:
+                logger = logging.getLogger("review_service")
+                logger.warning(f"Не удалось получить статистику реакций: {str(e)}")
         
         # Комментарии администратора
         data['admin_comments'] = []

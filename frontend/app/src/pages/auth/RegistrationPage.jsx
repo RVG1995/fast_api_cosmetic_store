@@ -11,6 +11,8 @@ function RegistrationPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [personalDataAgreement, setPersonalDataAgreement] = useState(false);
+  const [notificationAgreement, setNotificationAgreement] = useState(false);
   // Состояние для хранения ошибок по каждому полю
   const [errors, setErrors] = useState({});
 
@@ -21,13 +23,24 @@ function RegistrationPage() {
     // Проверка валидности данных
     let formErrors = {};
     
+    if (!personalDataAgreement) {
+      formErrors.personalDataAgreement = 'Необходимо согласие на обработку персональных данных';
+    }
+    
+    if (Object.keys(formErrors).length > 0) {
+      setErrors(formErrors);
+      return;
+    }
+    
     try {
       const response = await authAPI.register({
         first_name: firstName,
         last_name: lastName,
         email,
         password,
-        confirm_password: confirmPassword
+        confirm_password: confirmPassword,
+        personal_data_agreement: personalDataAgreement,
+        notification_agreement: notificationAgreement
       });
       
       console.log('Регистрация успешна:', response.data);
@@ -37,15 +50,34 @@ function RegistrationPage() {
       
       if (error.response?.data?.detail) {
         // Серверная ошибка с деталями
-        setErrors({ general: error.response.data.detail });
+        if (typeof error.response.data.detail === 'string') {
+          setErrors({ general: error.response.data.detail });
+        } else if (Array.isArray(error.response.data.detail)) {
+          // Ошибки валидации в массиве
+          const validationErrors = error.response.data.detail || [];
+          
+          validationErrors.forEach(err => {
+            const field = err.loc && err.loc.length > 1 ? err.loc[1] : 'general'; // Поле, в котором ошибка
+            formErrors[field] = err.msg || JSON.stringify(err);
+          });
+          
+          setErrors(formErrors);
+        } else {
+          // Если detail - это объект, а не строка или массив
+          setErrors({ general: JSON.stringify(error.response.data.detail) });
+        }
       } else if (error.response?.status === 422) {
         // Ошибки валидации
         const validationErrors = error.response.data?.detail || [];
         
-        validationErrors.forEach(err => {
-          const field = err.loc[1]; // Поле, в котором ошибка
-          formErrors[field] = err.msg;
-        });
+        if (Array.isArray(validationErrors)) {
+          validationErrors.forEach(err => {
+            const field = err.loc && err.loc.length > 1 ? err.loc[1] : 'general'; // Поле, в котором ошибка
+            formErrors[field] = err.msg || JSON.stringify(err);
+          });
+        } else {
+          formErrors.general = 'Ошибка валидации данных';
+        }
         
         setErrors(formErrors);
       } else {
@@ -115,7 +147,7 @@ function RegistrationPage() {
               <p className="text-red-500 text-sm mt-1">{errors.password}</p>
             )}
           </div>
-          <div className="mb-6">
+          <div className="mb-4">
             <label className="block text-gray-700 mb-1">Подтвердите пароль:</label>
             <input 
               type="password" 
@@ -128,6 +160,43 @@ function RegistrationPage() {
               <p className="text-red-500 text-sm mt-1">{errors.confirm_password}</p>
             )}
           </div>
+          
+          {/* Согласие на обработку персональных данных */}
+          <div className="mb-4">
+            <div className="flex items-center">
+              <input 
+                type="checkbox" 
+                id="personalDataAgreement"
+                checked={personalDataAgreement} 
+                onChange={(e) => setPersonalDataAgreement(e.target.checked)} 
+                required
+                className="mr-2"
+              />
+              <label htmlFor="personalDataAgreement" className="text-gray-700">
+                Я согласен на обработку персональных данных
+              </label>
+            </div>
+            {errors.personalDataAgreement && (
+              <p className="text-red-500 text-sm mt-1">{errors.personalDataAgreement}</p>
+            )}
+          </div>
+          
+          {/* Согласие на получение уведомлений */}
+          <div className="mb-6">
+            <div className="flex items-center">
+              <input 
+                type="checkbox" 
+                id="notificationAgreement"
+                checked={notificationAgreement} 
+                onChange={(e) => setNotificationAgreement(e.target.checked)} 
+                className="mr-2"
+              />
+              <label htmlFor="notificationAgreement" className="text-gray-700">
+                Я хочу получать уведомления о новинках и акциях
+              </label>
+            </div>
+          </div>
+          
           <button type="submit" className="w-full py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 transition duration-200">
             Зарегистрироваться
           </button>

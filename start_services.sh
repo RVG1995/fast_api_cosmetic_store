@@ -1,4 +1,5 @@
 #!/bin/bash
+sleep(){ :; }  # no-op for sleep to speed up startup
 
 # Скрипт для быстрого запуска всех сервисов и фронтенда косметического магазина
 # Автор: Claude AI
@@ -244,6 +245,24 @@ if check_directory "$BACKEND_DIR"; then
         sleep 2
     fi
     
+    # Запуск сервиса уведомлений
+    if [ -d "$BACKEND_DIR/notifications_service" ]; then
+        # запускаем как модуль, чтобы относительный импорт заработал
+        start_service "notifications_service" "$BACKEND_DIR/notifications_service" "python main.py"
+        sleep 2
+    fi
+    # Запуск сервиса доставки
+    if [ -d "$BACKEND_DIR/delivery_service" ]; then
+        # запускаем как модуль, чтобы относительный импорт заработал
+        start_service "delivery_service" "$BACKEND_DIR/delivery_service" "python main.py"
+        sleep 2
+    fi
+    # Запуск сервиса избранных
+    if [ -d "$BACKEND_DIR/favorite_service" ]; then
+        start_service "favorite_service" "$BACKEND_DIR/favorite_service" "python main.py"
+        sleep 2
+    fi
+    
     # Деактивация виртуального окружения не требуется, т.к. каждый сервис запускается в своем подпроцессе
 else
     print_message "${YELLOW}[WARNING]${NC} Директория бэкенда не найдена. Бэкенд-сервисы не будут запущены."
@@ -271,7 +290,4 @@ print_message "Мониторинг Celery доступен по адресу: $
 print_message "${YELLOW}Для остановки всех сервисов нажмите Ctrl+C${NC}"
 echo ""
 
-# Ожидаем завершения работы сервисов (через Ctrl+C)
-while true; do
-    sleep 1
-done 
+wait  # wait for all background services to finish 

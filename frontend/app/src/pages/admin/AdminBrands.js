@@ -3,8 +3,10 @@ import { productAPI } from '../../utils/api';
 import '../../styles/AdminProducts.css'; // Используем те же стили, что и для товаров
 // Импорты react-bootstrap и axios удалены, так как не используются в компоненте
 import { generateSlug } from '../../utils/slugUtils';
+import { useConfirm } from '../../components/common/ConfirmContext';
 
 const AdminBrands = () => {
+  const confirm = useConfirm();
   const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -101,14 +103,17 @@ const AdminBrands = () => {
 
   // Удаление бренда
   const handleDeleteBrand = async (brandId) => {
-    if (window.confirm('Вы уверены, что хотите удалить этот бренд? Это также может удалить связанные товары.')) {
-      try {
-        await productAPI.deleteBrand(brandId);
-        setBrands(brands.filter(brand => brand.id !== brandId));
-      } catch (err) {
-        console.error('Ошибка при удалении бренда:', err);
-        alert('Не удалось удалить бренд. Возможно, он используется в товарах.');
-      }
+    const ok = await confirm({
+      title: 'Удалить бренд?',
+      body: 'Это также может удалить связанные товары. Продолжить?'
+    });
+    if (!ok) return;
+    try {
+      await productAPI.deleteBrand(brandId);
+      setBrands(brands.filter(brand => brand.id !== brandId));
+    } catch (err) {
+      console.error('Ошибка при удалении бренда:', err);
+      alert('Не удалось удалить бренд. Возможно, он используется в товарах.');
     }
   };
 

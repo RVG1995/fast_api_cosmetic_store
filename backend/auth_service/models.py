@@ -1,15 +1,18 @@
+"""Модели для сервиса аутентификации, включая управление пользователями и сессиями."""
+
+from typing import Optional, List
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import text, select
+from sqlalchemy import text, select, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
 
 class Base(DeclarativeBase):
+    """Базовый класс для всех моделей SQLAlchemy."""
     pass
 
 class UserModel(Base):
+    """Модель пользователя с основными полями и методами для работы с аккаунтом."""
     __tablename__ = "users"
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -21,10 +24,15 @@ class UserModel(Base):
     activation_token: Mapped[Optional[str]] = mapped_column(unique=True, nullable=True)
     token_created_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     last_login: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    reset_token: Mapped[Optional[str]] = mapped_column(unique=True, nullable=True)
+    reset_token_created_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
     is_user: Mapped[bool] = mapped_column(default=True, server_default=text('true'), nullable=False)
     is_admin: Mapped[bool] = mapped_column(default=False, server_default=text('false'), nullable=False)
     is_super_admin: Mapped[bool] = mapped_column(default=False, server_default=text('false'), nullable=False)
+
+    personal_data_agreement: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    notification_agreement: Mapped[bool] = mapped_column(Boolean)
     
     extend_existing = True
 
@@ -52,6 +60,29 @@ class UserModel(Base):
     async def get_by_id(cls, session: AsyncSession, user_id: int) -> Optional["UserModel"]:
         """Получить пользователя по ID"""
         return await session.get(cls, user_id)
+    
+    @classmethod
+    async def get_by_reset_token(cls, session: AsyncSession, token: str) -> Optional["UserModel"]:
+        """Получить пользователя по токену сброса пароля"""
+        stmt = select(cls).filter(cls.reset_token == token)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+    
+    @classmethod
+    async def get_all_admins(cls, session: AsyncSession) -> List["UserModel"]:
+        """Получить всех пользователей с правами администратора или суперадминистратора"""
+        stmt = select(cls).filter(
+            (cls.is_admin == True) | (cls.is_super_admin == True)
+        )
+        result = await session.execute(stmt)
+        return result.scalars().all()
+
+    @classmethod
+    async def get_all_users(cls, session: AsyncSession) -> List["UserModel"]:
+        """Получить всех пользователей"""
+        stmt = select(cls)
+        result = await session.execute(stmt)
+        return result.scalars().all()
     
     async def activate(self, session: AsyncSession) -> None:
         """Активировать пользователя и удалить токен активации"""
@@ -131,4 +162,3 @@ class UserSessionModel(Base):
         
         await session.commit()
         return revoke_count
-    

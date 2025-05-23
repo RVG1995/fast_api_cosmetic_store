@@ -1,34 +1,32 @@
-import os
 import httpx
 import logging
-import json
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
-from models import ReviewModel, AdminCommentModel, ReviewReactionModel, ReviewTypeEnum, ReactionTypeEnum
-from schema import ProductReviewCreate, StoreReviewCreate, AdminCommentCreate, ReactionCreate, ReviewRead, ReviewStats, PaginatedResponse
+from models import ReviewModel, AdminCommentModel, ReviewReactionModel, ReviewTypeEnum
+from schema import ProductReviewCreate, StoreReviewCreate, AdminCommentCreate, ReactionCreate, ReviewRead, ReviewStats
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from auth import User
 from math import ceil
-import asyncio
 from cache import (
-    cache_get, cache_set, cache_delete, invalidate_review_cache,
+    cache_get, cache_set, invalidate_review_cache,
     invalidate_product_reviews_cache, invalidate_store_reviews_cache,
-    invalidate_user_reviews_cache, CACHE_KEYS, CACHE_TTL
+    invalidate_user_reviews_cache, CACHE_KEYS, CACHE_TTL,cache_service
 )
 from sqlalchemy.sql import select, func
-from fastapi import HTTPException, status
+from config import settings, logger
+from auth_utils import get_service_token
+import asyncio
 
 # Загружаем переменные окружения
 load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("review_service.services")
 
 # URL других сервисов
-ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://localhost:8003")
-PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
+ORDER_SERVICE_URL = settings.ORDER_SERVICE_URL
+PRODUCT_SERVICE_URL = settings.PRODUCT_SERVICE_URL
 
 
 class ProductApi:
@@ -63,29 +61,47 @@ class OrderApi:
     """Класс для взаимодействия с API сервиса заказов"""
     
     @staticmethod
-    async def check_user_can_review_product(user_id: int, product_id: int, token: Optional[str] = None) -> bool:
+    async def check_user_can_review_product(user_id: int, product_id: int) -> bool:
         """
         Проверка, может ли пользователь оставить отзыв на товар
         (заказал товар и статус заказа 'delivered')
         """
         try:
-            headers = {}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-                
-            url = f"{ORDER_SERVICE_URL}/orders/check-can-review"
+            # Проверяем кэш
+            cache_key = f"{CACHE_KEYS['permissions']}product:{user_id}:{product_id}"
+            cached_result = await cache_get(cache_key)
+            
+            if cached_result is not None:
+                logger.debug(f"Результат проверки возможности оставить отзыв получен из кэша: user_id={user_id}, product_id={product_id}, result={cached_result}")
+                return cached_result
             data = {
                 "user_id": user_id,
                 "product_id": product_id
             }
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(url, json=data, headers=headers)
-                
+            backoffs = [0.5, 1, 2]
+            async with httpx.AsyncClient() as client:
+                for delay in backoffs:
+                    token = await get_service_token()
+                    headers = {"Authorization": f"Bearer {token}"}
+                    response = await client.post(
+                        f"{ORDER_SERVICE_URL}/orders/service/check-can-review-product"
+                       , json=data, headers=headers,timeout=5.0
+                    )
+                    if response.status_code == 401:
+                        # token expired - clear cache and retry
+                        await cache_service.delete("service_token")
+                        await asyncio.sleep(delay)
+                        continue
+                    break
+
                 if response.status_code == 200:
                     result = response.json()
                     can_review = result.get("can_review", False)
                     logger.info(f"Проверка возможности оставить отзыв: user_id={user_id}, product_id={product_id}, result={can_review}")
+                    
+                    # Кэшируем результат
+                    await cache_set(cache_key, can_review, CACHE_TTL["permissions"])
+                    
                     return can_review
                 else:
                     logger.warning(f"Ошибка при проверке возможности оставить отзыв. Код: {response.status_code}")
@@ -95,28 +111,48 @@ class OrderApi:
             return False
     
     @staticmethod
-    async def check_user_can_review_store(user_id: int, token: Optional[str] = None) -> bool:
+    async def check_user_can_review_store(user_id: int) -> bool:
         """
         Проверка, может ли пользователь оставить отзыв на магазин
         (имеет хотя бы один заказ со статусом 'delivered')
         """
         try:
-            headers = {}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-                
-            url = f"{ORDER_SERVICE_URL}/orders/check-can-review-store"
+            # Проверяем кэш
+            cache_key = f"{CACHE_KEYS['permissions']}store:{user_id}"
+            cached_result = await cache_get(cache_key)
+            
+            if cached_result is not None:
+                logger.debug(f"Результат проверки возможности оставить отзыв на магазин получен из кэша: user_id={user_id}, result={cached_result}")
+                return cached_result
+            
             data = {
                 "user_id": user_id
             }
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(url, json=data, headers=headers)
+            # perform with retry on 401
+            backoffs = [0.5, 1, 2]
+            async with httpx.AsyncClient() as client:
+                for delay in backoffs:
+                    token = await get_service_token()
+                    headers = {"Authorization": f"Bearer {token}"}
+                    response = await client.post(
+                        f"{ORDER_SERVICE_URL}/orders/service/check-can-review-store"
+                       , json=data, headers=headers,timeout=5.0
+                    )
+                    if response.status_code == 401:
+                        # token expired - clear cache and retry
+                        await cache_service.delete("service_token")
+                        await asyncio.sleep(delay)
+                        continue
+                    break
                 
                 if response.status_code == 200:
                     result = response.json()
                     can_review = result.get("can_review", False)
                     logger.info(f"Проверка возможности оставить отзыв на магазин: user_id={user_id}, result={can_review}")
+                    
+                    # Кэшируем результат
+                    await cache_set(cache_key, can_review, CACHE_TTL["permissions"])
+                    
                     return can_review
                 else:
                     logger.warning(f"Ошибка при проверке возможности оставить отзыв на магазин. Код: {response.status_code}")
@@ -341,15 +377,16 @@ async def get_product_reviews(
         Dict: Пагинированный результат с отзывами
     """
     try:
-        # Проверяем кэш, если include_hidden=False
-        if not include_hidden:
-            cache_key = f"{CACHE_KEYS['product_reviews']}{product_id}:{page}:{limit}"
-            cached_data = await cache_get(cache_key)
-            if cached_data:
-                logger.info(f"Отзывы для товара {product_id} получены из кэша")
-                return cached_data
+        # Формируем ключ кэша с учетом параметра include_hidden
+        cache_key = f"{CACHE_KEYS['product_reviews']}{product_id}:{page}:{limit}:{include_hidden}"
+        logger.debug(f"Проверяем кэш для отзывов товара {product_id} с ключом {cache_key}")
+        cached_data = await cache_get(cache_key)
         
-        # Логируем процесс получения отзывов из БД
+        if cached_data:
+            logger.info(f"Отзывы для товара {product_id} (страница {page}, лимит {limit}, include_hidden={include_hidden}) получены из кэша")
+            return cached_data
+        
+        # Если данных в кэше нет, получаем из БД
         logger.info(f"Получаем отзывы для товара {product_id} из БД, страница {page}, лимит {limit}, include_hidden={include_hidden}")
         
         # Получаем отзывы из БД
@@ -369,9 +406,11 @@ async def get_product_reviews(
             "pages": ceil(total / limit) if total > 0 else 1
         }
         
-        # Кэшируем результат, если include_hidden=False
-        if not include_hidden:
-            await cache_set(cache_key, result, CACHE_TTL["reviews"])
+        # Кэшируем результат
+        logger.debug(f"Сохраняем отзывы товара {product_id} в кэш с ключом {cache_key}")
+        # Определяем TTL в зависимости от типа запроса
+        ttl = CACHE_TTL["reviews"] if not include_hidden else CACHE_TTL["reviews"] // 2  # Для админов кэш хранится меньше
+        await cache_set(cache_key, result, ttl)
         
         return result
     except Exception as e:
@@ -403,15 +442,16 @@ async def get_store_reviews(
         Dict: Пагинированный результат с отзывами
     """
     try:
-        # Проверяем кэш, если include_hidden=False
-        if not include_hidden:
-            cache_key = f"{CACHE_KEYS['store_reviews']}{page}:{limit}"
-            cached_data = await cache_get(cache_key)
-            if cached_data:
-                logger.info("Отзывы для магазина получены из кэша")
-                return cached_data
-                
-        # Логируем процесс получения отзывов из БД
+        # Формируем ключ кэша с учетом параметра include_hidden
+        cache_key = f"{CACHE_KEYS['store_reviews']}{page}:{limit}:{include_hidden}"
+        logger.debug(f"Проверяем кэш для отзывов магазина с ключом {cache_key}")
+        cached_data = await cache_get(cache_key)
+        
+        if cached_data:
+            logger.info(f"Отзывы для магазина (страница {page}, лимит {limit}, include_hidden={include_hidden}) получены из кэша")
+            return cached_data
+        
+        # Если данных в кэше нет, получаем из БД
         logger.info(f"Получаем отзывы для магазина из БД, страница {page}, лимит {limit}, include_hidden={include_hidden}")
         
         # Получаем отзывы из БД
@@ -431,9 +471,11 @@ async def get_store_reviews(
             "pages": ceil(total / limit) if total > 0 else 1
         }
         
-        # Кэшируем результат, если include_hidden=False
-        if not include_hidden:
-            await cache_set(cache_key, result, CACHE_TTL["reviews"])
+        # Кэшируем результат
+        logger.debug(f"Сохраняем отзывы магазина в кэш с ключом {cache_key}")
+        # Определяем TTL в зависимости от типа запроса
+        ttl = CACHE_TTL["reviews"] if not include_hidden else CACHE_TTL["reviews"] // 2  # Для админов кэш хранится меньше
+        await cache_set(cache_key, result, ttl)
         
         return result
     except Exception as e:
@@ -756,27 +798,27 @@ async def get_batch_product_review_stats(
         product_ids_str = ','.join(str(pid) for pid in product_ids)
         
         # Для оптимизации делаем один запрос за всеми средними рейтингами
-        avg_ratings_query = text(f"""
+        avg_ratings_query = text("""
             SELECT product_id, AVG(rating) as avg_rating
             FROM reviews
             WHERE review_type = 'product'
             AND is_hidden = FALSE
-            AND product_id IN ({product_ids_str})
+            AND product_id IN :ids
             GROUP BY product_id
-        """)
-        avg_ratings_result = await session.execute(avg_ratings_query)
+        """).bindparams(bindparam("ids", expanding=True))
+        avg_ratings_result = await session.execute(avg_ratings_query, {"ids": product_ids})
         avg_ratings = {str(row[0]): float(row[1]) for row in avg_ratings_result}
         
         # Запрос для получения количества отзывов по каждому рейтингу для всех товаров
-        rating_counts_query = text(f"""
+        rating_counts_query = text("""
             SELECT product_id, rating, COUNT(*) as count
             FROM reviews
             WHERE review_type = 'product'
             AND is_hidden = FALSE
-            AND product_id IN ({product_ids_str})
+            AND product_id IN :ids
             GROUP BY product_id, rating
-        """)
-        rating_counts_result = await session.execute(rating_counts_query)
+        """).bindparams(bindparam("ids", expanding=True))
+        rating_counts_result = await session.execute(rating_counts_query, {"ids": product_ids})
         
         # Инициализируем словарь для подсчета рейтингов по каждому товару
         product_rating_counts = {str(pid): {1: 0, 2: 0, 3: 0, 4: 0, 5: 0} for pid in product_ids}

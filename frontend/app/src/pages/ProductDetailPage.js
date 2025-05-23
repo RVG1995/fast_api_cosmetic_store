@@ -10,6 +10,8 @@ import ReviewForm from '../components/reviews/ReviewForm';
 import ReviewStats from '../components/reviews/ReviewStats';
 import { useAuth } from '../context/AuthContext';
 import { useReviews } from '../context/ReviewContext';
+import FavoriteButton from '../components/atoms/FavoriteButton';
+import { useFavorites } from '../context/FavoritesContext';
 
 const ProductDetailPage = () => {
   const { productId } = useParams();
@@ -21,6 +23,7 @@ const ProductDetailPage = () => {
   const [reviewReloadKey, setReviewReloadKey] = useState(0);
   const { user } = useAuth();
   const { fetchBatchProductRatings } = useReviews();
+  const { isFavorite, addFavorite, removeFavorite, loading: favLoading } = useFavorites();
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {
@@ -124,6 +127,11 @@ const ProductDetailPage = () => {
     }
   }, [relatedProducts, fetchBatchProductRatings]);
 
+  const handleToggleFavorite = async () => {
+    if (isFavorite(product.id)) await removeFavorite(product.id);
+    else await addFavorite(product.id);
+  };
+
   if (loading) {
     return (
       <div className="product-detail-container loading">
@@ -193,7 +201,13 @@ const ProductDetailPage = () => {
         </div>
 
         <div className="product-detail-info">
-          <h1 className="product-detail-title">{product.name}</h1>
+          <h1 className="product-detail-title flex items-center gap-2">
+            {product.name}
+            <FavoriteButton
+              productId={product.id}
+              disabled={favLoading}
+            />
+          </h1>
           
           <div className="product-detail-price">
             <span className="price-value">{product.price} ₽</span>

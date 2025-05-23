@@ -2,30 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminAPI } from '../../utils/api';
-import { formatPrice } from '../../utils/helpers';
+import { formatPrice, formatDate } from '../../utils/helpers';
 import '../../styles/AdminDashboard.css';
 
 const AdminDashboard = () => {
   const { user, isSuperAdmin } = useAuth();
-  const [stats, setStats] = useState({
-    usersCount: 0,
-    productsCount: 0,
-    ordersCount: 0,
-    totalOrdersRevenue: 0
-  });
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Загрузка статистики при монтировании компонента
   useEffect(() => {
     const fetchStats = async () => {
       try {
         setLoading(true);
-        const statsData = await adminAPI.getDashboardStats();
-        setStats(statsData);
+        
+        // Получаем общую статистику системы
+        const response = await adminAPI.getDashboardStats();
+        setStats(response);
         setError(null);
       } catch (err) {
-        console.error('Ошибка при загрузке статистики:', err);
+        console.error('Ошибка при получении статистики:', err);
         setError('Не удалось загрузить статистику. Пожалуйста, попробуйте позже.');
       } finally {
         setLoading(false);
@@ -61,24 +57,63 @@ const AdminDashboard = () => {
                   <p className="mt-2">Загрузка статистики...</p>
                 </div>
               ) : error ? (
-                <div className="alert alert-danger">{error}</div>
+                <div className="alert alert-danger" role="alert">
+                  {error}
+                </div>
               ) : (
-                <div className="row stats">
-                  <div className="col-md-3 stat-item">
-                    <div className="stat-value">{stats.usersCount}</div>
-                    <div className="stat-label">Пользователей</div>
+                <div className="row">
+                  <div className="col-md-3 mb-4">
+                    <div className="admin-stat-card">
+                      <div className="admin-stat-icon">
+                        <i className="bi bi-people"></i>
+                      </div>
+                      <div className="admin-stat-info">
+                        <h4>Пользователи</h4>
+                        <p className="admin-stat-value">{stats?.usersCount}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="col-md-3 stat-item">
-                    <div className="stat-value">{stats.productsCount}</div>
-                    <div className="stat-label">Товаров</div>
+                  <div className="col-md-3 mb-4">
+                    <div className="admin-stat-card">
+                      <div className="admin-stat-icon">
+                        <i className="bi bi-box-seam"></i>
+                      </div>
+                      <div className="admin-stat-info">
+                        <h4>Товары</h4>
+                        <p className="admin-stat-value">{stats?.productsCount}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="col-md-3 stat-item">
-                    <div className="stat-value">{stats.ordersCount}</div>
-                    <div className="stat-label">Заказов</div>
+                  <div className="col-md-3 mb-4">
+                    <div className="admin-stat-card">
+                      <div className="admin-stat-icon">
+                        <i className="bi bi-cart3"></i>
+                      </div>
+                      <div className="admin-stat-info">
+                        <h4>Заказы</h4>
+                        <p className="admin-stat-value">{stats?.ordersCount}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="col-md-3 stat-item">
-                    <div className="stat-value">{formatPrice(stats.totalOrdersRevenue)}</div>
-                    <div className="stat-label">Сумма заказов</div>
+                  <div className="col-md-3 mb-4">
+                    <div className="admin-stat-card">
+                      <div className="admin-stat-icon">
+                        <i className="bi bi-currency-dollar"></i>
+                      </div>
+                      <div className="admin-stat-info">
+                        <h4>Выручка</h4>
+                        <p className="admin-stat-value">{formatPrice(stats?.totalOrdersRevenue)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-12 mt-3 text-center">
+                    <Link to="/admin/reports" className="btn btn-primary">
+                      <i className="bi bi-file-earmark-text me-2"></i>
+                      Сформировать расширенный отчет
+                    </Link>
+                    <p className="small text-muted mt-2">
+                      Статистика отображает общие данные. Для выбора конкретного периода используйте страницу отчетов.
+                    </p>
                   </div>
                 </div>
               )}
@@ -210,6 +245,34 @@ const AdminDashboard = () => {
             <div className="admin-card-body">
               <p>Управление статусами заказов. Создание и редактирование статусов для отслеживания заказов.</p>
               <Link to="/admin/order-statuses" className="btn btn-primary">Управление статусами заказов</Link>
+            </div>
+          </div>
+        </div>
+        
+        {/* Управление промокодами */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-tag-fill admin-card-icon"></i>
+              <h3>Промокоды</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Управление промокодами. Создание, редактирование и отслеживание промокодов для скидок.</p>
+              <Link to="/admin/promo-codes" className="btn btn-primary">Управление промокодами</Link>
+            </div>
+          </div>
+        </div>
+        
+        {/* Управление воронкой Boxberry */}
+        <div className="col-md-4 mb-4">
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <i className="bi bi-diagram-3 admin-card-icon"></i>
+              <h3>Воронка Boxberry</h3>
+            </div>
+            <div className="admin-card-body">
+              <p>Настройка соответствия статусов Boxberry и статусов заказа.</p>
+              <Link to="/admin/boxberry-funnel" className="btn btn-primary">Настроить воронку</Link>
             </div>
           </div>
         </div>

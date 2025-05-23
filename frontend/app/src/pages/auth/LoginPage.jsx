@@ -81,6 +81,9 @@ function LoginPage() {
             Войти
           </button>
         </form>
+        <div className="mt-4 text-center">
+          <a href="/forgot-password" className="text-blue-600 hover:underline">Забыли пароль?</a>
+        </div>
       </div>
     </div>
   );

@@ -5,13 +5,10 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from routers.reviews import router as reviews_router
 from routers.admin import router as admin_router
-import logging
 import os
 from fastapi.staticfiles import StaticFiles
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("review_service")
+from config import settings, get_cors_origins, logger
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,19 +41,12 @@ app = FastAPI(
 )
 
 # Создание директории для статических файлов (если понадобится)
-STATIC_DIR = "static"
+STATIC_DIR = settings.STATIC_DIR
 os.makedirs(STATIC_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Настройка CORS
-origins = [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "http://localhost",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:3001",
-    "http://127.0.0.1",
-]
+origins = get_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,

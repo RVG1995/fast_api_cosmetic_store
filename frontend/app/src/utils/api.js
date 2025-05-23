@@ -26,6 +26,8 @@ const productApi = createApiInstance(API_URLS.PRODUCT_SERVICE);
 const cartApi = createApiInstance(API_URLS.CART_SERVICE);
 const orderApi = createApiInstance(API_URLS.ORDER_SERVICE);
 const reviewApi = createApiInstance(API_URLS.REVIEW_SERVICE);
+const deliveryApi = createApiInstance(API_URLS.DELIVERY_SERVICE);
+const favoriteApi = createApiInstance(API_URLS.FAVORITE_SERVICE);
 
 // Интерцептор для обработки ошибок и отладки
 const setupInterceptors = (api, serviceName) => {
@@ -78,14 +80,10 @@ const setupInterceptors = (api, serviceName) => {
       
       // Обработка ошибок авторизации (401)
       if (error.response && error.response.status === 401) {
-        console.log('Ошибка авторизации (401): Токен истек или недействителен, перенаправление на страницу входа');
-        
-        // Проверяем, не находимся ли мы уже на странице логина
-        const currentPath = window.location.pathname;
-        if (currentPath !== '/login' && currentPath !== '/register') {
-          // Перенаправляем на страницу входа с указанием причины
-          window.location.href = '/login?expired=true';
-        }
+        console.log('Ошибка авторизации (401): Токен истек или недействителен');
+        // Не делаем window.location.href! Пусть обработка будет на уровне компонентов/guard'ов
+        // window.location.href = '/login?expired=true';
+        // Можно тут диспатчить глобальный алерт, если нужно
       }
       return Promise.reject(error);
     }
@@ -102,6 +100,8 @@ setupInterceptors(productApi, 'Product');
 setupInterceptors(cartApi, 'Cart');
 setupInterceptors(orderApi, 'Order');
 setupInterceptors(reviewApi, 'Review');
+setupInterceptors(deliveryApi, 'Delivery');
+setupInterceptors(favoriteApi, 'Favorite');
 
 // API для работы с аутентификацией
 export const authAPI = {
@@ -117,7 +117,20 @@ export const authAPI = {
       }
     });
   },
-  register: async (userData) => await authApi.post('/auth/register', userData),
+  register: async (userData) => {
+    // Убедимся, что поля соответствуют ожидаемым на бэкенде
+    const registrationData = {
+      first_name: userData.first_name,
+      last_name: userData.last_name,
+      email: userData.email,
+      password: userData.password,
+      confirm_password: userData.confirm_password,
+      personal_data_agreement: userData.personal_data_agreement || false,
+      notification_agreement: userData.notification_agreement || false
+    };
+    
+    return await authApi.post('/auth/register', registrationData);
+  },
   logout: async () => await authApi.post('/auth/logout'),
   getCurrentUser: async () => await authApi.get('/auth/users/me'),
   getUserProfile: async () => await authApi.get('/auth/users/me/profile'),
@@ -145,6 +158,14 @@ export const authAPI = {
   },
   activateUser: async (token) => await authApi.get(`/auth/activate/${token}`),
   changePassword: async (passwordData) => await authApi.post('/auth/change-password', passwordData),
+  updateProfile: async (profileData) => await authApi.patch('/auth/users/me/profile', profileData),
+  requestPasswordReset: async (email) => await authApi.post('/auth/request-password-reset', { email }),
+  resetPassword: async ({ token, new_password, confirm_password }) => await authApi.post('/auth/reset-password', { token, new_password, confirm_password }),
+  
+  // Методы для работы с сессиями
+  getUserSessions: async () => await authApi.get('/auth/users/me/sessions'),
+  revokeSession: async (sessionId) => await authApi.post(`/auth/users/me/sessions/${sessionId}/revoke`),
+  revokeAllSessions: async () => await authApi.post('/auth/users/me/sessions/revoke-all'),
 };
 
 // API для работы с пользователями
@@ -156,13 +177,20 @@ export const userAPI = {
 
 // API для работы с админ-панелью 
 export const adminAPI = {
-  getAllUsers: async () => await authApi.get('/admin/users'),
+  getAllUsers: async () => await authApi.get('/auth/all/users'),
+  createUser: async (userData) => {
+    const { is_admin, ...userFields } = userData;
+    return await authApi.post('/auth/users', userFields, { params: { is_admin } });
+  },
   activateUser: async (userId) => await authApi.patch(`/admin/users/${userId}/activate`),
   makeAdmin: async (userId) => await authApi.patch(`/admin/users/${userId}/make-admin`),
   removeAdmin: async (userId) => await authApi.patch(`/admin/users/${userId}/remove-admin`),
   deleteUser: async (userId) => await authApi.delete(`/admin/users/${userId}`),
+  toggleUserActive: async (userId) => await authApi.patch(`/auth/users/${userId}/toggle-active`),
   checkAdminAccess: async () => await authApi.get('/admin/check-access'),
   checkSuperAdminAccess: async () => await authApi.get('/admin/check-super-access'),
+  
+  // Статистика
   getDashboardStats: async () => {
     try {
       // Получаем количество пользователей
@@ -208,7 +236,140 @@ export const adminAPI = {
         totalOrdersRevenue: 0
       };
     }
-  }
+  },
+  
+  // Получение статистики по заказам за указанный период
+  getOrderStatsByDate: async (dateFrom = null, dateTo = null) => {
+    try {
+      const ordersApi = createApiInstance(API_URLS.ORDER_SERVICE);
+      setupInterceptors(ordersApi, 'Orders');
+      
+      // Формируем параметры запроса
+      const params = {};
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      
+      console.log('Запрос статистики заказов по периоду с параметрами:', params);
+      
+      // Получаем статистику заказов за указанный период
+      const response = await ordersApi.get('/admin/orders/statistics/report', { params });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка при получении статистики заказов по периоду:', error);
+      throw error;
+    }
+  },
+  
+  // Генерация отчета по заказам
+  generateOrderReport: async (format, dateFrom = null, dateTo = null) => {
+    try {
+      const ordersApi = createApiInstance(API_URLS.ORDER_SERVICE);
+      setupInterceptors(ordersApi, 'Orders');
+      
+      // Формируем параметры запроса
+      const params = { format };
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      
+      console.log('Запрос генерации отчета по заказам с параметрами:', params);
+      
+      // Запрашиваем отчет в нужном формате
+      const response = await ordersApi.get('/admin/orders/reports/download', { 
+        params,
+        responseType: 'blob' // Указываем, что ответ ожидается в виде файла
+      });
+      
+      // Создаем временную ссылку для скачивания файла
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Формируем имя файла в зависимости от формата
+      const date = new Date().toISOString().split('T')[0];
+      let filename = `orders_report_${date}`;
+      
+      // Добавляем правильное расширение файла
+      switch(format.toLowerCase()) {
+        case 'csv':
+          filename += '.csv';
+          break;
+        case 'excel':
+          filename += '.xlsx';
+          break;
+        case 'pdf':
+          filename += '.pdf';
+          break;
+        case 'word':
+          filename += '.docx';
+          break;
+        default:
+          filename += `.${format.toLowerCase()}`;
+      }
+      
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      
+      // Удаляем ссылку
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      return true;
+    } catch (error) {
+      console.error('Ошибка при получении отчета:', error);
+      throw error;
+    }
+  },
+  
+  // Обновление информации о доставке заказа (для админки)
+  updateOrderDeliveryInfo: async (orderId, data) => {
+    try {
+      console.log(`Вызов API updateOrderDeliveryInfo для заказа ${orderId} с данными:`, data);
+      const response = await orderApi.put(`/admin/orders/${orderId}/delivery`, data);
+      console.log(`API updateOrderDeliveryInfo ответ успешно получен:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Ошибка в API updateOrderDeliveryInfo для заказа ${orderId}:`, error);
+      throw error;
+    }
+  },
+  
+  // Получение заказа по ID (для админки)
+  getOrderById: async (orderId) => {
+    try {
+      console.log(`Вызов API getOrderById для заказа ${orderId}`);
+      const response = await orderApi.get(`/admin/orders/${orderId}`);
+      console.log(`API getOrderById ответ успешно получен:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Ошибка в API getOrderById для заказа ${orderId}:`, error);
+      throw error;
+    }
+  },
+  
+  // Обновление заказа (универсальный PUT)
+  updateOrder: async (orderId, data) => {
+    try {
+      console.log(`Вызов API updateOrder для заказа ${orderId} с данными:`, data);
+      const response = await orderApi.put(`/admin/orders/${orderId}`, data);
+      console.log(`API updateOrder ответ успешно получен:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`Ошибка в API updateOrder для заказа ${orderId}:`, error);
+      throw error;
+    }
+  },
+  
+  updateOrderItems: async (orderId, data) => {
+    try {
+      const response = await orderApi.post(`/admin/orders/${orderId}/items`, data);
+      return response.data;
+    } catch (error) {
+      console.error(`Ошибка в API updateOrderItems для заказа ${orderId}:`, error);
+      throw error;
+    }
+  },
 };
 
 // API для работы с контентом
@@ -225,6 +386,19 @@ export const notificationAPI = {
   getNotifications: async () => await notificationApi.get('/notifications'),
   markAsRead: async (id) => await notificationApi.patch(`/notifications/${id}/read`),
   deleteNotification: async (id) => await notificationApi.delete(`/notifications/${id}`),
+  // Методы для работы с настройками уведомлений
+  getSettings: async () => {
+    const { data } = await notificationApi.get('/notifications/settings');
+    return data;
+  },
+  updateSetting: async (eventType, payload) => {
+    const { data } = await notificationApi.patch(
+      '/notifications/settings',
+      payload,
+      { params: { event_type: eventType } }
+    );
+    return data;
+  }
 };
 
 // API для работы с продуктами
@@ -526,28 +700,89 @@ export const productAPI = {
   deleteProduct: async (id) => await productApi.delete(`/products/${id}`),
   
   // Категории
-  getCategories: async () => await productApi.get('/categories'),
+  getCategories: async () => {
+    try {
+      return await productApi.get('/categories', {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'If-Modified-Since': '0'
+        }
+      });
+    } catch (error) {
+      console.error("Ошибка в getCategories:", error);
+      throw error;
+    }
+  },
   createCategory: async (data) => await productApi.post('/categories', data),
   updateCategory: async (id, data) => await productApi.put(`/categories/${id}`, data),
   deleteCategory: async (id) => await productApi.delete(`/categories/${id}`),
   
   // Бренды
-  getBrands: async () => await productApi.get('/brands'),
+  getBrands: async () => {
+    try {
+      return await productApi.get('/brands', {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'If-Modified-Since': '0'
+        }
+      });
+    } catch (error) {
+      console.error("Ошибка в getBrands:", error);
+      throw error;
+    }
+  },
   createBrand: async (data) => await productApi.post('/brands', data),
   updateBrand: async (id, data) => await productApi.put(`/brands/${id}`, data),
   deleteBrand: async (id) => await productApi.delete(`/brands/${id}`),
   
   // Страны
-  getCountries: async () => await productApi.get('/countries'),
+  getCountries: async () => {
+    try {
+      // Добавляем дополнительные заголовки для решения проблем с CORS
+      return await productApi.get('/countries', {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'If-Modified-Since': '0'
+        }
+      });
+    } catch (error) {
+      console.error("Ошибка в getCountries:", error);
+      throw error;
+    }
+  },
   createCountry: async (data) => await productApi.post('/countries', data),
   updateCountry: async (id, data) => await productApi.put(`/countries/${id}`, data),
   deleteCountry: async (id) => await productApi.delete(`/countries/${id}`),
   
   // Подкатегории
-  getSubcategories: async () => await productApi.get('/subcategories'),
+  getSubcategories: async () => {
+    try {
+      return await productApi.get('/subcategories', {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'If-Modified-Since': '0'
+        }
+      });
+    } catch (error) {
+      console.error("Ошибка в getSubcategories:", error);
+      throw error;
+    }
+  },
   createSubcategory: async (data) => await productApi.post('/subcategories', data),
   updateSubcategory: async (id, data) => await productApi.put(`/subcategories/${id}`, data),
   deleteSubcategory: async (id) => await productApi.delete(`/subcategories/${id}`),
+  
+  getProductsBatch: async (ids) => {
+    if (!ids || !ids.length) return [];
+    const response = await productApi.post('/products/open-batch', { product_ids: ids });
+    return response.data;
+  },
+
+  getProductsByIds: async (ids) => {
+    if (!ids || !ids.length) return [];
+    const resp = await productApi.post(`/products/open-batch`, { product_ids: ids });
+    return resp.data.items || resp.data || [];
+  },
 };
 
 // Экспортируем объект с методами для работы с корзиной
@@ -612,18 +847,11 @@ export const cartAPI = {
 
   /**
    * Объединяет корзины при авторизации пользователя
-   * @param {string} [sessionId] - Идентификатор сессии для корзины (необязательный)
+   * @param {Array} items - Массив товаров из localStorage
    * @returns {Promise<Object>} - Объединенная корзина
    */
-  mergeCarts: async (sessionId) => {
-    let url = '/cart/merge';
-    
-    // Если передан sessionId, добавляем его как query параметр
-    if (sessionId) {
-      url += `?url_session_id=${sessionId}`;
-    }
-    
-    return await cartApi.post(url);
+  mergeCarts: async (items) => {
+    return await cartApi.post('/cart/merge', { items });
   }
 };
 
@@ -921,6 +1149,111 @@ export const reviewAPI = {
   }
 };
 
+// API для работы с доставкой
+export const deliveryAPI = {
+  // Расчет стоимости доставки для корзины товаров
+  calculateDeliveryFromCart: async (data) => {
+    try {
+      console.log('Вызов API calculateDeliveryFromCart с данными:', data);
+      const response = await deliveryApi.post('/delivery/boxberry/calculate-from-cart', data);
+      console.log('API calculateDeliveryFromCart ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API calculateDeliveryFromCart:', error);
+      throw error;
+    }
+  },
+  
+  // Получение городов Boxberry
+  getBoxberryCities: async () => {
+    try {
+      console.log('Вызов API getBoxberryCities');
+      const response = await deliveryApi.get('/delivery/boxberry/cities');
+      console.log('API getBoxberryCities ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API getBoxberryCities:', error);
+      throw error;
+    }
+  },
+  
+  // Получение пунктов выдачи Boxberry для города
+  getBoxberryPickupPoints: async (cityCode) => {
+    try {
+      console.log(`Вызов API getBoxberryPickupPoints для города ${cityCode}`);
+      const response = await deliveryApi.get(`/delivery/boxberry/pickup-points`, {
+        params: { city_code: cityCode }
+      });
+      console.log('API getBoxberryPickupPoints ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API getBoxberryPickupPoints:', error);
+      throw error;
+    }
+  },
+  
+  // Поиск кода города Boxberry по названию
+  findBoxberryCityCode: async (cityName) => {
+    try {
+      console.log(`Вызов API findBoxberryCityCode для города ${cityName}`);
+      const response = await deliveryApi.get(`/delivery/boxberry/find-city-code`, {
+        params: { city_name: cityName }
+      });
+      console.log('API findBoxberryCityCode ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API findBoxberryCityCode:', error);
+      throw error;
+    }
+  },
+  
+  // Создание посылки в Boxberry
+  createBoxberryParcel: async (orderData) => {
+    try {
+      console.log(`Вызов API createBoxberryParcel для заказа:`, orderData);
+      const response = await deliveryApi.post('/delivery/boxberry/create-parcel', orderData);
+      console.log('API createBoxberryParcel ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API createBoxberryParcel:', error);
+      throw error;
+    }
+  },
+  
+  // Обновление посылки в Boxberry
+  updateBoxberryParcel: async (orderData, trackingNumber) => {
+    try {
+      console.log(`Вызов API updateBoxberryParcel для заказа:`, orderData);
+      // Добавляем updateByTrack в данные заказа для обновления существующей посылки
+      const updateData = {
+        ...orderData,
+        updateByTrack: trackingNumber
+      };
+      
+      console.log("Данные для обновления посылки с трек-номером:", updateData);
+      const response = await deliveryApi.post('/delivery/boxberry/create-parcel', updateData);
+      console.log('API updateBoxberryParcel ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API updateBoxberryParcel:', error);
+      throw error;
+    }
+  },
+  
+  // Получение подсказок адресов Dadata
+  getDadataAddressSuggestions: async (query) => {
+    try {
+      console.log(`Вызов API getDadataAddressSuggestions для запроса:`, query);
+      const response = await deliveryApi.post('/delivery/dadata/address', { query });
+      console.log('API getDadataAddressSuggestions ответ:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Ошибка в API getDadataAddressSuggestions:', error);
+      throw error;
+    }
+  }
+};
+
 // Экспортируем все API и инстансы для возможного прямого использования
 const apiExports = {
   authApi,
@@ -936,7 +1269,21 @@ const apiExports = {
   productAPI,
   cartAPI,
   cartService,
-  reviewAPI
+  reviewAPI,
+  deliveryAPI,
+  favoriteAPI: {
+    getFavorites: async () => {
+      return (await favoriteApi.get('/')).data;
+    },
+    addFavorite: async (productId) => {
+      return (await favoriteApi.post('/', { product_id: productId })).data;
+    },
+    removeFavorite: async (productId) => {
+      return (await favoriteApi.delete(`/${productId}`)).data;
+    },
+  }
 };
+
+export const favoriteAPI = apiExports.favoriteAPI;
 
 export default apiExports; 

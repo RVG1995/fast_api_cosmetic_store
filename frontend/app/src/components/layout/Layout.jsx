@@ -6,14 +6,16 @@ import { useCategories } from "../../context/CategoryContext";
 import React, { useEffect, useState } from 'react';
 import ProductSearch from "../ProductSearch";
 import CartIcon from "../cart/CartIcon";
-import { CartProvider } from "../../context/CartContext";
+import { CartProvider, useCart } from "../../context/CartContext";
 import ScrollToTopButton from "./ScrollToTopButton";
 import OfflineIndicator from "../common/OfflineIndicator";
+import AdminBackButton from "../common/AdminBackButton";
 import "../../styles/Layout.css"; // Обновленный путь к стилям
 
 const Layout = () => {
   const { user, loading, logout, isAdmin } = useAuth();
   const { categories, loading: isLoadingCategories } = useCategories();
+  const { clearCart } = useCart();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -55,6 +57,8 @@ const Layout = () => {
 
   const handleLogout = async () => {
     await logout();
+    await clearCart();
+    localStorage.removeItem('cart_data');
     navigate('/login');
   };
 
@@ -285,6 +289,11 @@ const Layout = () => {
                   Горячее предложение! Скидка 20% на первый заказ
                 </p>
               </div>
+            )}
+            
+            {/* Кнопка возврата на главный экран админки на страницах первого уровня */}
+            {location.pathname.startsWith('/admin') && location.pathname !== '/admin' && location.pathname.split('/').filter(Boolean).length === 2 && location.pathname !== '/admin/products' && (
+              <AdminBackButton to="/admin" label="Назад в админку" variant="outline-secondary" className="mb-3" />
             )}
             
             <Outlet />

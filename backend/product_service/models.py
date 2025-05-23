@@ -1,16 +1,22 @@
+"""
+Модели SQLAlchemy для product_service: продукты, категории, бренды, страны, подкатегории.
+"""
+from typing import  Optional, List, Dict, Tuple, Any
+
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, Computed, Boolean, Text, ForeignKey, CheckConstraint, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from typing import  Optional, List, Dict, Tuple, Any
 
 
 class Base(DeclarativeBase):
+    """Базовый класс для моделей SQLAlchemy."""
     pass
 
 
 class CategoryModel(Base):
-    __tablename__ = 'categories' 
+    """Категория продукта."""
+    __tablename__ = 'categories'
 
     id: Mapped[int] = mapped_column(primary_key = True,index = True)
     name: Mapped[str] = mapped_column(String(50))
@@ -20,6 +26,7 @@ class CategoryModel(Base):
 
 
 class CountryModel(Base):
+    """Страна-производитель продукта."""
     __tablename__ = 'countries' 
 
     id: Mapped[int] = mapped_column(primary_key = True,index = True)
@@ -28,6 +35,7 @@ class CountryModel(Base):
     products = relationship("ProductModel", back_populates="country", cascade="save-update")
 
 class BrandModel(Base):
+    """Бренд продукта."""
     __tablename__ = 'brands' 
 
     id: Mapped[int] = mapped_column(primary_key = True,index = True)
@@ -36,6 +44,7 @@ class BrandModel(Base):
     products = relationship("ProductModel", back_populates="brand", cascade="save-update")
 
 class SubCategoryModel(Base):
+    """Подкатегория продукта."""
     __tablename__ = 'subcategories'
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -51,6 +60,7 @@ class SubCategoryModel(Base):
 
 
 class ProductModel(Base):
+    """Модель продукта."""
     __tablename__ = 'products'
     __table_args__ = (
         CheckConstraint('price > 0', name='products_price_positive_check'),
@@ -226,7 +236,7 @@ class ProductModel(Base):
             # В тестах, если session.execute - это корутина без .scalars().all()
             # Просто вернем пустой список для безопасности
             return []
-        except Exception as e:
+        except (AttributeError, RuntimeError) as e:
             # Для других ошибок также возвращаем пустой список
             print(f"Ошибка при получении продуктов: {str(e)}")
             return []
@@ -254,7 +264,7 @@ class ProductModel(Base):
             # В тестах, если session.execute - это корутина без .scalars().all()
             # Просто вернем пустой список для безопасности
             return []
-        except Exception as e:
+        except (AttributeError, RuntimeError) as e:
             # Для других ошибок также возвращаем пустой список
             print(f"Ошибка при получении продуктов для админки: {str(e)}")
             return []

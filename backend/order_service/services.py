@@ -1,18 +1,20 @@
+"""Сервисный слой для работы с заказами."""
+
 from typing import List, Optional, Tuple, Dict, Any
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, asc, text
-from sqlalchemy.orm import selectinload
 import logging
 from datetime import datetime
 
-from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel, ShippingAddressModel, BillingAddressModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
+from sqlalchemy import exc as sqlalchemy_exc
+
+from models import OrderModel, OrderItemModel, OrderStatusModel, OrderStatusHistoryModel, PromoCodeModel, PromoCodeUsageModel, DeliveryInfoModel, BoxberryStatusFunnelModel
 from schemas import OrderCreate, OrderUpdate, OrderStatusHistoryCreate, OrderFilterParams, OrderStatistics
 from dependencies import check_products_availability, get_products_info
-from product_api import ProductAPI, get_product_api
+from product_api import get_product_api
 from cache import (
-    invalidate_order_cache, invalidate_statistics_cache, invalidate_order_statuses_cache,
-    cache_order, get_cached_order, cache_order_statistics, invalidate_cache, CacheKeys, invalidate_user_orders_cache
-)
+    invalidate_order_cache, invalidate_statistics_cache)
 
 # Настройка логирования
 logger = logging.getLogger("order_service")
@@ -44,20 +46,30 @@ async def create_order(
         logger.error("Не найден статус заказа по умолчанию")
         raise ValueError("Не найден статус заказа по умолчанию")
     
+    # Проверяем, что указан тип доставки
+    if not order_data.delivery_info.delivery_type:
+        logger.error("Не указан способ доставки")
+        raise ValueError("Необходимо выбрать способ доставки")
+    
+    # Для пунктов выдачи проверяем, что указан адрес пункта
+    if order_data.delivery_info.delivery_type in ["boxberry_pickup_point", "cdek_pickup_point"] and not order_data.delivery_info.boxberry_point_address:
+        logger.error("Не указан адрес пункта выдачи")
+        raise ValueError("Необходимо указать адрес пункта выдачи")
+    
     # Получаем информацию о товарах
     product_ids = [item.product_id for item in order_data.items]
-    products_info = await get_products_info(product_ids, token)
+    products_info = await get_products_info(product_ids)
     
     # Получаем API для работы с товарами
     product_api = await get_product_api()
     
     # Проверка наличия товаров
-    availability = await check_products_availability(product_ids, token)
+    availability = await check_products_availability(product_ids)
     
     # Проверяем, все ли товары доступны
     unavailable_products = [pid for pid, available in availability.items() if not available]
     if unavailable_products:
-        logger.error(f"Товары с ID {unavailable_products} недоступны для заказа")
+        logger.error("Товары с ID %s недоступны для заказа", unavailable_products)
         raise ValueError(f"Товары с ID {unavailable_products} недоступны для заказа")
     
     # Проверяем, достаточно ли товаров на складе
@@ -70,14 +82,35 @@ async def create_order(
         
         if not is_available:
             if not product_info:
-                logger.error(f"Товар с ID {product_id} не найден")
+                logger.error("Товар с ID %s не найден", product_id)
                 raise ValueError(f"Товар с ID {product_id} не найден")
             else:
-                logger.error(f"Недостаточное количество товара {product_id}: запрошено {quantity}, доступно {product_info.stock}")
+                logger.error("Недостаточное количество товара %s: запрошено %s, доступно %s", product_id, quantity, product_info.stock)
                 raise ValueError(f"Недостаточное количество товара '{product_info.name}': запрошено {quantity}, доступно {product_info.stock}")
     
     # Создаем заказ
     total_price = 0  # Будет рассчитано на основе товаров
+    
+    # Проверяем промокод, если он указан
+    promo_code = None
+    promo_code_id = None
+    discount_amount = 0
+    
+    if order_data.promo_code:
+        is_valid, message, promo_code = await check_promo_code(
+            session=session,
+            code=order_data.promo_code,
+            email=order_data.email,
+            phone=order_data.phone,
+            user_id=user_id
+        )
+        
+        if not is_valid:
+            logger.warning("Промокод %s не валиден: %s", order_data.promo_code, message)
+            raise ValueError(message)
+        
+        logger.info("Промокод %s применен", order_data.promo_code)
+        promo_code_id = promo_code.id
     
     # Создаем заказ с новыми полями
     order = OrderModel(
@@ -87,14 +120,30 @@ async def create_order(
         full_name=order_data.full_name,
         email=order_data.email,
         phone=order_data.phone,
-        region=order_data.region,
-        city=order_data.city,
-        street=order_data.street,
+        delivery_address=order_data.delivery_address,
         comment=order_data.comment,
-        is_paid=False
+        promo_code_id=promo_code_id,
+        discount_amount=0,  # Будет обновлено после расчета скидки
+        is_paid=False,
+        personal_data_agreement=order_data.personal_data_agreement,
+        receive_notifications=order_data.receive_notifications,
+        # Данные о способе оплаты
+        is_payment_on_delivery=order_data.is_payment_on_delivery if hasattr(order_data, 'is_payment_on_delivery') else True,
     )
     session.add(order)
     await session.flush()
+    
+    # Создаем информацию о доставке
+    delivery_info = DeliveryInfoModel(
+        order_id=order.id,
+        delivery_type=order_data.delivery_info.delivery_type,
+        boxberry_point_id=order_data.delivery_info.boxberry_point_id,
+        boxberry_point_address=order_data.delivery_info.boxberry_point_address,
+        delivery_cost=order_data.delivery_info.delivery_cost,
+        tracking_number=order_data.delivery_info.tracking_number,
+        status_in_delivery_service=order_data.delivery_info.status_in_delivery_service
+    )
+    session.add(delivery_info)
     
     # Создаем элементы заказа
     for item in order_data.items:
@@ -104,7 +153,7 @@ async def create_order(
         # Получаем информацию о товаре
         product_info = products_info.get(product_id)
         if not product_info:
-            logger.warning(f"Не удалось получить информацию о товаре {product_id}")
+            logger.warning("Не удалось получить информацию о товаре %s", product_id)
             continue
         
         # Создаем элемент заказа
@@ -121,13 +170,36 @@ async def create_order(
         # Обновляем количество товара на складе
         success = await product_api.update_stock(product_id, -quantity, token)
         if not success:
-            logger.warning(f"Не удалось обновить количество товара {product_id}")
+            logger.error("Не удалось обновить количество товара %s", product_id)
         
         # Добавляем к общей стоимости заказа
         total_price += product_info["price"] * quantity
     
-    # Обновляем общую стоимость заказа
+    # Применяем скидку, если есть промокод
+    if promo_code:
+        # Расчитываем размер скидки
+        discount_amount = await calculate_discount(promo_code, total_price)
+        
+        # Обновляем сумму заказа с учетом скидки
+        total_price = max(0, total_price - discount_amount)
+        
+        # Сохраняем информацию об использовании промокода
+        promo_code_usage = PromoCodeUsageModel(
+            promo_code_id=promo_code.id,
+            email=order_data.email,
+            phone=order_data.phone,
+            user_id=user_id,
+        )
+        session.add(promo_code_usage)
+    
+    # Добавляем стоимость доставки к общей сумме заказа
+    if order_data.delivery_info.delivery_cost:
+        total_price += order_data.delivery_info.delivery_cost
+        logger.info(f"Добавлена стоимость доставки {order_data.delivery_info.delivery_cost} к заказу, итоговая сумма: {total_price}")
+    
+    # Обновляем общую стоимость заказа и скидку
     order.total_price = total_price
+    order.discount_amount = discount_amount
     
     # Добавляем запись в историю статусов
     await OrderStatusHistoryModel.add_status_change(
@@ -142,9 +214,13 @@ async def create_order(
     
     # Инвалидируем кэш после создания заказа
     await invalidate_order_cache(order.id)
-    logger.info(f"Кэш заказа {order.id} и связанных списков инвалидирован после создания")
+    logger.info("Кэш заказа %s и связанных списков инвалидирован после создания", order.id)
     
-    return order
+    # Делаем коммит, чтобы убедиться, что данные фиксируются в базе
+    await session.commit()
+    
+    # Получаем заказ со всеми связанными данными (включая delivery_info)
+    return await get_order_by_id(session, order.id)
 
 async def get_order_by_id(session: AsyncSession, order_id: int, user_id: Optional[int] = None) -> Optional[OrderModel]:
     """
@@ -159,20 +235,21 @@ async def get_order_by_id(session: AsyncSession, order_id: int, user_id: Optiona
         Заказ или None, если заказ не найден или пользователь не имеет доступа
     """
     # Логирование запроса
-    logger.info(f"Запрос получения заказа: order_id={order_id}, user_id={user_id if user_id is not None else 'None (admin)'}")
+    logger.info("Запрос получения заказа: order_id=%s, user_id=%s", order_id, user_id if user_id is not None else 'None (admin)')
     
     try:
         # Формируем запрос с джойнами для загрузки всех связанных данных
         query = select(OrderModel).options(
             selectinload(OrderModel.items),
             selectinload(OrderModel.status),
-            selectinload(OrderModel.status_history).selectinload(OrderStatusHistoryModel.status)
+            selectinload(OrderModel.status_history).selectinload(OrderStatusHistoryModel.status),
+            selectinload(OrderModel.delivery_info)  # Явно загружаем информацию о доставке
         ).filter(OrderModel.id == order_id)
         
         # Если указан пользователь, фильтруем только его заказы
         # Для администратора user_id=None, поэтому фильтрация не применяется
         if user_id is not None:
-            logger.info(f"Применение фильтра по user_id={user_id}")
+            logger.info("Применение фильтра по user_id=%s", user_id)
             query = query.filter(OrderModel.user_id == user_id)
         
         # Выполняем запрос
@@ -181,23 +258,23 @@ async def get_order_by_id(session: AsyncSession, order_id: int, user_id: Optiona
         
         # Логируем результат
         if order:
-            logger.info(f"Заказ найден: order_id={order_id}, user_id={order.user_id}, status={order.status_id if hasattr(order, 'status_id') else 'N/A'}")
+            logger.info("Заказ найден: order_id=%s, user_id=%s, status=%s", order_id, order.user_id, order.status_id if hasattr(order, 'status_id') else 'N/A')
             # Выводим информацию о товарах в заказе
             if hasattr(order, 'items') and order.items:
-                logger.info(f"Количество товаров в заказе: {len(order.items)}")
+                logger.info("Количество товаров в заказе: %s", len(order.items))
         else:
             # Если заказ не найден, логируем подробную информацию для отладки
-            logger.warning(f"Заказ с ID {order_id} не найден. Фильтр по пользователю: {user_id is not None}")
+            logger.warning("Заказ с ID %s не найден. Фильтр по пользователю: %s", order_id, user_id is not None)
             # Проверим, существует ли заказ вообще
             check_query = select(OrderModel).filter(OrderModel.id == order_id)
             check_result = await session.execute(check_query)
             check_order = check_result.scalars().first()
             if check_order:
-                logger.warning(f"Заказ с ID {order_id} существует, но не доступен для пользователя {user_id}. Владелец заказа: {check_order.user_id}")
+                logger.warning("Заказ с ID %s существует, но не доступен для пользователя %s. Владелец заказа: %s", order_id, user_id, check_order.user_id)
         
         return order
     except Exception as e:
-        logger.error(f"Ошибка при выполнении запроса заказа: {str(e)}")
+        logger.error("Ошибка при выполнении запроса заказа: %s", str(e))
         raise
 
 async def get_orders(
@@ -267,35 +344,57 @@ async def update_order(
         # Проверяем существование статуса
         status = await session.get(OrderStatusModel, order_data.status_id)
         if not status:
-            logger.error(f"Статус с ID {order_data.status_id} не найден")
+            logger.error("Статус с ID %s не найден", order_data.status_id)
             raise ValueError(f"Статус с ID {order_data.status_id} не найден")
         
         order.status_id = order_data.status_id
     
-    # Обновляем данные заказа
-    if order_data.full_name is not None:
+    # Обновляем поля заказа
+    if hasattr(order_data, 'full_name') and order_data.full_name is not None:
         order.full_name = order_data.full_name
-    
-    if order_data.email is not None:
+    if hasattr(order_data, 'email') and order_data.email is not None:
         order.email = order_data.email
-    
-    if order_data.phone is not None:
+    if hasattr(order_data, 'phone') and order_data.phone is not None:
         order.phone = order_data.phone
-    
-    if order_data.region is not None:
-        order.region = order_data.region
-    
-    if order_data.city is not None:
-        order.city = order_data.city
-    
-    if order_data.street is not None:
-        order.street = order_data.street
-    
-    if order_data.comment is not None:
+    if hasattr(order_data, 'delivery_address') and order_data.delivery_address is not None:
+        order.delivery_address = order_data.delivery_address
+    if hasattr(order_data, 'comment') and order_data.comment is not None:
         order.comment = order_data.comment
-    
-    if order_data.is_paid is not None:
+    if hasattr(order_data, 'is_paid') and order_data.is_paid is not None:
         order.is_paid = order_data.is_paid
+    
+    # Обновляем информацию о доставке
+    if hasattr(order_data, 'delivery_info') and order_data.delivery_info is not None:
+        # Получаем информацию о доставке для заказа
+        delivery_info_query = select(DeliveryInfoModel).filter(DeliveryInfoModel.order_id == order_id)
+        delivery_info_result = await session.execute(delivery_info_query)
+        delivery_info = delivery_info_result.scalars().first()
+        
+        # Если информация о доставке уже существует, обновляем её
+        if delivery_info:
+            if order_data.delivery_info.delivery_type is not None:
+                delivery_info.delivery_type = order_data.delivery_info.delivery_type
+            if order_data.delivery_info.boxberry_point_id is not None:
+                delivery_info.boxberry_point_id = order_data.delivery_info.boxberry_point_id
+            if order_data.delivery_info.boxberry_point_address is not None:
+                delivery_info.boxberry_point_address = order_data.delivery_info.boxberry_point_address
+            if order_data.delivery_info.delivery_cost is not None:
+                delivery_info.delivery_cost = order_data.delivery_info.delivery_cost
+            if order_data.delivery_info.tracking_number is not None:
+                delivery_info.tracking_number = order_data.delivery_info.tracking_number
+                logger.info("Обновлен трек-номер для заказа %s: %s", order_id, order_data.delivery_info.tracking_number)
+        else:
+            # Если информация о доставке отсутствует, создаем её
+            delivery_info = DeliveryInfoModel(
+                order_id=order_id,
+                delivery_type=order_data.delivery_info.delivery_type or "boxberry_courier",
+                boxberry_point_id=order_data.delivery_info.boxberry_point_id,
+                boxberry_point_address=order_data.delivery_info.boxberry_point_address,
+                delivery_cost=order_data.delivery_info.delivery_cost or 0,
+                tracking_number=order_data.delivery_info.tracking_number,
+                status_in_delivery_service=order_data.delivery_info.status_in_delivery_service
+            )
+            session.add(delivery_info)
     
     order.updated_at = datetime.utcnow()
     await session.flush()
@@ -305,9 +404,13 @@ async def update_order(
     # Если изменился статус, то инвалидируем кэш статистики
     if order_data.status_id is not None:
         await invalidate_statistics_cache()
-    logger.info(f"Кэш заказа {order_id} инвалидирован после обновления")
+    logger.info("Кэш заказа %s инвалидирован после обновления", order_id)
     
-    return order
+    # Коммитим изменения
+    await session.commit()
+    
+    # Возвращаем обновленный заказ со всеми связанными данными
+    return await get_order_by_id(session, order_id, user_id)
 
 async def change_order_status(
     session: AsyncSession,
@@ -336,25 +439,25 @@ async def change_order_status(
     
     # Проверяем доступ пользователя
     if not is_admin and order.user_id != user_id:
-        logger.error(f"Пользователь {user_id} не имеет доступа к заказу {order_id}")
+        logger.error("Пользователь %s не имеет доступа к заказу %s", user_id, order_id)
         return None
     
     # Получаем новый статус
     new_status = await session.get(OrderStatusModel, status_data.status_id)
     if not new_status:
-        logger.error(f"Статус с ID {status_data.status_id} не найден")
+        logger.error("Статус с ID %s не найден", status_data.status_id)
         raise ValueError(f"Статус с ID {status_data.status_id} не найден")
     
     # Проверяем, что новый статус отличается от текущего
     if order.status_id == new_status.id:
-        logger.warning(f"Попытка установить тот же статус ({new_status.id}) для заказа {order_id}. Операция отменена.")
+        logger.warning("Попытка установить тот же статус (%s) для заказа %s. Операция отменена.", new_status.id, order_id)
         raise ValueError(f"Заказ уже имеет статус '{new_status.name}'")
         
     # Проверяем возможность отмены заказа
     if order.status_id != new_status.id:
         current_status = await session.get(OrderStatusModel, order.status_id)
         if current_status and current_status.is_final:
-            logger.error(f"Невозможно изменить статус заказа {order_id}, так как текущий статус является финальным")
+            logger.error("Невозможно изменить статус заказа %s, так как текущий статус является финальным", order_id)
             raise ValueError("Невозможно изменить статус заказа, так как текущий статус является финальным")
     
     # Обновляем статус заказа
@@ -375,231 +478,230 @@ async def change_order_status(
     # Инвалидируем кэш после изменения статуса заказа
     await invalidate_order_cache(order_id)
     await invalidate_statistics_cache()
-    logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после изменения статуса")
+    logger.info("Кэш заказа %s и статистики инвалидирован после изменения статуса", order_id)
     
-    return order
+    # Коммитим изменения
+    await session.commit()
+    
+    # Возвращаем заказ со всеми связанными данными
+    return await get_order_by_id(session, order_id)
 
 async def update_order_items(
-    session: AsyncSession,
     order_id: int,
-    items_data: dict,
-    user_id: int,
-    token: Optional[str] = None
-) -> Tuple[bool, Optional[OrderModel], Optional[Dict[str, str]]]:
+    items_to_add: List[Dict[str, Any]],
+    items_to_update: Dict[int, int],
+    items_to_remove: List[int],
+    session: AsyncSession,
+    user_id: Optional[int] = None
+) -> Optional[Any]:
     """
-    Обновление элементов заказа (добавление, изменение количества, удаление)
+    Обновляет элементы заказа.
     
     Args:
-        session: Сессия базы данных
         order_id: ID заказа
-        items_data: Данные для обновления элементов заказа
-        user_id: ID пользователя, выполняющего операцию
-        token: Токен авторизации для запросов к другим сервисам
+        items_to_add: Список словарей с данными новых товаров для добавления
+        items_to_update: Словарь {id_товара_в_заказе: новое_количество}
+        items_to_remove: Список ID товаров для удаления из заказа
+        session: Сессия БД
+        user_id: ID пользователя, выполняющего действие
         
     Returns:
-        Tuple[bool, Optional[OrderModel], Optional[Dict[str, str]]]: 
-            (успех операции, обновленный заказ, словарь с ошибками)
+        Обновленный заказ или None при ошибке
     """
-    # Получаем заказ по ID
-    order = await OrderModel.get_by_id(session, order_id)
+    logger = logging.getLogger("order_service")
+    logger.info("Запрос получения заказа: order_id=%s, user_id=%s (admin)", order_id, user_id if user_id is not None else 'None (admin)')
+    
+    # Получаем заказ со всеми связанными данными
+    order_stmt = select(OrderModel).where(OrderModel.id == order_id).options(
+        selectinload(OrderModel.items),
+        selectinload(OrderModel.status),
+        selectinload(OrderModel.status_history).selectinload(OrderStatusHistoryModel.status)
+    )
+    
+    result = await session.execute(order_stmt)
+    order = result.scalar_one_or_none()
+    
     if not order:
-        return False, None, {"error": f"Заказ с ID {order_id} не найден"}
+        logger.warning("Заказ с ID %s не найден", order_id)
+        return None
     
-    # Получаем API для работы с товарами
-    product_api = await get_product_api()
+    logger.info("Заказ найден: order_id=%s, user_id=%s, status=%s", order.id, order.user_id, order.status_id)
+    logger.info("Количество товаров в заказе: %s", len(order.items))
     
-    errors = {}
-    updated = False
+    # Загружаем промокод отдельно, если он есть
+    promo_code = None
+    if order.promo_code_id:
+        promo_stmt = select(PromoCodeModel).where(PromoCodeModel.id == order.promo_code_id)
+        promo_result = await session.execute(promo_stmt)
+        promo_code = promo_result.scalar_one_or_none()
     
-    # Обработка удаления товаров из заказа
-    if "items_to_remove" in items_data and items_data["items_to_remove"]:
-        for item_id in items_data["items_to_remove"]:
-            # Ищем элемент заказа
-            item = next((item for item in order.items if item.id == item_id), None)
-            if not item:
-                errors[f"remove_{item_id}"] = f"Товар с ID {item_id} не найден в заказе"
-                continue
+    logger.info("Начало обновления элементов заказа %s", order_id)
+    
+    try:
+        # Получаем API для работы с товарами
+        product_api = await get_product_api()
+        
+        # 1. Добавление новых товаров
+        if items_to_add:
+            logger.info("Добавление новых товаров в заказ %s: %s", order_id, items_to_add)
             
-            try:
-                # Возвращаем количество товара на склад
-                success = await product_api.update_stock(item.product_id, item.quantity, token)
+            # Получаем информацию о товарах из сервиса продуктов
+            product_ids = [item['product_id'] for item in items_to_add]
+            products_info = await get_products_info(product_ids)
+            
+            # Проверяем наличие товаров в результате
+            for item in items_to_add:
+                product_id = item['product_id']
+                quantity = item['quantity']
+                
+                # Проверяем доступность товара на складе
+                is_available, product_info = await product_api.check_stock(product_id, quantity)
+                
+                if not is_available:
+                    if not product_info:
+                        logger.warning("Продукт с ID %s не найден", product_id)
+                        continue
+                    else:
+                        logger.warning("Недостаточно товара %s на складе: запрошено %s, доступно %s", product_id, quantity, product_info.stock)
+                        continue
+                
+                # Уменьшаем количество товара на складе
+                success = await product_api.update_stock(product_id, -quantity)
                 if not success:
-                    errors[f"remove_{item_id}"] = f"Не удалось обновить остаток товара {item.product_id}"
+                    logger.error("Не удалось обновить количество товара %s на складе", product_id)
                     continue
                 
-                # Удаляем элемент из заказа
-                await session.delete(item)
-                updated = True
-                logger.info(f"Товар {item.product_id} (ID: {item_id}) удален из заказа {order_id}")
-            except Exception as e:
-                errors[f"remove_{item_id}"] = f"Ошибка при удалении товара: {str(e)}"
-    
-    # Обработка обновления количества товаров
-    if "items_to_update" in items_data and items_data["items_to_update"]:
-        for item_id, new_quantity in items_data["items_to_update"].items():
-            # Ищем элемент заказа
-            item = next((item for item in order.items if item.id == item_id), None)
-            if not item:
-                errors[f"update_{item_id}"] = f"Товар с ID {item_id} не найден в заказе"
-                continue
-            
-            if new_quantity <= 0:
-                errors[f"update_{item_id}"] = "Количество товара должно быть положительным"
-                continue
-            
-            # Рассчитываем изменение количества
-            quantity_change = new_quantity - item.quantity
-            
-            if quantity_change == 0:
-                continue  # Нет изменений, пропускаем
-            
-            try:
-                # Если уменьшаем количество, возвращаем излишки на склад
-                if quantity_change < 0:
-                    success = await product_api.update_stock(item.product_id, abs(quantity_change), token)
-                    if not success:
-                        errors[f"update_{item_id}"] = f"Не удалось обновить остаток товара {item.product_id}"
-                        continue
-                else:
-                    # Если увеличиваем количество, проверяем наличие на складе
-                    is_available, product_info = await product_api.check_stock(item.product_id, quantity_change)
-                    if not is_available:
-                        errors[f"update_{item_id}"] = f"Недостаточно товара на складе (доступно: {product_info.stock if product_info else 0})"
-                        continue
-                    
-                    # Обновляем остаток на складе
-                    success = await product_api.update_stock(item.product_id, -quantity_change, token)
-                    if not success:
-                        errors[f"update_{item_id}"] = f"Не удалось обновить остаток товара {item.product_id}"
-                        continue
+                # Получаем информацию о товаре
+                product_info_dict = products_info.get(product_id)
+                if not product_info_dict:
+                    logger.warning("Не удалось получить информацию о товаре %s", product_id)
+                    continue
                 
-                # Обновляем элемент заказа
-                old_quantity = item.quantity
+                # Создаем новый товар в заказе
+                new_item = OrderItemModel(
+                    order_id=order_id,
+                    product_id=product_id,
+                    product_name=product_info_dict["name"],
+                    product_price=product_info_dict["price"],
+                    quantity=quantity,
+                    total_price=product_info_dict["price"] * quantity
+                )
+                
+                session.add(new_item)
+        
+        # 2. Обновление количества товаров
+        if items_to_update:
+            logger.info("Обновление количества товаров в заказе %s: %s", order_id, items_to_update)
+            
+            for item_id, new_quantity in items_to_update.items():
+                # Находим товар в заказе
+                item = next((i for i in order.items if i.id == item_id), None)
+                
+                if not item:
+                    logger.warning("Товар с ID %s не найден в заказе %s", item_id, order_id)
+                    continue
+                
+                # Вычисляем изменение количества
+                quantity_diff = new_quantity - item.quantity
+                
+                if quantity_diff == 0:
+                    logger.info("Количество товара %s не изменилось", item.product_id)
+                    continue
+                
+                # Если уменьшаем количество, возвращаем товары на склад
+                # Если увеличиваем, уменьшаем количество на складе
+                success = await product_api.update_stock(item.product_id, -quantity_diff)
+                if not success:
+                    logger.error("Не удалось обновить количество товара %s на складе", item.product_id)
+                    continue
+                
+                # Обновляем количество товара в заказе
                 item.quantity = new_quantity
                 item.total_price = item.product_price * new_quantity
-                updated = True
-                logger.info(f"Обновлено количество товара {item.product_id} в заказе {order_id}: {old_quantity} -> {new_quantity}")
-            except Exception as e:
-                errors[f"update_{item_id}"] = f"Ошибка при обновлении количества товара: {str(e)}"
-    
-    # Обработка добавления новых товаров
-    if "items_to_add" in items_data and items_data["items_to_add"]:
-        # Получаем информацию о всех товарах сразу
-        product_ids = [item["product_id"] for item in items_data["items_to_add"]]
-        products_info = await get_products_info(product_ids, token)
         
-        for item_data in items_data["items_to_add"]:
-            product_id = item_data["product_id"]
-            quantity = item_data["quantity"]
+        # 3. Удаление товаров из заказа
+        if items_to_remove:
+            logger.info("Удаление товаров из заказа %s: %s", order_id, items_to_remove)
             
-            # Проверяем, есть ли такой товар в заказе
-            existing_item = next((item for item in order.items if item.product_id == product_id), None)
-            if existing_item:
-                errors[f"add_{product_id}"] = f"Товар с ID {product_id} уже есть в заказе. Используйте обновление количества."
-                continue
-            
-            # Получаем информацию о товаре
-            product_info = products_info.get(product_id)
-            if not product_info:
-                errors[f"add_{product_id}"] = f"Не удалось получить информацию о товаре {product_id}"
-                continue
-            
-            # Проверяем наличие на складе
-            is_available, product_detail = await product_api.check_stock(product_id, quantity)
-            if not is_available:
-                errors[f"add_{product_id}"] = f"Недостаточно товара на складе (доступно: {product_detail.stock if product_detail else 0})"
-                continue
-            
-            try:
-                # Обновляем остаток на складе
-                success = await product_api.update_stock(product_id, -quantity, token)
-                if not success:
-                    errors[f"add_{product_id}"] = f"Не удалось обновить остаток товара {product_id}"
+            for item_id in items_to_remove:
+                # Находим товар в заказе
+                item = next((i for i in order.items if i.id == item_id), None)
+                
+                if not item:
+                    logger.warning("Товар с ID %s не найден в заказе %s", item_id, order_id)
                     continue
                 
-                # Создаем новый элемент заказа
-                order_item = OrderItemModel(
-                    order_id=order.id,
-                    product_id=product_id,
-                    product_name=product_info["name"],
-                    product_price=product_info["price"],
-                    quantity=quantity,
-                    total_price=product_info["price"] * quantity
-                )
-                session.add(order_item)
-                updated = True
-                logger.info(f"Добавлен товар {product_id} в заказ {order_id} в количестве {quantity}")
-            except Exception as e:
-                errors[f"add_{product_id}"] = f"Ошибка при добавлении товара: {str(e)}"
-    
-    if updated:
-        try:
-            # Фиксируем изменения в БД
-            await session.flush()
+                # Возвращаем товары на склад
+                success = await product_api.update_stock(item.product_id, item.quantity)
+                if not success:
+                    logger.error("Не удалось обновить количество товара %s на складе", item.product_id)
+                    continue
+                
+                # Удаляем товар из заказа
+                await session.delete(item)
+        
+        # Обновляем общую сумму заказа
+        await session.flush()  # Применяем все изменения перед обновлением
+        await session.refresh(order, ["items"])
+        
+        # Проверяем, остались ли товары в заказе
+        if not order.items or len(order.items) == 0:
+            logger.info("В заказе %s не осталось товаров, устанавливаем сумму 0", order_id)
+            total_price = 0
+            order.discount_amount = 0
+        else:
+            total_price = sum(item.total_price for item in order.items)
             
-            # Принудительно получаем актуальный список товаров в заказе
-            query_items = text("""
-                SELECT product_price, quantity, total_price 
-                FROM order_items 
-                WHERE order_id = :order_id
-            """)
-            result = await session.execute(query_items, {"order_id": order.id})
-            items = result.fetchall()
+            # Применяем скидку, если есть промокод
+            if promo_code:
+                if promo_code.discount_percent:
+                    discount = int(total_price * promo_code.discount_percent / 100)
+                    total_price -= discount
+                    order.discount_amount = discount
+                elif promo_code.discount_amount:
+                    discount = min(promo_code.discount_amount, total_price)
+                    total_price -= discount
+                    order.discount_amount = discount
+        
+        # Добавляем стоимость доставки к общей сумме заказа, если она указана
+        if order.delivery_info and order.delivery_info.delivery_cost:
+            logger.info("Добавляем стоимость доставки %s к итоговой сумме заказа %s", order.delivery_info.delivery_cost, order_id)
+            total_price += order.delivery_info.delivery_cost
+        
+        logger.info("Обновляем общую сумму заказа %s: %s", order_id, total_price)
+        order.total_price = total_price
+        
+        await session.commit()
+        
+        # Инвалидация Redis кэша
+        await invalidate_order_cache(order_id)
+        
+        # Принудительное обновление сессии для избежания кэширования SQLAlchemy
+        session.expire_all()
+        
+        logger.info("Элементы заказа %s успешно обновлены", order_id)
+        
+        # Получаем обновленный заказ для возврата с отключенным кэшированием
+        order_stmt = select(OrderModel).where(OrderModel.id == order_id).options(
+            selectinload(OrderModel.items),
+            selectinload(OrderModel.status),
+            selectinload(OrderModel.status_history).selectinload(OrderStatusHistoryModel.status)
+        )
+        
+        if promo_code:
+            order_stmt = order_stmt.options(
+                selectinload(OrderModel.promo_code)
+            )
             
-            # Расчет общей стоимости на основе актуальных данных из БД
-            total_price = sum(item[2] for item in items)
-            logger.info(f"Расчет общей стоимости для заказа {order_id}: {total_price} (на основе {len(items)} товаров)")
-            
-            # Обновляем общую стоимость в отдельном запросе
-            update_query = text("""
-                UPDATE orders 
-                SET updated_at = now(), 
-                    total_price = :total_price 
-                WHERE id = :order_id
-                RETURNING id, total_price
-            """)
-            result = await session.execute(update_query, {"total_price": total_price, "order_id": order.id})
-            updated_row = result.fetchone()
-            if updated_row:
-                logger.info(f"Заказ обновлен: id={updated_row[0]}, total_price={updated_row[1]}")
-            
-            # Выполняем коммит изменений
-            await session.commit()
-            
-            # Принудительно обновляем объект заказа, чтобы он содержал актуальные данные
-            refresh_query = text("""
-                SELECT o.id, o.total_price, 
-                       COUNT(oi.id) as item_count, 
-                       SUM(oi.total_price) as items_total 
-                FROM orders o
-                LEFT JOIN order_items oi ON o.id = oi.order_id
-                WHERE o.id = :order_id
-                GROUP BY o.id
-            """)
-            result = await session.execute(refresh_query, {"order_id": order.id})
-            refresh_row = result.fetchone()
-            if refresh_row:
-                logger.info(f"Верификация заказа после обновления: id={refresh_row[0]}, total_price={refresh_row[1]}, items_count={refresh_row[2]}, items_total={refresh_row[3]}")
-                # Обновляем значение в объекте
-                order.total_price = refresh_row[1]
-            
-            # Полностью обновляем объект из БД, включая все связи
-            await session.refresh(order, ["items", "status", "status_history"])
-            
-            # Инвалидируем кэш заказа
-            await invalidate_order_cache(order.id)
-            await invalidate_statistics_cache()
-            logger.info(f"Обновлен заказ {order_id}, новая стоимость: {order.total_price}")
-            
-            return True, order, errors if errors else None
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"Ошибка при обновлении заказа: {str(e)}")
-            return False, None, {"error": f"Ошибка при обновлении заказа: {str(e)}"}
-    else:
-        if errors:
-            return False, order, errors
-        return True, order, None
+        # Отключаем кэширование для получения актуальных данных
+        result = await session.execute(order_stmt, execution_options={"cacheable": False})
+        logger.info("Получен результат запроса с отключенным кэшированием для заказа %s", order_id)
+        return result.scalar_one_or_none()
+        
+    except (sqlalchemy_exc.SQLAlchemyError, ValueError, RuntimeError) as e:
+        logger.error("Ошибка при обновлении элементов заказа %s: %s", order_id, str(e))
+        await session.rollback()
+        return None
 
 async def cancel_order(
     session: AsyncSession,
@@ -628,18 +730,18 @@ async def cancel_order(
     
     # Проверяем доступ пользователя
     if not is_admin and order.user_id != user_id:
-        logger.error(f"Пользователь {user_id} не имеет доступа к заказу {order_id}")
+        logger.error("Пользователь %s не имеет доступа к заказу %s", user_id, order_id)
         return None
     
     # Получаем текущий статус заказа
     current_status = await session.get(OrderStatusModel, order.status_id)
     if not current_status:
-        logger.error(f"Статус заказа {order_id} не найден")
+        logger.error("Статус заказа %s не найден", order_id)
         return None
     
     # Проверяем возможность отмены заказа
     if not current_status.allow_cancel and not is_admin:
-        logger.error(f"Невозможно отменить заказ {order_id}, так как текущий статус не позволяет отмену")
+        logger.error("Невозможно отменить заказ %s, так как текущий статус не позволяет отмену", order_id)
         raise ValueError("Невозможно отменить заказ, так как текущий статус не позволяет отмену")
     
     # Получаем статус "Отменен"
@@ -670,9 +772,13 @@ async def cancel_order(
     # Инвалидируем кэш после отмены заказа
     await invalidate_order_cache(order_id)
     await invalidate_statistics_cache()
-    logger.info(f"Кэш заказа {order_id} и статистики инвалидирован после отмены заказа")
+    logger.info("Кэш заказа %s и статистики инвалидирован после отмены заказа", order_id)
     
-    return order
+    # Коммитим изменения
+    await session.commit()
+    
+    # Возвращаем заказ со всеми связанными данными
+    return await get_order_by_id(session, order_id)
 
 async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
     """
@@ -684,18 +790,46 @@ async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
     Returns:
         Статистика по заказам
     """
-    # Общее количество заказов
+    # Получаем ID статуса "Отменен"
+    canceled_status_query = select(OrderStatusModel.id).filter(OrderStatusModel.name == "Отменен")
+    canceled_status_result = await session.execute(canceled_status_query)
+    canceled_status_id = canceled_status_result.scalar()
+    
+    # Создаем базовый фильтр для исключения отмененных заказов
+    exclude_canceled = []
+    canceled_filter = []
+    if canceled_status_id:
+        exclude_canceled = [OrderModel.status_id != canceled_status_id]
+        canceled_filter = [OrderModel.status_id == canceled_status_id]
+    
+    # Общее количество заказов (включая отмененные)
     total_orders_query = select(func.count(OrderModel.id))
     total_orders_result = await session.execute(total_orders_query)
     total_orders = total_orders_result.scalar() or 0
     
-    # Общая выручка
+    # Общая выручка (исключая отмененные заказы)
     total_revenue_query = select(func.sum(OrderModel.total_price))
+    if exclude_canceled:
+        total_revenue_query = total_revenue_query.where(*exclude_canceled)
     total_revenue_result = await session.execute(total_revenue_query)
     total_revenue = total_revenue_result.scalar() or 0
     
-    # Средняя стоимость заказа
-    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
+    # Сумма отмененных заказов
+    canceled_revenue_query = select(func.sum(OrderModel.total_price))
+    if canceled_filter:
+        canceled_revenue_query = canceled_revenue_query.where(*canceled_filter)
+    canceled_revenue_result = await session.execute(canceled_revenue_query)
+    canceled_revenue = canceled_revenue_result.scalar() or 0
+    
+    # Активные заказы (без отмененных) для расчета средней стоимости
+    active_orders_query = select(func.count(OrderModel.id))
+    if exclude_canceled:
+        active_orders_query = active_orders_query.where(*exclude_canceled)
+    active_orders_result = await session.execute(active_orders_query)
+    active_orders_count = active_orders_result.scalar() or 0
+    
+    # Средняя стоимость заказа (исключая отмененные)
+    average_order_value = round(total_revenue / active_orders_count, 2) if active_orders_count > 0 else 0
     
     # Количество заказов по статусам
     orders_by_status_query = select(
@@ -718,7 +852,112 @@ async def get_order_statistics(session: AsyncSession) -> OrderStatistics:
         total_revenue=total_revenue,
         average_order_value=average_order_value,
         orders_by_status=orders_by_status,
-        orders_by_payment_method=orders_by_payment_method
+        orders_by_payment_method=orders_by_payment_method,
+        canceled_orders_revenue=canceled_revenue
+    )
+
+async def get_order_statistics_by_date(
+    session: AsyncSession, 
+    date_from: Optional[str] = None, 
+    date_to: Optional[str] = None
+) -> OrderStatistics:
+    """
+    Получение статистики по заказам с фильтрацией по дате
+    
+    Args:
+        session: Сессия базы данных
+        date_from: Дата начала периода в формате YYYY-MM-DD
+        date_to: Дата окончания периода в формате YYYY-MM-DD
+        
+    Returns:
+        Статистика по заказам за указанный период
+    """
+    # Создаем фильтры по датам
+    filters = []
+    
+    if date_from:
+        try:
+            date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+            filters.append(OrderModel.created_at >= date_from_obj)
+        except ValueError:
+            logger.error("Неверный формат date_from: %s", date_from)
+    
+    if date_to:
+        try:
+            date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            filters.append(OrderModel.created_at <= date_to_obj)
+        except ValueError:
+            logger.error("Неверный формат date_to: %s", date_to)
+    
+    # Получаем ID статуса "Отменен"
+    canceled_status_query = select(OrderStatusModel.id).filter(OrderStatusModel.name == "Отменен")
+    canceled_status_result = await session.execute(canceled_status_query)
+    canceled_status_id = canceled_status_result.scalar()
+    
+    # Создаем фильтры для исключения и выбора отмененных заказов
+    exclude_canceled = list(filters)  # копируем базовые фильтры
+    canceled_filter = list(filters)   # копируем базовые фильтры для отмененных
+    if canceled_status_id:
+        exclude_canceled.append(OrderModel.status_id != canceled_status_id)
+        canceled_filter.append(OrderModel.status_id == canceled_status_id)
+    
+    # Общее количество заказов с учетом фильтра (включая отмененные)
+    total_orders_query = select(func.count(OrderModel.id))
+    if filters:
+        total_orders_query = total_orders_query.where(*filters)
+    total_orders_result = await session.execute(total_orders_query)
+    total_orders = total_orders_result.scalar() or 0
+    
+    # Общая выручка с учетом фильтра (исключая отмененные)
+    total_revenue_query = select(func.sum(OrderModel.total_price))
+    if exclude_canceled:
+        total_revenue_query = total_revenue_query.where(*exclude_canceled)
+    total_revenue_result = await session.execute(total_revenue_query)
+    total_revenue = total_revenue_result.scalar() or 0
+    
+    # Сумма отмененных заказов
+    canceled_revenue_query = select(func.sum(OrderModel.total_price))
+    if canceled_filter:
+        canceled_revenue_query = canceled_revenue_query.where(*canceled_filter)
+    canceled_revenue_result = await session.execute(canceled_revenue_query)
+    canceled_revenue = canceled_revenue_result.scalar() or 0
+    
+    # Активные заказы (без отмененных) для расчета средней стоимости
+    active_orders_query = select(func.count(OrderModel.id))
+    if exclude_canceled:
+        active_orders_query = active_orders_query.where(*exclude_canceled)
+    active_orders_result = await session.execute(active_orders_query)
+    active_orders_count = active_orders_result.scalar() or 0
+    
+    # Средняя стоимость заказа
+    average_order_value = round(total_revenue / active_orders_count, 2) if active_orders_count > 0 else 0
+    
+    # Количество заказов по статусам с учетом фильтра
+    orders_by_status_query = select(
+        OrderStatusModel.name,
+        func.count(OrderModel.id)
+    ).join(
+        OrderModel,
+        OrderStatusModel.id == OrderModel.status_id
+    )
+    
+    if filters:
+        orders_by_status_query = orders_by_status_query.where(*filters)
+    
+    orders_by_status_query = orders_by_status_query.group_by(OrderStatusModel.name)
+    orders_by_status_result = await session.execute(orders_by_status_query)
+    orders_by_status = {row[0]: row[1] for row in orders_by_status_result}
+    
+    # Так как payment_method удалено, возвращаем пустой словарь
+    orders_by_payment_method = {}
+    
+    return OrderStatistics(
+        total_orders=total_orders,
+        total_revenue=total_revenue,
+        average_order_value=average_order_value,
+        orders_by_status=orders_by_status,
+        orders_by_payment_method=orders_by_payment_method,
+        canceled_orders_revenue=canceled_revenue
     )
 
 async def get_user_order_statistics(session: AsyncSession, user_id: int) -> OrderStatistics:
@@ -732,18 +971,46 @@ async def get_user_order_statistics(session: AsyncSession, user_id: int) -> Orde
     Returns:
         Статистика по заказам пользователя
     """
-    # Общее количество заказов пользователя
+    # Получаем ID статуса "Отменен"
+    canceled_status_query = select(OrderStatusModel.id).filter(OrderStatusModel.name == "Отменен")
+    canceled_status_result = await session.execute(canceled_status_query)
+    canceled_status_id = canceled_status_result.scalar()
+    
+    # Базовый фильтр по пользователю
+    user_filter = [OrderModel.user_id == user_id]
+    
+    # Создаем фильтры для исключения и выбора отмененных заказов
+    exclude_canceled = list(user_filter)  # копируем базовые фильтры
+    canceled_filter = list(user_filter)   # копируем базовые фильтры для отмененных
+    if canceled_status_id:
+        exclude_canceled.append(OrderModel.status_id != canceled_status_id)
+        canceled_filter.append(OrderModel.status_id == canceled_status_id)
+    
+    # Общее количество заказов пользователя (включая отмененные)
     total_orders_query = select(func.count(OrderModel.id)).where(OrderModel.user_id == user_id)
     total_orders_result = await session.execute(total_orders_query)
     total_orders = total_orders_result.scalar() or 0
     
-    # Общая сумма заказов пользователя
-    total_revenue_query = select(func.sum(OrderModel.total_price)).where(OrderModel.user_id == user_id)
+    # Общая сумма заказов пользователя (исключая отмененные)
+    total_revenue_query = select(func.sum(OrderModel.total_price))
+    total_revenue_query = total_revenue_query.where(*exclude_canceled)
     total_revenue_result = await session.execute(total_revenue_query)
     total_revenue = total_revenue_result.scalar() or 0
     
+    # Сумма отмененных заказов пользователя
+    canceled_revenue_query = select(func.sum(OrderModel.total_price))
+    canceled_revenue_query = canceled_revenue_query.where(*canceled_filter)
+    canceled_revenue_result = await session.execute(canceled_revenue_query)
+    canceled_revenue = canceled_revenue_result.scalar() or 0
+    
+    # Активные заказы (без отмененных) для расчета средней стоимости
+    active_orders_query = select(func.count(OrderModel.id))
+    active_orders_query = active_orders_query.where(*exclude_canceled)
+    active_orders_result = await session.execute(active_orders_query)
+    active_orders_count = active_orders_result.scalar() or 0
+    
     # Средняя стоимость заказа
-    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
+    average_order_value = round(total_revenue / active_orders_count, 2) if active_orders_count > 0 else 0
     
     # Количество заказов по статусам
     orders_by_status_query = select(
@@ -768,5 +1035,125 @@ async def get_user_order_statistics(session: AsyncSession, user_id: int) -> Orde
         total_revenue=total_revenue,
         average_order_value=average_order_value,
         orders_by_status=orders_by_status,
-        orders_by_payment_method=orders_by_payment_method
-    ) 
+        orders_by_payment_method=orders_by_payment_method,
+        canceled_orders_revenue=canceled_revenue
+    )
+
+async def check_promo_code(
+    session: AsyncSession,
+    code: str,
+    email: str,
+    phone: str,
+    user_id: Optional[int] = None
+) -> Tuple[bool, str, Optional[PromoCodeModel]]:
+    """
+    Проверка промокода
+    
+    Args:
+        session: Сессия базы данных
+        code: Код промокода
+        email: Email пользователя
+        phone: Телефон пользователя
+        user_id: ID пользователя (может быть None для анонимных пользователей)
+    
+    Returns:
+        Tuple[bool, str, Optional[PromoCodeModel]]: 
+            - Флаг валидности
+            - Сообщение о результате проверки
+            - Объект промокода (если промокод валиден)
+    """
+    logger.info("Проверка промокода %s для пользователя %s, %s", code, email, phone)
+    
+    # Находим промокод по коду
+    promo_code = await PromoCodeModel.get_by_code(session, code)
+    
+    # Проверяем существование промокода
+    if not promo_code:
+        logger.warning("Промокод %s не найден", code)
+        return False, "Промокод не найден", None
+    
+    # Проверяем срок действия промокода
+    if promo_code.valid_until < datetime.now():
+        if promo_code.is_active:
+            promo_code.is_active = False
+            await session.commit()
+        logger.warning("Промокод %s истек %s", code, promo_code.valid_until)
+        return False, "Срок действия промокода истек", None
+    
+    # Проверяем активность промокода
+    if not promo_code.is_active:
+        logger.warning("Промокод %s не активен", code)
+        return False, "Промокод не активен", None
+    
+    # Проверяем, использовал ли пользователь промокод ранее
+    already_used = await PromoCodeUsageModel.check_usage(session, promo_code.id, email, phone)
+    if already_used:
+        logger.warning("Промокод %s уже использован с email %s или телефоном %s", code, email, phone)
+        return False, "Вы уже использовали этот промокод", None
+    
+    # Все проверки пройдены
+    logger.info("Промокод %s валиден для пользователя %s, %s", code, email, phone)
+    return True, "Промокод применен", promo_code
+
+async def calculate_discount(
+    promo_code: PromoCodeModel,
+    total_price: float
+) -> float:
+    """
+    Расчет скидки на основе промокода
+    
+    Args:
+        promo_code: Объект промокода
+        total_price: Общая стоимость заказа
+    
+    Returns:
+        float: Сумма скидки в рублях
+    """
+    if promo_code.discount_percent is not None:
+        # Расчет скидки в процентах
+        discount = total_price * promo_code.discount_percent / 100
+    elif promo_code.discount_amount is not None:
+        # Фиксированная скидка
+        discount = min(float(promo_code.discount_amount), total_price)  # Скидка не может быть больше стоимости заказа
+    else:
+        # На всякий случай
+        discount = 0.0
+    
+    return discount
+
+# --- CRUD для BoxberryStatusFunnel ---
+async def get_boxberry_funnel_all(session: AsyncSession) -> list:
+    result = await session.execute(
+        select(BoxberryStatusFunnelModel).options(selectinload(BoxberryStatusFunnelModel.order_status))
+    )
+    return result.scalars().all()
+
+async def get_boxberry_funnel_by_id(session: AsyncSession, funnel_id: int) -> Optional[BoxberryStatusFunnelModel]:
+    return await session.get(BoxberryStatusFunnelModel, funnel_id)
+
+async def create_boxberry_funnel(session: AsyncSession, data) -> BoxberryStatusFunnelModel:
+    funnel = BoxberryStatusFunnelModel(**data.model_dump())
+    session.add(funnel)
+    await session.commit()
+    await session.refresh(funnel)
+    return funnel
+
+async def update_boxberry_funnel(session: AsyncSession, funnel_id: int, data) -> Optional[BoxberryStatusFunnelModel]:
+    funnel = await get_boxberry_funnel_by_id(session, funnel_id)
+    if not funnel:
+        return None
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(funnel, k, v)
+    await session.commit()
+    await session.refresh(funnel)
+    return funnel
+
+async def delete_boxberry_funnel(session: AsyncSession, funnel_id: int) -> bool:
+    funnel = await get_boxberry_funnel_by_id(session, funnel_id)
+    if not funnel:
+        return False
+    await session.delete(funnel)
+    await session.commit()
+    return True
+
+

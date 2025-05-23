@@ -6,7 +6,7 @@ import { API_URLS } from '../../utils/constants';
 import './CartIcon.css';
 
 const CartIcon = () => {
-  const { cartSummary, cart, removeFromCart, loading, fetchCart, fetchCartSummary } = useCart();
+  const { cart, removeFromCart, loading, fetchCart } = useCart();
   const [isOpen, setIsOpen] = useState(false);
   const [isRemoving, setIsRemoving] = useState({}); // состояние для отслеживания удаления товаров
   const dropdownRef = useRef(null);
@@ -15,46 +15,28 @@ const CartIcon = () => {
   
   // Логируем cartSummary при каждом изменении
   useEffect(() => {
-    console.log('cartSummary изменился:', cartSummary);
-  }, [cartSummary]);
+    console.log('cartSummary изменился:', cart);
+  }, [cart]);
 
   // При монтировании компонента и открытии дропдауна обновляем данные корзины
   useEffect(() => {
-    // При первом рендере загружаем полные данные
-    fetchCart();
-    
     // Слушаем событие обновления корзины
     const handleCartUpdated = (event) => {
-      console.log('Событие обновления корзины получено', event?.detail);
-      
-      // Получаем данные, которые были переданы с событием
-      if (event?.detail?.summary) {
-        // Если в событии есть сводка, используем её для обновления счетчика
-        console.log('Получены данные сводки из события:', event.detail.summary);
-        // Нет необходимости вызывать fetchCartSummary, так как CartContext уже обновил cartSummary
-      } else if (event?.detail?.cart) {
-        console.log('Получены данные корзины из события:', event.detail.cart);
+      console.log('CartIcon: Получено событие cart:updated', event.detail);
+      // Если событие содержит информацию о корзине, обновляем UI
+      if (event.detail && event.detail.cart) {
+        console.log('CartIcon: Обновление UI корзины с новыми данными', event.detail.cart);
+        // Вызываем fetchCart для обновления данных корзины
+        fetchCart();
       }
-      
-      // В любом случае обновляем данные корзины
-      fetchCart();
     };
-    
     window.addEventListener('cart:updated', handleCartUpdated);
     window.addEventListener('cart:merged', handleCartUpdated);
-    
     return () => {
       window.removeEventListener('cart:updated', handleCartUpdated);
       window.removeEventListener('cart:merged', handleCartUpdated);
     };
-  }, [fetchCart, fetchCartSummary]);
-
-  // При открытии дропдауна обновляем полные данные корзины
-  useEffect(() => {
-    if (isOpen) {
-      fetchCart();
-    }
-  }, [isOpen, fetchCart]);
+  }, [fetchCart]);
 
   // Обработчик клика вне выпадающего меню
   useEffect(() => {
@@ -84,21 +66,24 @@ const CartIcon = () => {
   };
 
   // Обработчик удаления товара из корзины
-  const handleRemoveItem = async (itemId, event) => {
+  const handleRemoveItem = async (itemId, index, event) => {
     // Предотвращаем всплытие события для предотвращения закрытия dropdown
     event.stopPropagation();
     
     // Устанавливаем состояние загрузки для конкретного товара
-    setIsRemoving(prev => ({ ...prev, [itemId]: true }));
+    // Для неавторизованных пользователей используем специальный идентификатор
+    const itemKey = itemId !== undefined ? itemId : `anon_${index}`;
+    setIsRemoving(prev => ({ ...prev, [itemKey]: true }));
     
     try {
-      await removeFromCart(itemId);
+      // Для анонимных пользователей передаем индекс, для авторизованных - id
+      await removeFromCart(itemId !== undefined ? itemId : index);
       // После удаления обновляем корзину
       await fetchCart();
     } catch (error) {
       console.error('Ошибка при удалении товара из корзины:', error);
     } finally {
-      setIsRemoving(prev => ({ ...prev, [itemId]: false }));
+      setIsRemoving(prev => ({ ...prev, [itemKey]: false }));
     }
   };
 
@@ -183,8 +168,8 @@ const CartIcon = () => {
             ) : (
               <>
                 <div className="cart-items">
-                  {cart.items.map(item => (
-                    <div className="cart-item" key={item.id}>
+                  {cart.items.map((item, index) => (
+                    <div className="cart-item" key={item.id !== undefined ? item.id : `anon_${item.product_id}_${index}`}>
                       <div className="cart-item-img">
                         {item.product && item.product.image ? (
                           <img 
@@ -212,11 +197,11 @@ const CartIcon = () => {
                       </div>
                       <button 
                         className="cart-item-remove"
-                        onClick={(e) => handleRemoveItem(item.id, e)}
-                        disabled={isRemoving[item.id]}
+                        onClick={(e) => handleRemoveItem(item.id, index, e)}
+                        disabled={isRemoving[item.id !== undefined ? item.id : `anon_${index}`]}
                         title="Удалить"
                       >
-                        {isRemoving[item.id] ? (
+                        {isRemoving[item.id !== undefined ? item.id : `anon_${index}`] ? (
                           <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                         ) : (
                           <i className="bi bi-x"></i>

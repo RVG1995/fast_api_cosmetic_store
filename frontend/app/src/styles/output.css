@@ -403,3 +403,8 @@
   syntax: "*";
   inherits: false;
 }
+
+/* Кастомная ширина для модального окна Boxberry Funnel */
+.modal-90w {
+  max-width: 90vw !important;
+}

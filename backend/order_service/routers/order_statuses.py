@@ -1,13 +1,15 @@
-from typing import List, Optional
+"""Модуль для работы со статусами заказов через API."""
+
+from typing import List
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
-import logging
+from sqlalchemy import select
 
 from database import get_db
 from models import OrderStatusModel
 from schemas import OrderStatusCreate, OrderStatusUpdate, OrderStatusResponse
-from dependencies import get_admin_user, get_current_user
+from dependencies import get_admin_user
 from cache import (
     get_cached_order_statuses, cache_order_statuses, 
     invalidate_order_statuses_cache
@@ -49,11 +51,11 @@ async def list_order_statuses(
         
         return status_responses
     except Exception as e:
-        logger.error(f"Ошибка при получении списка статусов заказов: {str(e)}")
+        logger.error("Ошибка при получении списка статусов заказов: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при получении списка статусов заказов",
-        )
+        ) from e
 
 @router.get("/{status_id}", response_model=OrderStatusResponse)
 async def get_order_status(
@@ -79,16 +81,15 @@ async def get_order_status(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка при получении информации о статусе заказа: {str(e)}")
+        logger.error("Ошибка при получении информации о статусе заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при получении информации о статусе заказа",
-        )
+        ) from e
 
-@router.post("", response_model=OrderStatusResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=OrderStatusResponse, status_code=status.HTTP_201_CREATED,dependencies=[Depends(get_admin_user)])
 async def create_order_status(
     status_data: OrderStatusCreate,
-    current_user = Depends(get_admin_user),
     session: AsyncSession = Depends(get_db)
 ):
     """
@@ -123,23 +124,22 @@ async def create_order_status(
         
         # Инвалидируем кэш статусов заказов
         await invalidate_order_statuses_cache()
-        logger.info(f"Кэш статусов заказов инвалидирован после создания нового статуса: {status_data.name}")
+        logger.info("Кэш статусов заказов инвалидирован после создания нового статуса: %s", status_data.name)
         
         return OrderStatusResponse.model_validate(order_status)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка при создании статуса заказа: {str(e)}")
+        logger.error("Ошибка при создании статуса заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при создании статуса заказа",
-        )
+        ) from e
 
-@router.put("/{status_id}", response_model=OrderStatusResponse)
+@router.put("/{status_id}", response_model=OrderStatusResponse,dependencies=[Depends(get_admin_user)])
 async def update_order_status(
     status_id: int = Path(..., ge=1),
     status_data: OrderStatusUpdate = None,
-    current_user = Depends(get_admin_user),
     session: AsyncSession = Depends(get_db)
 ):
     """
@@ -194,22 +194,21 @@ async def update_order_status(
         
         # Инвалидируем кэш статусов заказов
         await invalidate_order_statuses_cache()
-        logger.info(f"Кэш статусов заказов инвалидирован после обновления статуса с ID: {status_id}")
+        logger.info("Кэш статусов заказов инвалидирован после обновления статуса с ID: %s", status_id)
         
         return OrderStatusResponse.model_validate(order_status)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка при обновлении статуса заказа: {str(e)}")
+        logger.error("Ошибка при обновлении статуса заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при обновлении статуса заказа",
-        )
+        ) from e
 
-@router.delete("/{status_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{status_id}", status_code=status.HTTP_204_NO_CONTENT,dependencies=[Depends(get_admin_user)])
 async def delete_order_status(
     status_id: int = Path(..., ge=1),
-    current_user = Depends(get_admin_user),
     session: AsyncSession = Depends(get_db)
 ):
     """
@@ -242,14 +241,14 @@ async def delete_order_status(
         
         # Инвалидируем кэш статусов заказов
         await invalidate_order_statuses_cache()
-        logger.info(f"Кэш статусов заказов инвалидирован после удаления статуса с ID: {status_id}")
+        logger.info("Кэш статусов заказов инвалидирован после удаления статуса с ID: %s", status_id)
         
         return None
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка при удалении статуса заказа: {str(e)}")
+        logger.error("Ошибка при удалении статуса заказа: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Произошла ошибка при удалении статуса заказа",
-        ) 
+        ) from e

@@ -75,11 +75,49 @@
 .contact-label {
   font-weight: 600;
   color: #666;
-  width: 80px;
+  width: 100px;
+  flex-shrink: 0;
 }
 
 .contact-value {
   color: #333;
+}
+
+/* Стили для блока информации о доставке */
+.section-title {
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 0.5rem;
+}
+
+.detail-field {
+  display: flex;
+  margin-bottom: 0.5rem;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #666;
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.detail-value {
+  color: #333;
+}
+
+.delivery-info {
+  background-color: #f8f9fa;
+  padding: 0.75rem;
+  border-radius: 6px;
+}
+
+.contact-info {
+  background-color: #f8f9fa;
+  padding: 0.75rem;
+  border-radius: 6px;
 }
 
 /* Стили для временной шкалы истории заказа */

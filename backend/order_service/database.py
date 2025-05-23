@@ -1,35 +1,21 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
-import os
+"""Модуль для работы с базой данных заказов."""
+
 import logging
-import pathlib
 from typing import AsyncGenerator
 
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+
 from models import Base
+from config import settings, get_db_url
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("order_database")
 
-# Определяем пути к .env файлам
-current_dir = pathlib.Path(__file__).parent.absolute()
-env_file = current_dir / ".env"
-parent_env_file = current_dir.parent / ".env"
-
-# Проверяем и загружаем .env файлы
-if env_file.exists():
-    logger.info(f"Загружаем .env из {env_file}")
-    load_dotenv(dotenv_path=env_file)
-elif parent_env_file.exists():
-    logger.info(f"Загружаем .env из {parent_env_file}")
-    load_dotenv(dotenv_path=parent_env_file)
-else:
-    logger.warning("Файл .env не найден!")
-
-# Получаем URL подключения к базе данных из переменных окружения
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost/orders_db")
-logger.info(f"URL базы данных: {DATABASE_URL}")
+# Получаем URL подключения к базе данных из конфигурации
+DATABASE_URL = get_db_url()
+logger.info("URL базы данных: %s", DATABASE_URL)
 
 # Создаем движок SQLAlchemy для асинхронной работы с базой данных
 engine = create_async_engine(
@@ -58,7 +44,7 @@ async def setup_database():
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Таблицы успешно созданы")
     except Exception as e:
-        logger.error(f"Ошибка при создании таблиц: {str(e)}")
+        logger.error("Ошибка при создании таблиц: %s", str(e))
         raise
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -67,7 +53,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         except Exception as e:
-            logger.error(f"Ошибка при работе с базой данных: {str(e)}")
+            logger.error("Ошибка при работе с базой данных: %s", str(e))
             await session.rollback()
             raise
         finally:

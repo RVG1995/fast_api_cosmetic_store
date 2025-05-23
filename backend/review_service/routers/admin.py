@@ -13,10 +13,7 @@ from services import (
     get_product_reviews, get_store_reviews,
     toggle_review_visibility
 )
-import logging
-
-# Настройка логирования
-logger = logging.getLogger("review_service.routers.admin")
+from config import logger, DEFAULT_PAGE, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 
 # Создание роутера
 router = APIRouter(
@@ -81,12 +78,11 @@ async def add_admin_comment(
     
     return ReviewRead.model_validate(response_data)
 
-@router.patch("/{review_id}", response_model=ReviewRead)
+@router.patch("/{review_id}", response_model=ReviewRead,dependencies=[Depends(require_admin)])
 async def update_review(
     review_id: int = Path(..., description="ID отзыва"),
     review_data: AdminReviewUpdate = Body(...),
     session: AsyncSession = Depends(get_session),
-    admin: User = Depends(require_admin)
 ):
     """
     Обновление информации об отзыве (скрытие/отображение).
@@ -108,14 +104,13 @@ async def update_review(
     # Возвращаем объект ReviewRead, созданный из полученного словаря
     return ReviewRead.model_validate(review_dict)
 
-@router.get("/products/{product_id}", response_model=PaginatedResponse)
+@router.get("/products/{product_id}", response_model=PaginatedResponse,dependencies=[Depends(require_admin)])
 async def get_product_reviews_admin(
     product_id: int = Path(..., description="ID товара"),
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    limit: int = Query(10, ge=1, le=50, description="Количество записей на странице"),
+    page: int = Query(DEFAULT_PAGE, ge=1, description="Номер страницы"),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Количество записей на странице"),
     include_hidden: bool = Query(True, description="Включать скрытые отзывы"),
     session: AsyncSession = Depends(get_session),
-    admin: User = Depends(require_admin)
 ):
     """
     Получение отзывов для товара, включая скрытые.
@@ -124,13 +119,12 @@ async def get_product_reviews_admin(
     reviews = await get_product_reviews(session, product_id, page, limit, include_hidden)
     return reviews
 
-@router.get("/store", response_model=PaginatedResponse)
+@router.get("/store", response_model=PaginatedResponse,dependencies=[Depends(require_admin)])
 async def get_store_reviews_admin(
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    limit: int = Query(10, ge=1, le=50, description="Количество записей на странице"),
+    page: int = Query(DEFAULT_PAGE, ge=1, description="Номер страницы"),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Количество записей на странице"),
     include_hidden: bool = Query(True, description="Включать скрытые отзывы"),
     session: AsyncSession = Depends(get_session),
-    admin: User = Depends(require_admin)
 ):
     """
     Получение отзывов для магазина, включая скрытые.
@@ -139,11 +133,10 @@ async def get_store_reviews_admin(
     reviews = await get_store_reviews(session, page, limit, include_hidden)
     return reviews
 
-@router.get("/{review_id}", response_model=ReviewRead)
+@router.get("/{review_id}", response_model=ReviewRead,dependencies=[Depends(require_admin)])
 async def get_review_admin(
     review_id: int = Path(..., description="ID отзыва"),
     session: AsyncSession = Depends(get_session),
-    admin: User = Depends(require_admin)
 ):
     """
     Получение отзыва по ID, включая скрытые.

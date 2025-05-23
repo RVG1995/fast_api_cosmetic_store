@@ -1,22 +1,18 @@
-import asyncio
-import json
-import os
-from typing import Dict, List, Any
+"""Утилиты для работы с RabbitMQ в сервисе аутентификации."""
 
 import aio_pika
-from dotenv import load_dotenv
+from config import settings
 
-load_dotenv()
+# Настройки RabbitMQ из конфигурации
+RABBITMQ_HOST = settings.RABBITMQ_HOST
+RABBITMQ_USER = settings.RABBITMQ_USER
+RABBITMQ_PASS = settings.RABBITMQ_PASS
 
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
-
-# Настройки для Dead Letter Exchange - должны совпадать с настройками в email_consumer
-DLX_NAME = "dead_letter_exchange"
-DLX_QUEUE = "failed_messages"
+# Настройки для Dead Letter Exchange из конфигурации
+DLX_NAME = settings.DLX_NAME
+DLX_QUEUE = settings.DLX_QUEUE
 # Задержка перед повторной попыткой в миллисекундах
-RETRY_DELAY_MS = 5000
+RETRY_DELAY_MS = settings.RETRY_DELAY_MS
 
 
 async def get_connection() -> aio_pika.Connection:
@@ -64,9 +60,8 @@ async def declare_queue(channel: aio_pika.Channel, queue_name: str) -> aio_pika.
             }
         )
         return queue
-    except aio_pika.exceptions.QueueDeclarationError as e:
+    except aio_pika.exceptions.ChannelClosed as e:
         # Если очередь уже существует, используем её как есть
-        # (это может произойти, если email_consumer уже создал очереди)
         print(f"Очередь {queue_name} уже существует с другими параметрами. Используем как есть: {e}")
         queue = await channel.declare_queue(
             queue_name,

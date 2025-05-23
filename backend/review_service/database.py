@@ -1,42 +1,24 @@
-import os
-from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
+"""
+Модуль для настройки асинхронного подключения к базе данных и управления сессиями.
+"""
 import logging
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.orm import sessionmaker
+
 from models import Base
+from config import settings, get_db_url, logger
 
-# Загружаем переменные окружения
-load_dotenv()
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("review_service.database")
-
-# Получаем информацию о хосте и порте из переменных окружения
-DB_HOST = os.getenv("REVIEW_DB_HOST", "localhost")
-DB_PORT = os.getenv("REVIEW_DB_PORT", "5436")
-DB_NAME = os.getenv("REVIEW_DB_NAME", "reviews_db")
-DB_USER = os.getenv("REVIEW_DB_USER", "postgres")
-DB_PASSWORD = os.getenv("REVIEW_DB_PASSWORD", "postgres")
-
-# Формируем URL для подключения к базе данных PostgreSQL
-SQLALCHEMY_DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# Получаем URL базы данных из настроек
+DATABASE_URL = get_db_url()
+logger.info(f"URL базы данных: {DATABASE_URL}")
 
 # Создаем асинхронный движок SQLAlchemy
 engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL,
-    echo=False,  # Для отладки можно установить True, чтобы видеть все SQL-запросы
-    future=True,
-    poolclass=NullPool  # Отключаем пулинг соединений для асинхронной работы
+    DATABASE_URL,
+    echo=True,  # Для отладки можно установить True, чтобы видеть все SQL-запросы
 )
 
-# Создаем фабрику сессий
-SessionLocal = async_sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-    expire_on_commit=False
-)
+AsyncSessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
 async def get_session() -> AsyncSession:
     """
@@ -45,7 +27,7 @@ async def get_session() -> AsyncSession:
     Yields:
         AsyncSession: Сессия базы данных
     """
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:
         try:
             yield session
         except Exception as e:

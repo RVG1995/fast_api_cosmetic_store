@@ -1,16 +1,18 @@
-import httpx
-import os
+"""API для взаимодействия с сервисом корзины."""
+
 import logging
-from typing import Dict, List, Optional, Tuple, Any
-from fastapi import Depends, HTTPException, status
+from typing import Dict, Optional, Any
+
+import httpx
+from config import settings
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("order_cart_api")
 
-# URL сервиса корзины
-CART_SERVICE_URL = os.getenv("CART_SERVICE_URL", "http://localhost:8002")
-logger.info(f"URL сервиса корзины: {CART_SERVICE_URL}")
+# URL сервиса корзины из настроек
+CART_SERVICE_URL = settings.CART_SERVICE_URL
+logger.info("URL сервиса корзины: %s", CART_SERVICE_URL)
 
 class CartAPI:
     """Класс для взаимодействия с API сервиса корзины"""
@@ -35,15 +37,15 @@ class CartAPI:
                     
                     # Если указан user_id, проверяем, что корзина принадлежит этому пользователю
                     if user_id is not None and cart_data.get("user_id") != user_id:
-                        logger.warning(f"Корзина {cart_id} не принадлежит пользователю {user_id}")
+                        logger.warning("Корзина %s не принадлежит пользователю %s", cart_id, user_id)
                         return None
                     
                     return cart_data
                 else:
-                    logger.warning(f"Корзина с ID {cart_id} не найдена, статус: {response.status_code}")
+                    logger.warning("Корзина с ID %s не найдена, статус: %s", cart_id, response.status_code)
                     return None
-        except Exception as e:
-            logger.error(f"Ошибка при получении корзины {cart_id}: {str(e)}")
+        except (httpx.HTTPError, httpx.RequestError) as e:
+            logger.error("Ошибка при получении корзины %s: %s", cart_id, str(e))
             return None
     
     async def clear_cart(self, cart_id: int) -> bool:
@@ -61,15 +63,15 @@ class CartAPI:
                 response = await client.delete(f"{CART_SERVICE_URL}/cart", params={"id": cart_id})
                 
                 if response.status_code in (200, 204):
-                    logger.info(f"Корзина {cart_id} успешно очищена")
+                    logger.info("Корзина %s успешно очищена", cart_id)
                     return True
                 else:
-                    logger.error(f"Ошибка при очистке корзины {cart_id}, статус: {response.status_code}")
+                    logger.error("Ошибка при очистке корзины %s, статус: %s", cart_id, response.status_code)
                     return False
-        except Exception as e:
-            logger.error(f"Ошибка при очистке корзины {cart_id}: {str(e)}")
+        except (httpx.HTTPError, httpx.RequestError) as e:
+            logger.error("Ошибка при очистке корзины %s: %s", cart_id, str(e))
             return False
 
 async def get_cart_api() -> CartAPI:
     """Dependency для получения экземпляра CartAPI"""
-    return CartAPI() 
+    return CartAPI()

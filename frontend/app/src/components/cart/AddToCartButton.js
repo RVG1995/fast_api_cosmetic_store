@@ -44,7 +44,7 @@ const AddToCartButton = ({ productId, stock, className = '' }) => {
       const result = await addToCart(productId, quantity);
       
       if (result.success) {
-        setMessage({ type: 'success', text: 'Товар добавлен в корзину' });
+        setMessage({ type: 'success', text: result.message });
       } else {
         // Показываем ошибку как всплывающее уведомление
         showToast(result.message, 'danger');

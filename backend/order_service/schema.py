@@ -1,6 +1,8 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+"""Схемы Pydantic для сервиса заказов."""
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class ProductInfoSchema(BaseModel):
@@ -96,6 +98,7 @@ class OrderCreateSchema(BaseModel):
     contact_phone: Optional[str] = None
     contact_email: Optional[EmailStr] = None
     notes: Optional[str] = None
+    personal_data_agreement: bool = Field(..., description="Согласие на обработку персональных данных")
 
 class OrderUpdateSchema(BaseModel):
     """Схема для обновления заказа"""
@@ -173,4 +176,4 @@ class EmailTemplateSchema(BaseModel):
 
 class OrderCancelSchema(BaseModel):
     """Схема для отмены заказа"""
-    reason: Optional[str] = None 
+    reason: Optional[str] = None

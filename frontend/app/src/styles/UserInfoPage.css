@@ -26,9 +26,28 @@
     border: none;
     transition: transform 0.2s;
   }
+
+  /* Принудительно выравниваем карточки по высоте - только на странице информации о пользователе */
+  .user-info-page .row:first-of-type .card {
+    min-height: 450px !important;
+    height: 100% !important;
+    display: flex;
+    flex-direction: column;
+  }
   
   .card:hover {
     transform: translateY(-5px);
+  }
+
+  /* Обеспечиваем равную высоту карточек */
+  .h-100 {
+    height: 100% !important;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card-body {
+    flex: 1 1 auto;
   }
   
   .rounded {
@@ -58,4 +77,14 @@
   .order-item:hover {
     background-color: #f0f7ff !important;
     transform: translateY(-2px);
+  }
+
+  .sessions-header {
+    background-color: #f3e5f5;
+    border-bottom: 1px solid #ce93d8;
+    color: #333;
+    border-top-left-radius: 0.375rem;
+    border-top-right-radius: 0.375rem;
+    padding: 1rem;
+    border: none;
   }

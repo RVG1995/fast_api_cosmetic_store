@@ -23,6 +23,7 @@ import OrderStatusBadge from '../../components/OrderStatusBadge';
 import './OrderDetailPage.css';
 import axios from 'axios';
 import { API_URLS } from '../../utils/constants';
+import { useConfirm } from '../../components/common/ConfirmContext';
 
 const OrderDetailPage = () => {
   const { orderId } = useParams();
@@ -40,9 +41,10 @@ const OrderDetailPage = () => {
   const [canReorder, setCanReorder] = useState(false);
   const [cannotReorderReason, setCannotReorderReason] = useState('');
   const [checkingReorderAvailability, setCheckingReorderAvailability] = useState(false);
+  const confirm = useConfirm();
   
   // Загрузка заказа при монтировании компонента
-  const loadOrder = async () => {
+  const loadOrder = useCallback(async () => {
     console.log('=== ДИАГНОСТИКА ЗАГРУЗКИ ЗАКАЗА ===');
     console.log('ID заказа:', orderId);
     console.log('Пользователь:', user);
@@ -104,7 +106,7 @@ const OrderDetailPage = () => {
         setLoadError(`Ошибка при загрузке заказа: ${err.message}`);
       }
     }
-  };
+  }, [orderId, user]);
   
   // Функция для проверки возможности повторения заказа
   const checkReorderAvailability = async (orderData) => {
@@ -193,11 +195,11 @@ const OrderDetailPage = () => {
     }
   };
   
-  // Запускаем загрузку заказа при монтировании компонента
+  // Запускаем загрузку заказа при монтировании и при изменении loadOrder
   useEffect(() => {
     console.log('OrderDetailPage: useEffect вызван');
     loadOrder();
-  }, [orderId]);
+  }, [loadOrder]);
   
   // Диагностика условий отображения кнопки отмены
   useEffect(() => {
@@ -281,6 +283,16 @@ const OrderDetailPage = () => {
       return;
     }
     
+    // Запрашиваем согласие на обработку персональных данных
+    const agreed = await confirm({
+      title: 'Согласие на обработку персональных данных',
+      body: 'Для повторения заказа необходимо дать согласие на обработку персональных данных. Продолжить?'
+    });
+    if (!agreed) {
+      setReorderError('Для повторения заказа необходимо согласиться на обработку персональных данных');
+      return;
+    }
+    
     setReorderLoading(true);
     setReorderError(null);
     
@@ -295,7 +307,7 @@ const OrderDetailPage = () => {
       const url = `${API_URLS.ORDER_SERVICE}/orders/${orderId}/reorder`;
       console.log('URL запроса повторения заказа:', url);
       
-      const response = await axios.post(url, {}, config);
+      const response = await axios.post(url, { personal_data_agreement: agreed }, config);
       console.log('Ответ от сервера:', response.data);
       
       if (response.data.success) {
@@ -313,6 +325,24 @@ const OrderDetailPage = () => {
     }
   };
   
+  // Формат типа доставки
+  const formatDeliveryType = (type) => {
+    if (!type) return 'Не указан';
+    
+    switch(type) {
+      case 'boxberry_pickup_point':
+        return 'Пункт выдачи BoxBerry';
+      case 'boxberry_courier':
+        return 'Курьер BoxBerry';
+      case 'cdek_pickup_point':
+        return 'Пункт выдачи СДЭК';
+      case 'cdek_courier':
+        return 'Курьер СДЭК';
+      default:
+        return type;
+    }
+  };
+  
   // Отображение загрузки
   if (loading && !order) {
     return (
@@ -323,12 +353,13 @@ const OrderDetailPage = () => {
     );
   }
   
-  // Отображение ошибки
-  if (error && !order) {
+  // Отображение ошибок загрузки и контекста
+  if ((error || loadError) && !order) {
+    const message = loadError || (typeof error === 'object' ? JSON.stringify(error) : error);
     return (
       <Container className="order-detail-container py-5">
         <Alert variant="danger">
-          {typeof error === 'object' ? JSON.stringify(error) : error}
+          {message}
           <div className="mt-3">
             <Button variant="outline-primary" onClick={() => navigate('/orders')}>
               Вернуться к списку заказов
@@ -396,6 +427,83 @@ const OrderDetailPage = () => {
                 </Col>
               </Row>
               
+              {/* Информация о промокоде и скидке */}
+              {(order.promo_code || order.discount_amount > 0) && (
+                <Row className="mb-4">
+                  {order.promo_code && (
+                    <Col md={6}>
+                      <div className="order-info-item">
+                        <div className="order-info-label">Промокод:</div>
+                        <div className="order-info-value">
+                          <Badge bg="success">{order.promo_code.code}</Badge>
+                         
+                        </div>
+                      </div>
+                    </Col>
+                  )}
+                  {order.discount_amount > 0 && (
+                    <Col md={6}>
+                      <div className="order-info-item">
+                        <div className="order-info-label">Скидка:</div>
+                        <div className="order-info-value"> {order.promo_code.discount_percent && 
+                            <span className="ms-1">{order.promo_code.discount_percent}%</span>}
+                          {!order.promo_code.discount_percent && order.promo_code.discount_amount && 
+                            <span className="ms-1">{formatPrice(order.promo_code.discount_amount)}</span>}</div>
+                      </div>
+                    </Col>
+                  )}
+                </Row>
+              )}
+              
+              {/* Информация о доставке */}
+              <div className="mb-4">
+                <h5 className="section-title">Информация о доставке</h5>
+                <Row>
+                  <Col md={6}>
+                    <div className="order-info-item">
+                      <div className="order-info-label">Адрес доставки:</div>
+                      <div className="order-info-value">{order.delivery_address || "Не указан"}</div>
+                    </div>
+                  </Col>
+                  <Col md={6}>
+                    <div className="order-info-item">
+                      <div className="order-info-label">Тип доставки:</div>
+                      <div className="order-info-value">{formatDeliveryType(order.delivery_info?.delivery_type || order.delivery_type)}</div>
+                    </div>
+                  </Col>
+                </Row>
+                {/* Пункт выдачи Boxberry */}
+                {(order.delivery_info?.boxberry_point_address || order.boxberry_point_address) && (
+                  <div className="order-info-item mt-2">
+                    <div className="order-info-label">Адрес пункта выдачи:</div>
+                    <div className="order-info-value">{order.delivery_info?.boxberry_point_address || order.boxberry_point_address}</div>
+                  </div>
+                )}
+                {/* Трек-номер */}
+                {(order.delivery_info?.tracking_number || order.tracking_number) && 
+                 (order.delivery_info?.delivery_type || order.delivery_type)?.includes('boxberry') && (
+                  <div className="order-info-item mt-2">
+                    <div className="order-info-label">Трек-номер:</div>
+                    <div className="order-info-value">{order.delivery_info?.tracking_number || order.tracking_number}</div>
+                  </div>
+                )}
+                <div className="order-info-item mt-2">
+                  <div className="order-info-label">Статус доставки:</div>
+                  <div className="order-info-value">
+                    {order.delivery_info?.status_in_delivery_service
+                      ? order.delivery_info.status_in_delivery_service
+                      : <span className="text-muted">Заказ ещё не передан в доставку</span>
+                    }
+                  </div>
+                </div>
+                <div className="order-info-item mt-2">
+                  <div className="order-info-label">Способ оплаты:</div>
+                  <div className="order-info-value">
+                    {order.is_payment_on_delivery ? 'Оплата при получении' : 'Оплата на сайте'}
+                  </div>
+                </div>
+              </div>
+              
               {order.comment && (
                 <div className="order-notes mb-4">
                   <h5>Комментарий к заказу:</h5>
@@ -427,6 +535,32 @@ const OrderDetailPage = () => {
                   ))}
                 </tbody>
                 <tfoot>
+                <tr>
+                    <td colSpan="3" className="text-end fst-italic"><strong>Стоимость товаров:</strong></td>
+                    <td className="text-end fst-italic">
+                      <span>
+                        {formatPrice(
+                          order.items.reduce((total, item) => total + (item.unit_price || item.product_price || 0) * item.quantity, 0)
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                {order.discount_amount > 0 && (
+                    <tr>
+                      <td colSpan="3" className="text-end fst-italic"><strong>Скидка по промокоду {order.promo_code?.code && (
+                          <span>
+                            ({order.promo_code.code}
+                            {order.promo_code.discount_percent && <span> - {order.promo_code.discount_percent}%</span>})
+                          </span>
+                        )}:</strong>
+                      </td>
+                      <td className="text-end fst-italic">-{formatPrice(order.discount_amount)}</td>
+                    </tr>
+                  )}
+                    <tr>
+                      <td colSpan="3" className="text-end fst-italic"><strong>Стоимость доставки:</strong></td>
+                      <td className="text-end">{formatPrice(order.delivery_info?.delivery_cost || order.delivery_cost || 0)}</td>
+                    </tr>
                   <tr>
                     <td colSpan="3" className="text-end fw-bold">Итого:</td>
                     <td className="text-end fw-bold order-total-price">
@@ -486,24 +620,13 @@ const OrderDetailPage = () => {
               <h4 className="mb-0">Информация о получателе</h4>
             </Card.Header>
             <Card.Body>
-              <div className="shipping-address">
-                <h5>Адрес доставки</h5>
-                <p>
-                  <strong>{order.full_name}</strong>
-                </p>
-                <p>
-                  <strong>Улица:</strong> {order.street || "Не указана"}
-                </p>
-                <p>
-                  <strong>Город:</strong> {order.city || "Не указан"}
-                </p>
-                <p>
-                  <strong>Регион:</strong> {order.region || "Не указан"}
-                </p>
-              </div>
+              <h5 className="section-title">ФИО получателя</h5>
+              <p className="mb-4">
+                <strong>{order.full_name}</strong>
+              </p>
               
-              <div className="mt-3">
-                <h5>Контактная информация</h5>
+              <h5 className="section-title">Контактная информация</h5>
+              <div className="contact-info">
                 {order.phone && (
                   <div className="contact-item">
                     <span className="contact-label">Телефон:</span>

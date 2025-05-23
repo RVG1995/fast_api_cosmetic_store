@@ -1,0 +1,75 @@
+.boxberry-modal .modal-dialog {
+  max-width: 800px;
+}
+
+.pickup-points-container {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+}
+
+.pickup-point-item {
+  padding: 10px 15px;
+}
+
+.pickup-point-name {
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.pickup-point-address {
+  margin-bottom: 5px;
+}
+
+.pickup-point-schedule, .pickup-point-delivery {
+  color: #6c757d;
+}
+
+.city-input-block {
+  background-color: #f8f9fa;
+  border-radius: 5px;
+  padding: 15px;
+  border: 1px solid #e9ecef;
+}
+
+.city-suggestions-dropdown {
+  position: absolute;
+  z-index: 1000;
+  width: 100%;
+  max-height: 250px;
+  overflow-y: auto;
+  background-color: white;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  margin-top: 5px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.city-suggestions-list {
+  margin-bottom: 0;
+}
+
+.city-suggestion-item {
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.city-name {
+  font-weight: 500;
+}
+
+.city-region {
+  font-size: 0.85rem;
+  color: #6c757d;
+}
+
+/* Стиль для блока текущего города */
+.current-city {
+  display: flex;
+  align-items: center;
+  background-color: #f8f9fa;
+  padding: 10px 15px;
+  border-radius: 4px;
+  border: 1px solid #dee2e6;
+} 

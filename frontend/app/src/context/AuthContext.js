@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { authAPI } from "../utils/api";
 import { useNavigate } from 'react-router-dom';
+import LoginModal from '../components/common/LoginModal';
+import { useFavorites } from './FavoritesContext';
 
 // Создаем контекст аутентификации
 const AuthContext = createContext({
@@ -26,27 +28,26 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const openLoginModal = () => {
+    console.log('openLoginModal called');
+    setShowLoginModal(true);
+  };
+  const closeLoginModal = () => setShowLoginModal(false);
+  const { resetFavorites, fetchFavorites } = useFavorites();
 
   const checkAuth = async () => {
     try {
       console.log("Проверка аутентификации...");
       console.log("Текущие куки документа:", document.cookie);
-      
       const res = await authAPI.getCurrentUser();
-      console.log("Auth successful:", res.data);
-      
       setUser(res.data);
       setError(null);
-      
-      // Сразу после загрузки базовой информации о пользователе проверяем его разрешения
+
       if (res.data && res.data.id) {
+        // Права
         try {
-          console.log("Загружаем информацию о разрешениях пользователя...");
-          // Запрос для проверки админских прав
           const permRes = await authAPI.checkPermissions('admin_access');
-          console.log("Результат проверки разрешений:", permRes.data);
-          
-          // Обновляем данные о пользователе с учетом его прав
           if (permRes.data && (permRes.data.is_admin !== undefined || permRes.data.is_super_admin !== undefined)) {
             setUser(prevUser => ({
               ...prevUser,
@@ -56,6 +57,19 @@ export const AuthProvider = ({ children }) => {
           }
         } catch (permError) {
           console.error("Ошибка при проверке разрешений при инициализации:", permError);
+        }
+
+        // Профиль
+        try {
+          const profileRes = await authAPI.getUserProfile();
+          if (profileRes?.data) {
+            setUser(prevUser => ({
+              ...prevUser,
+              ...profileRes.data
+            }));
+          }
+        } catch (profileError) {
+          console.error("Ошибка при получении профиля пользователя:", profileError);
         }
       }
     } catch (error) {
@@ -83,10 +97,9 @@ export const AuthProvider = ({ children }) => {
   // Функция для входа в систему
   const login = async (credentials) => {
     try {
-      const response = await authAPI.login(credentials);
-      
-      // После успешного логина сразу делаем новый запрос для получения данных пользователя
+      await authAPI.login(credentials);
       await checkAuth();
+      await fetchFavorites();
       return { success: true };
     } catch (error) {
       console.error("Ошибка при входе:", error);
@@ -102,11 +115,13 @@ export const AuthProvider = ({ children }) => {
       await authAPI.logout();
       setUser(null);
       setError(null);
+      resetFavorites();
       navigate('/login');
     } catch (error) {
       console.error("Ошибка при выходе:", error);
       setUser(null);
       setError(error.response?.data?.detail || error.message);
+      resetFavorites();
     }
   };
 
@@ -171,17 +186,16 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Функция получения полного профиля пользователя
-  const getUserProfile = async () => {
+  const getUserProfile = useCallback(async () => {
     try {
       if (!user) return null;
-      
       const res = await authAPI.getUserProfile();
       return res.data;
     } catch (error) {
       console.error("Ошибка при получении профиля:", error);
       return null;
     }
-  };
+  }, []);
 
   const contextValue = {
     user, 
@@ -196,12 +210,16 @@ export const AuthProvider = ({ children }) => {
     login,
     checkPermission,
     getUserProfile,
-    isAuthenticated: !!user
+    isAuthenticated: !!user,
+    openLoginModal: typeof openLoginModal === 'function' ? openLoginModal : () => alert('Войдите или зарегистрируйтесь, чтобы добавлять в избранное'),
+    closeLoginModal: typeof closeLoginModal === 'function' ? closeLoginModal : () => {},
   };
+  console.log('AuthProvider render', { showLoginModal, user });
 
   return (
     <AuthContext.Provider value={contextValue}>
       {children}
+      {showLoginModal && (console.log('LoginModal rendered'), <LoginModal onClose={closeLoginModal} />)}
     </AuthContext.Provider>
   );
 };

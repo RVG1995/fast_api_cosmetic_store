@@ -1,30 +1,37 @@
-from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, BackgroundTasks, Request
-from sqlalchemy import select 
+"""Модуль аутентификации и авторизации пользователей."""
+
+import logging
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Annotated, List, Dict, Any
+
+# Импорты из fastapi
+from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, Request, Header, Form
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_session
-from models import UserModel, UserSessionModel
+from models import UserModel
 import jwt
-from schema import TokenShema, UserCreateShema, UserReadShema, PasswordChangeSchema, UserSessionsResponseSchema
-from datetime import datetime, timedelta, timezone
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-import secrets
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
-import os
+from schema import TokenSchema, UserCreateShema, UserReadSchema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema, UserUpdateSchema
 from dotenv import load_dotenv
 from utils import get_password_hash, verify_password  # Импортируем из utils
-from app.services.email_service import send_email_activation_message
-import logging
-import uuid  # Если это еще не импортировано
+from auth_utils import get_current_user, get_admin_user, get_super_admin_user  # Импортируем из auth_utils.py
 
-# Импортируем наши сервисы
+# Импорты из пакета app
+from app.services.email_service import send_password_reset_email
 from app.services import (
     TokenService,
     bruteforce_protection,
     user_service,
     session_service,
-    cache_service
+    cache_service,
 )
+
+from aiosmtplib.errors import SMTPException
+from aio_pika.exceptions import AMQPError
+import httpx
 
 # Настройка логгера
 logger = logging.getLogger(__name__)
@@ -38,117 +45,20 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
+# Client Credentials: используем единый ENV SERVICE_CLIENTS_RAW
+SERVICE_CLIENTS_RAW = os.getenv("SERVICE_CLIENTS_RAW", "")
+SERVICE_CLIENTS = {kv.split(":")[0]: kv.split(":")[1] for kv in SERVICE_CLIENTS_RAW.split(",") if ":" in kv}
+SERVICE_TOKEN_EXPIRE_MINUTES = int(os.getenv("SERVICE_TOKEN_EXPIRE_MINUTES", "15"))
+
 router = APIRouter(prefix='/auth', tags=['Авторизация'])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
-async def get_current_user(
-    session: SessionDep, 
-    token: str = Cookie(None, alias="access_token"),
-    authorization: str = Depends(oauth2_scheme)
-) -> UserModel:
-    """
-    Получение текущего пользователя на основе JWT токена
-    
-    Args:
-        session: Сессия базы данных
-        token: Токен из cookies
-        authorization: Токен из заголовка Authorization
-        
-    Returns:
-        UserModel: Объект пользователя
-        
-    Raises:
-        HTTPException: При ошибке аутентификации
-    """
-    logger.debug(f"Получен токен из куки: {token and 'Yes' or 'No'}")
-    logger.debug(f"Получен токен из заголовка: {authorization and 'Yes' or 'No'}")
-
-    actual_token = None
-    
-    # Если токен есть в куках, используем его
-    if token:
-        actual_token = token
-    # Если в куках нет, но есть в заголовке, используем его
-    elif authorization:
-        if authorization.startswith('Bearer '):
-            actual_token = authorization[7:]
-        else:
-            actual_token = authorization
-    
-    if actual_token is None:
-        logger.error("Токен не найден ни в куках, ни в заголовке")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Токен не найден в cookies или заголовке Authorization",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Невозможно проверить учетные данные",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    
-    try:
-        # Используем сервис для декодирования токена
-        payload = await TokenService.decode_token(actual_token)
-        user_id = payload.get("sub")
-        
-        if user_id is None:
-            logger.error("В токене отсутствует поле sub")
-            raise credentials_exception
-            
-        # Проверяем, не отозван ли токен
-        jti = payload.get("jti")
-        if jti and not await session_service.is_session_active(session, jti):
-            logger.warning(f"Попытка использования отозванного токена с JTI: {jti}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Токен был отозван",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Ошибка декодирования токена: {str(e)}")
-        raise credentials_exception
-    
-    # Получаем пользователя с использованием кэширования
-    user = await user_service.get_user_by_id(session, int(user_id))
-    if user is None:
-        logger.error(f"Пользователь с ID {user_id} не найден")
-        raise credentials_exception
-        
-    # Проверяем, активен ли пользователь
-    if not user.is_active:
-        logger.warning(f"Попытка авторизации с неактивным аккаунтом, ID: {user_id}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Аккаунт не активирован",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-        
-    return user
-
-
-conf = ConnectionConfig(
-    MAIL_USERNAME = os.getenv('MAIL_USERNAME'),
-    MAIL_PASSWORD = os.getenv('MAIL_PASSWORD'),
-    MAIL_FROM = os.getenv('MAIL_FROM'),
-    MAIL_PORT = int(os.getenv('MAIL_PORT', 465)),
-    MAIL_SERVER = os.getenv('MAIL_SERVER'),
-    MAIL_STARTTLS = os.getenv('MAIL_STARTTLS', 'False').lower() == 'true',
-    MAIL_SSL_TLS = os.getenv('MAIL_SSL_TLS', 'True').lower() == 'true'
-)
-
-@router.post("/register", response_model=UserReadShema, status_code=status.HTTP_201_CREATED, summary="Регистрация")
+@router.post("/register", response_model=UserReadSchema, status_code=status.HTTP_201_CREATED, summary="Регистрация")
 async def register(
     user: UserCreateShema,
     session: SessionDep,
-    request: Request
-) -> UserReadShema:
+) -> UserReadSchema:
     """
     Регистрация нового пользователя
     
@@ -158,7 +68,7 @@ async def register(
         request: Объект запроса
         
     Returns:
-        UserReadShema: Данные созданного пользователя
+        UserReadSchema: Данные созданного пользователя
         
     Raises:
         HTTPException: При ошибке регистрации
@@ -176,19 +86,26 @@ async def register(
             last_name=user.last_name,
             email=user.email,
             password=user.password,
-            is_active=False
+            is_active=False,
+            personal_data_agreement=bool(user.personal_data_agreement),
+            notification_agreement=bool(user.notification_agreement)
         )
         
         # Отправляем письмо активации
-        await user_service.send_activation_email(
-            str(new_user.id),
-            user.email,
-            activation_token
-        )
+        try:
+            await user_service.send_activation_email(
+                str(new_user.id),
+                user.email,
+                activation_token
+            )
+        except (SMTPException, AMQPError) as email_error:
+            # Логируем только SMTP-ошибки и не прерываем регистрацию
+            logger.error("Ошибка при отправке письма активации: %s", email_error)
         
-        logger.info(f"Пользователь зарегистрирован: {user.email}, ID: {new_user.id}")
+        # Если пользователь согласился на уведомления, активируем их        
+        logger.info("Пользователь зарегистрирован: %s, ID: %s", user.email, new_user.id)
         
-        return UserReadShema(
+        return UserReadSchema(
             id=new_user.id,
             first_name=new_user.first_name,
             last_name=new_user.last_name,
@@ -198,19 +115,19 @@ async def register(
     except Exception as e:
         # Если произошла ошибка, откатываем изменения
         await session.rollback()
-        logger.error(f"Ошибка при регистрации: {str(e)}")
+        logger.error("Ошибка при регистрации: %s", e)
         raise HTTPException(
             status_code=500,
             detail="Произошла ошибка при регистрации. Пожалуйста, попробуйте позже."
-        )
+        ) from e
 
-@router.post("/login", response_model=TokenShema, summary="Вход")
+@router.post("/login", response_model=TokenSchema, summary="Вход")
 async def login(
-    session: SessionDep, 
+    session: SessionDep,
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(), 
     response: Response = None
-) -> TokenShema:
+) -> TokenSchema:
     """
     Авторизация пользователя и получение JWT токена
     
@@ -221,7 +138,7 @@ async def login(
         response: Объект ответа
         
     Returns:
-        TokenShema: JWT токен
+        TokenSchema: JWT токен
         
     Raises:
         HTTPException: При ошибке авторизации
@@ -279,7 +196,7 @@ async def login(
     
     # Создаем токен с использованием сервиса
     access_token, jti = await TokenService.create_access_token(
-        data=token_data, 
+        data=token_data,
         expires_delta=access_token_expires
     )
     
@@ -316,7 +233,7 @@ async def login(
 
 @router.post("/logout", summary="Выход из системы")
 async def logout(
-    response: Response, 
+    response: Response,
     session: SessionDep,
     token: str = Cookie(None, alias="access_token"),
     authorization: str = Depends(oauth2_scheme)
@@ -350,9 +267,9 @@ async def logout(
             if jti:
                 success = await session_service.revoke_session_by_jti(session, jti, "User logout")
                 if success:
-                    logger.info(f"Сессия с JTI {jti} отозвана при выходе")
-        except Exception as e:
-            logger.error(f"Ошибка при отзыве сессии: {str(e)}")
+                    logger.info("Сессия с JTI %s отозвана при выходе", jti)
+        except (jwt.InvalidTokenError, jwt.ExpiredSignatureError) as e:
+            logger.error("Ошибка при отзыве сессии: %s", e)
     
     # Удаляем куки в любом случае
     response.delete_cookie(key="access_token")
@@ -385,16 +302,17 @@ async def get_user_sessions(
                 "user_agent": user_session.user_agent,
                 "ip_address": user_session.ip_address,
                 "created_at": user_session.created_at,
-                "expires_at": user_session.expires_at
+                "expires_at": user_session.expires_at,
+                "is_active": user_session.is_active
             })
         
         return {"sessions": session_data}
     except Exception as e:
-        logger.error(f"Ошибка при получении сессий: {str(e)}")
+        logger.error("Ошибка при получении сессий: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при получении информации о сессиях"
-        )
+        ) from e
 
 @router.post("/users/me/sessions/{session_id}/revoke", summary="Отзыв сессии пользователя")
 async def revoke_user_session(
@@ -431,11 +349,11 @@ async def revoke_user_session(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ошибка при отзыве сессии: {str(e)}")
+        logger.error("Ошибка при отзыве сессии: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при отзыве сессии"
-        )
+        ) from e
 
 @router.post("/users/me/sessions/revoke-all", summary="Отзыв всех сессий пользователя, кроме текущей")
 async def revoke_all_user_sessions(
@@ -483,11 +401,11 @@ async def revoke_all_user_sessions(
             "revoked_count": revoked_count
         }
     except Exception as e:
-        logger.error(f"Ошибка при отзыве всех сессий: {str(e)}")
+        logger.error("Ошибка при отзыве всех сессий: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при отзыве сессий"
-        )
+        ) from e
 
 @router.get("/users/me", response_model=None, summary="Получение базовой информации о текущем пользователе")
 async def read_users_me_basic(current_user: UserModel = Depends(get_current_user)):
@@ -529,13 +447,13 @@ async def read_users_me_profile(current_user: UserModel = Depends(get_current_us
             is_super_admin=current_user.is_super_admin
         )
     else:
-        from schema import UserReadShema
-        return UserReadShema(**base_data)
+        from schema import UserReadSchema
+        return UserReadSchema(**base_data)
 
 @router.get("/activate/{token}", summary="Активация аккаунта")
 async def activate_user(
-    token: str, 
-    session: SessionDep, 
+    token: str,
+    session: SessionDep,
     response: Response
 ) -> Dict[str, Any]:
     """
@@ -582,7 +500,40 @@ async def activate_user(
         secure=secure
     )
     
-    logger.info(f"Аккаунт активирован: {user.email}, ID: {user.id}")
+    logger.info("Аккаунт активирован: %s, ID: %s", user.email, user.id)
+
+    # Если пользователь согласился на уведомления, активируем их
+    if bool(user.notification_agreement):
+        logger.info("Активация уведомлений для пользователя: %s, ID: %s", user.email, user.id)
+        try:
+            # Создаем сервисный токен напрямую через TokenService
+            service_token, _ = await TokenService.create_access_token(
+                data={
+                    "sub": "auth_service", 
+                    "scope": "service"
+                },
+                expires_delta=timedelta(minutes=SERVICE_TOKEN_EXPIRE_MINUTES)
+            )
+            
+            if not service_token:
+                logger.error("Не удалось создать сервисный токен")
+                raise ValueError("Failed to create service token")
+            
+            # Активируем уведомления с полученным токеном
+            notifications_result = await user_service.activate_notifications(
+                str(user.id),
+                user.email,
+                is_admin=user.is_admin,
+                service_token=service_token
+            )
+            
+            if notifications_result:
+                logger.info("Уведомления успешно активированы для пользователя: %s", user.email)
+            else:
+                logger.warning("Не удалось активировать уведомления для пользователя: %s", user.email)
+                
+        except httpx.RequestError as notification_error:
+            logger.error("Ошибка при активации уведомлений: %s", notification_error)
     
     return {
         "status": "success",
@@ -634,7 +585,7 @@ async def change_password(
             detail="Не удалось изменить пароль"
         )
     
-    logger.info(f"Пароль изменен для пользователя: {current_user.email}, ID: {current_user.id}")
+    logger.info("Пароль изменен для пользователя: %s, ID: %s", current_user.email, current_user.id)
     
     return {"status": "success", "message": "Пароль успешно изменен"}
 
@@ -657,49 +608,404 @@ async def check_user_permissions(
     Returns:
         Dict с результатами проверки разрешения
     """
-    # Логирование для отладки
-    logger.info(f"Запрос проверки разрешений для пользователя ID={current_user.id}, permission={permission}")
-    
-    # Базовые пермиссии на основе статуса пользователя
+    logger.info("Запрос проверки разрешений для пользователя ID=%s, permission=%s", current_user.id, permission)
+
     result = {
         "is_authenticated": True,
         "is_active": current_user.is_active,
         "is_admin": current_user.is_admin,
         "is_super_admin": current_user.is_super_admin,
     }
-    
-    # Если запрошено конкретное разрешение
+
     if permission:
-        # Если суперадмин - у него есть все разрешения
         if current_user.is_super_admin:
             result["has_permission"] = True
             return result
-            
-        # Проверки для обычных пользователей и админов
+        if permission == "admin_access":
+            if not (current_user.is_admin or current_user.is_super_admin):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+            result["has_permission"] = True
+            return result
         if permission == "read":
-            # Для чтения ресурсов обычно нужно быть аутентифицированным
             result["has_permission"] = True
         elif permission in ["write", "update"]:
-            # Для записи может потребоваться больше прав
             if resource_type == "user" and resource_id == current_user.id:
-                # Пользователь может изменять свой профиль
                 result["has_permission"] = True
             elif current_user.is_admin:
-                # Админы могут изменять большинство ресурсов
                 result["has_permission"] = True
             else:
                 result["has_permission"] = False
         elif permission == "delete":
-            # Удаление обычно требует админских прав
             result["has_permission"] = current_user.is_admin
-        elif permission == "admin_access":
-            # Доступ к админ-панели
-            result["has_permission"] = current_user.is_admin or current_user.is_super_admin
         elif permission == "super_admin_access":
-            # Доступ к функциям суперадмина
             result["has_permission"] = current_user.is_super_admin
         else:
-            # Неизвестный тип разрешения
             result["has_permission"] = False
-            
     return result
+
+@router.post("/request-password-reset")
+async def request_password_reset(data: PasswordResetRequestSchema, session: SessionDep):
+    """
+    Запрашивает сброс пароля для пользователя по email.
+    
+    Args:
+        data: Данные запроса сброса пароля
+        session: Сессия базы данных
+        
+    Returns:
+        Dict[str, str]: Статус операции
+    """
+    user = await user_service.get_user_by_email(session, data.email)
+    if not user:
+        return {"status": "ok"}
+    token = secrets.token_urlsafe(32)
+    user.reset_token = token
+    user.reset_token_created_at = datetime.now(timezone.utc)
+    await session.commit()
+    await send_password_reset_email(str(user.id), user.email, token)
+    return {"status": "ok"}
+
+@router.post("/reset-password")
+async def reset_password(data: PasswordResetSchema, session: SessionDep):
+    """
+    Сбрасывает пароль пользователя по токену.
+    
+    Args:
+        data: Данные для сброса пароля
+        session: Сессия базы данных
+        
+    Returns:
+        Dict[str, str]: Статус операции
+        
+    Raises:
+        HTTPException: При неверном токене или несовпадении паролей
+    """
+    user = await UserModel.get_by_reset_token(session, data.token)
+    if not user or not user.reset_token or user.reset_token != data.token:
+        raise HTTPException(status_code=400, detail="Неверный или истёкший токен")
+    if data.new_password != data.confirm_password:
+        raise HTTPException(status_code=400, detail="Пароли не совпадают")
+    user.hashed_password = await get_password_hash(data.new_password)
+    user.reset_token = None
+    user.reset_token_created_at = None
+    await session.commit()
+    return {"status": "success"}
+
+# Добавляем функцию зависимости для проверки service_key или прав суперадмина
+async def verify_service_key_or_super_admin(
+    service_key: str = Header(None, alias="service-key"),
+    current_user: Optional[UserModel] = Depends(get_current_user)
+) -> bool:
+    """
+    Проверяет, что запрос содержит правильный сервисный ключ или
+    что пользователь имеет права суперадминистратора.
+    Одно из условий должно быть выполнено.
+    """
+    INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "test")
+    
+    # Проверка сервисного ключа
+    if service_key and service_key == INTERNAL_SERVICE_KEY:
+        logger.info("Запрос авторизован через сервисный ключ")
+        return True
+    
+    # Проверка прав суперадминистратора у текущего пользователя
+    if current_user and current_user.is_super_admin:
+        logger.info("Запрос авторизован суперадминистратором ID=%s", current_user.id)
+        return True
+    
+    # Если ни один из методов не подошел, выбрасываем исключение
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Требуется сервисный ключ или права суперадминистратора"
+    )
+bearer_scheme = HTTPBearer(auto_error=False)
+async def verify_service_jwt(
+    cred: HTTPAuthorizationCredentials = Depends(bearer_scheme)
+) -> bool:
+    """Проверяет JWT токен с scope 'service'"""
+    if not cred or not cred.credentials:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+    try:
+        payload = jwt.decode(cred.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+    if payload.get("scope") != "service":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
+    return True
+# Добавляем новый эндпоинт для получения списка администраторов
+@router.get("/admins", summary="Получение списка всех администраторов и суперадминистраторов", dependencies=[Depends(verify_service_jwt)])
+async def get_all_admins(
+    session: SessionDep,
+) -> List[Dict[str, Any]]:
+    """
+    Получает список всех пользователей с правами администратора и суперадминистратора.
+    Возвращает только ID и информацию о правах, без персональных данных.
+    
+    Доступ:
+    - Только с сервисным ключом (service-key)
+    - Или для пользователей с правами суперадминистратора
+    """
+    logger.info("Запрос на получение списка администраторов")
+    
+    # Используем метод класса для получения всех администраторов
+    admins = await UserModel.get_all_admins(session)
+    
+    # Формируем список только с нужными полями
+    admins_list = [
+        {
+            "email": admin.email,
+        }
+        for admin in admins
+    ]
+    
+    logger.info("Найдено %d администраторов", len(admins_list))
+    return admins_list
+
+
+@router.get("/all/users", summary="Получение списка всех пользователей", dependencies=[Depends(get_admin_user)])
+async def get_all_users(
+    session: SessionDep,
+) -> List[Dict[str, Any]]:
+    """
+    Получает список всех пользователей.
+    Доступ:
+    - Только для администраторов
+    """
+    logger.info("Запрос на получение списка всех пользователей")
+    
+    # Используем метод класса для получения всех пользователей
+    users = await UserModel.get_all_users(session)
+    
+    # Преобразуем объекты UserModel в словари
+    users_list = [
+        {
+            "id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "email": user.email,
+            "is_active": user.is_active,
+            "is_admin": user.is_admin,
+            "is_super_admin": user.is_super_admin
+        }
+        for user in users
+    ]
+    
+    logger.info("Найдено %d пользователей", len(users_list))
+    return users_list
+
+
+@router.post("/token", response_model=TokenSchema, summary="Client Credentials Token")
+async def service_token(
+    grant_type: str = Form(...),
+    client_id: str = Form(...),
+    client_secret: str = Form(...)
+):
+    """
+    Получение JWT токена для сервисного доступа.
+    
+    Args:
+        grant_type: Тип гранта (должен быть "client_credentials")
+        client_id: Идентификатор клиента
+        client_secret: Секретный ключ клиента
+        
+    Returns:
+        TokenSchema: JWT токен доступа
+        
+    Raises:
+        HTTPException: При неверных учетных данных или неподдерживаемом типе гранта
+    """
+    logger.info("Token request received: grant_type=%s, client_id=%s", grant_type, client_id)
+    if grant_type != "client_credentials":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported grant_type")
+    # Получаем секрет из mapping и проверяем
+    secret = SERVICE_CLIENTS.get(client_id)
+    if not secret or secret != client_secret:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid client credentials")
+    expires = timedelta(minutes=SERVICE_TOKEN_EXPIRE_MINUTES)
+    token_data = {"sub": client_id, "scope": "service"}
+    access_token, jti = await TokenService.create_access_token(token_data, expires_delta=expires)
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@router.patch("/users/{user_id}/toggle-active", summary="Изменение статуса активности пользователя", dependencies=[Depends(get_super_admin_user)])
+async def toggle_user_active_status(
+    user_id: int,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_super_admin_user)
+) -> Dict[str, Any]:
+    """
+    Изменяет статус активности пользователя (активный/неактивный).
+    Только суперадминистраторы могут изменять статус пользователей.
+    
+    Args:
+        user_id: ID пользователя для изменения статуса
+        session: Сессия базы данных
+        current_user: Текущий пользователь
+        
+    Returns:
+        Dict[str, Any]: Статус операции и обновленный статус пользователя
+        
+    Raises:
+        HTTPException: Если пользователь не найден или текущий пользователь не имеет прав суперадминистратора
+    """
+    # Проверяем, что текущий пользователь - суперадминистратор
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Только суперадминистраторы могут изменять статус активности пользователей"
+        )
+    
+    # Получаем пользователя, которого нужно изменить
+    user = await UserModel.get_by_id(session, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+    
+    # Меняем статус активности на противоположный
+    user.is_active = not user.is_active
+    await session.commit()
+    
+    logger.info(
+        "Статус активности пользователя %s (ID: %s) изменен суперадминистратором %s (ID: %s). Новый статус: %s",
+        user.email, user.id, current_user.email, current_user.id, user.is_active
+    )
+    
+    return {
+        "status": "success",
+        "message": f"Статус активности пользователя {user.email} изменен",
+        "is_active": user.is_active
+    }
+
+@router.post("/users", response_model=UserReadSchema, status_code=status.HTTP_201_CREATED, dependencies=[Depends(get_super_admin_user)], summary="Создание пользователя суперадминистратором")
+async def create_user_by_admin(
+    user: UserCreateShema,
+    session: SessionDep,
+    is_admin: bool = False,
+    current_user: UserModel = Depends(get_super_admin_user)
+) -> UserReadSchema:
+    """
+    Создание нового пользователя суперадминистратором без отправки подтверждения.
+    Пользователь будет автоматически активирован.
+    
+    Args:
+        user: Данные нового пользователя
+        session: Сессия базы данных
+        is_admin: Флаг, определяющий, будет ли пользователь администратором
+        current_user: Текущий суперадминистратор
+        
+    Returns:
+        UserReadSchema: Данные созданного пользователя
+        
+    Raises:
+        HTTPException: При ошибке создания пользователя
+    """
+    # Проверяем, не зарегистрирован ли уже email
+    existing_user = await user_service.get_user_by_email(session, user.email)
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
+    
+    try:
+        # Создаем пользователя, сразу активированного
+        new_user, _ = await user_service.create_user(
+            session,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            email=user.email,
+            password=user.password,
+            is_active=True,  # Автоматически активируем пользователя
+            is_admin=is_admin,  # Устанавливаем права администратора если указано
+            personal_data_agreement=bool(user.personal_data_agreement),
+            notification_agreement=bool(user.notification_agreement)
+        )
+        
+        logger.info(
+            "Пользователь %s (ID: %s) создан суперадминистратором %s (ID: %s), is_admin=%s",
+            new_user.email, new_user.id, current_user.email, current_user.id, is_admin
+        )
+        
+        return UserReadSchema(
+            id=new_user.id,
+            first_name=new_user.first_name,
+            last_name=new_user.last_name,
+            email=new_user.email,
+        )
+        
+    except Exception as e:
+        # Если произошла ошибка, откатываем изменения
+        await session.rollback()
+        logger.error("Ошибка при создании пользователя суперадминистратором: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Произошла ошибка при создании пользователя. Пожалуйста, попробуйте позже."
+        ) from e
+
+@router.patch("/users/me/profile", response_model=UserReadSchema, summary="Обновление профиля пользователя",dependencies=[Depends(get_current_user)])
+async def update_user_profile(
+    update_data: UserUpdateSchema,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user)
+) -> UserReadSchema:
+    """
+    Обновление профиля текущего пользователя (имя, фамилия, email).
+    
+    Args:
+        update_data: Данные для обновления
+        session: Сессия базы данных
+        current_user: Текущий пользователь
+        
+    Returns:
+        UserReadSchema: Обновленные данные пользователя
+        
+    Raises:
+        HTTPException: При ошибке обновления профиля
+    """
+    try:
+        # Проверяем, меняется ли email
+        if update_data.email and update_data.email != current_user.email:
+            # Проверяем уникальность email
+            existing_user = await user_service.get_user_by_email(session, update_data.email)
+            if existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email уже зарегистрирован другим пользователем"
+                )
+        
+        # Обновляем данные пользователя
+        if update_data.first_name:
+            current_user.first_name = update_data.first_name
+        
+        if update_data.last_name:
+            current_user.last_name = update_data.last_name
+        
+        if update_data.email:
+            current_user.email = update_data.email
+        
+        # Сохраняем изменения
+        await session.commit()
+        
+        # Инвалидируем кэш для данного пользователя через user_service
+        # Внутренние методы сервиса уже имеют логику для инвалидации кэша
+        # Получаем пользователя заново, чтобы обновить кэш
+        await user_service.get_user_by_id(session, current_user.id)
+        await user_service.get_user_by_email(session, current_user.email)
+        
+        logger.info("Профиль пользователя обновлен: ID=%s, email=%s", current_user.id, current_user.email)
+        
+        return UserReadSchema(
+            id=current_user.id,
+            first_name=current_user.first_name,
+            last_name=current_user.last_name,
+            email=current_user.email
+        )
+        
+    except HTTPException:
+        # Пробрасываем HTTPException дальше
+        raise
+    except Exception as e:
+        # Логируем ошибку и возвращаем 500
+        logger.error("Ошибка при обновлении профиля: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Произошла ошибка при обновлении профиля"
+        ) from e

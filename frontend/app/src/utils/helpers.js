@@ -51,4 +51,31 @@ export const truncateText = (text, maxLength) => {
  */
 export const generateId = () => {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
+/**
+ * Форматирует дату и время в локальный формат для отображения
+ * @param {string} dateTimeString - Строка с датой и временем
+ * @returns {string} - Отформатированная дата и время
+ */
+export const formatDateTime = (dateTimeString) => {
+  if (!dateTimeString) return '';
+  
+  const date = new Date(dateTimeString);
+  
+  // Проверяем корректность даты
+  if (isNaN(date.getTime())) {
+    return 'Некорректная дата';
+  }
+  
+  // Опции для форматирования даты и времени
+  const options = { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: 'numeric', 
+    hour: '2-digit', 
+    minute: '2-digit'
+  };
+  
+  return date.toLocaleString('ru-RU', options);
 }; 

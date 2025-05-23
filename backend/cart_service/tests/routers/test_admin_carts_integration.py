@@ -4,17 +4,15 @@ import pytest
 import asyncio
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import patch, AsyncMock, MagicMock
-from fastapi import FastAPI, Depends, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException
 from datetime import datetime
 import json
+import pytest_asyncio
 
 # Импортируем необходимые модули и тестируемые функции
-from routers.admin_carts import router, get_user_carts, get_user_cart_by_id
+from routers.admin_carts import router
 from schema import UserCartSchema, UserCartItemSchema, PaginatedUserCartsResponse
-from cache import CACHE_KEYS, CACHE_TTL
-from models import CartModel
-from auth import User
-from database import get_session
+
 
 # Мок-класс для моделей
 class MockCartModel:
@@ -616,7 +614,7 @@ def app_with_auth():
     return app
 
 # Создаем клиент для тестирования эндпоинтов
-@pytest.fixture
+@pytest_asyncio.fixture
 async def auth_client(app_with_auth):
     """Создает клиент для тестирования эндпоинтов с авторизацией."""
     async with AsyncClient(transport=ASGITransport(app=app_with_auth), base_url="http://test") as client:

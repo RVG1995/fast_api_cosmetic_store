@@ -161,6 +161,15 @@ async def get_user_carts(
             limit=limit,
             pages=1
         )
+    except Exception as e:
+        logger.error("Необработанная ошибка при получении списка корзин: %s", str(e))
+        return PaginatedUserCartsResponse(
+            items=[],
+            total=0,
+            page=page,
+            limit=limit,
+            pages=1
+        )
 
 @router.get("/{cart_id}", response_model=UserCartSchema, tags=["Администрирование"])
 async def get_user_cart_by_id(
@@ -252,4 +261,7 @@ async def get_user_cart_by_id(
         raise HTTPException(status_code=e.status_code, detail=str(e)) from e
     except (SQLAlchemyError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.error("Ошибка при получении информации о корзине ID=%d: %s", cart_id, str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}") from e
+    except Exception as e:
+        logger.error("Необработанная ошибка при получении информации о корзине ID=%d: %s", cart_id, str(e))
         raise HTTPException(status_code=500, detail=f"Ошибка сервера: {str(e)}") from e

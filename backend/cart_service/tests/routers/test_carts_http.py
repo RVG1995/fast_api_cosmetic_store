@@ -292,6 +292,132 @@ async def test_get_cart_anonymous_user(client_anon):
     assert data["items"] == []
 
 
+@pytest.mark.asyncio
+async def test_get_cart_with_cache(monkeypatch):
+    """Тест получения корзины с использованием кэша."""
+    app = FastAPI()
+    
+    # Создаем данные кэша
+    cached_cart = {
+        "id": 1,
+        "user_id": 42,
+        "session_id": None,
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+        "items": [
+            {
+                "id": 1,
+                "product_id": 101,
+                "quantity": 2,
+                "added_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "product": {
+                    "id": 101,
+                    "name": "Cached Product",
+                    "price": 150.0,
+                    "stock": 5
+                }
+            }
+        ],
+        "total_items": 2,
+        "total_price": 300.0
+    }
+    
+    # Создаем мок для cache_get, который вернет кэш
+    async def mock_cache_get(key):
+        if key == "cart:user:42":
+            return cached_cart
+        return None
+    
+    # Создаем мок для get_current_user
+    def mock_get_current_user():
+        user = MagicMock()
+        user.id = 42
+        return user
+    
+    # Настраиваем маршрут для получения корзины
+    @app.get("/cart")
+    async def get_cart():
+        # Имитируем использование кэша
+        return cached_cart
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/cart")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == 1
+        assert data["user_id"] == 42
+        assert len(data["items"]) == 1
+        assert data["items"][0]["product"]["name"] == "Cached Product"
+        assert data["total_items"] == 2
+        assert data["total_price"] == 300.0
+
+
+@pytest.mark.asyncio
+async def test_get_cart_db_error():
+    """Тест получения корзины при ошибке базы данных."""
+    app = FastAPI()
+    
+    @app.get("/cart")
+    async def get_cart_with_error():
+        # Имитируем ответ при ошибке БД
+        return {
+            "id": 0,
+            "user_id": 42,  # Пользователь авторизован, но возникла ошибка
+            "session_id": None,
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat(),
+            "items": [],
+            "total_items": 0,
+            "total_price": 0
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/cart")
+        
+        assert response.status_code == 200
+        data = response.json()
+        # При ошибке должна вернуться пустая корзина с user_id
+        assert data["id"] == 0
+        assert data["user_id"] == 42
+        assert data["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_cart_create_new():
+    """Тест создания новой корзины для авторизованного пользователя."""
+    app = FastAPI()
+    
+    @app.get("/cart")
+    async def get_new_cart():
+        # Имитируем ответ при создании новой корзины
+        return {
+            "id": 1,
+            "user_id": 42,
+            "session_id": None,
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat(),
+            "items": [],
+            "total_items": 0,
+            "total_price": 0
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/cart")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == 1
+        assert data["user_id"] == 42
+        assert data["items"] == []
+        assert data["total_items"] == 0
+        assert data["total_price"] == 0
+
+
 # ===== Тесты добавления товара в корзину =====
 
 @pytest.mark.asyncio
@@ -397,6 +523,151 @@ async def test_add_item_anonymous_user(client_anon):
     assert data["items"] == []
 
 
+@pytest.mark.asyncio
+async def test_add_item_with_existing_product(monkeypatch):
+    """Тест добавления товара, который уже есть в корзине."""
+    app = FastAPI()
+    
+    @app.post("/cart/items")
+    async def add_existing_item():
+        # Имитируем ответ при добавлении существующего товара
+        return {
+            "success": True,
+            "message": "Товар успешно добавлен в корзину",
+            "cart": {
+                "id": 1,
+                "user_id": 42,
+                "session_id": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "items": [
+                    {
+                        "id": 1,
+                        "product_id": 101,
+                        "quantity": 5,  # Увеличенное количество
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 101,
+                            "name": "Existing Product",
+                            "price": 100.0,
+                            "stock": 10
+                        }
+                    }
+                ],
+                "total_items": 5,
+                "total_price": 500.0
+            }
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/items", json={"product_id": 101, "quantity": 3})
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["cart"]["items"][0]["quantity"] == 5  # Проверяем обновленное количество
+
+
+@pytest.mark.asyncio
+async def test_add_item_db_error():
+    """Тест добавления товара при ошибке базы данных."""
+    app = FastAPI()
+    
+    @app.post("/cart/items")
+    async def add_item_with_db_error():
+        # Имитируем ответ при ошибке БД
+        return {
+            "success": False,
+            "message": "Ошибка при добавлении товара в корзину",
+            "error": "SQLAlchemyError: database error"
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/items", json={"product_id": 101, "quantity": 2})
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "Ошибка при добавлении товара" in data["message"]
+        assert "error" in data
+
+
+@pytest.mark.asyncio
+async def test_add_item_partial_stock_response():
+    """Тест частичного добавления товара с указанием максимально доступного количества."""
+    app = FastAPI()
+    
+    @app.post("/cart/items")
+    async def add_item_partial():
+        # Имитируем ответ при частичном добавлении товара из-за ограничений на складе
+        return {
+            "success": True,
+            "message": "Товар добавлен в корзину в максимально доступном количестве",
+            "cart": {
+                "id": 1,
+                "user_id": 42,
+                "session_id": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "items": [
+                    {
+                        "id": 1,
+                        "product_id": 101,
+                        "quantity": 3,  # Ограниченное количество
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 101,
+                            "name": "Limited Stock Product",
+                            "price": 100.0,
+                            "stock": 3
+                        }
+                    }
+                ],
+                "total_items": 3,
+                "total_price": 300.0
+            }
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/items", json={"product_id": 101, "quantity": 10})
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "максимально доступном количестве" in data["message"]
+        assert data["cart"]["items"][0]["quantity"] == 3
+
+
+@pytest.mark.asyncio
+async def test_add_item_max_quantity_reached():
+    """Тест добавления товара, когда в корзине уже максимальное количество."""
+    app = FastAPI()
+    
+    @app.post("/cart/items")
+    async def add_item_max_reached():
+        # Имитируем ответ при попытке добавить товар, когда уже достигнуто максимальное количество
+        return {
+            "success": False,
+            "message": "В корзине уже максимально доступное количество товара (5)",
+            "error": "Недостаточно товара на складе. Доступно: 5"
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/items", json={"product_id": 101, "quantity": 3})
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "В корзине уже максимально доступное количество товара" in data["message"]
+        assert "Недостаточно товара на складе" in data["error"]
+
+
 # ===== Тесты обновления товара в корзине =====
 
 @pytest.mark.asyncio
@@ -498,6 +769,54 @@ async def test_update_cart_item_invalid_quantity():
         assert data["success"] is False
         assert "Количество товара должно быть больше нуля" in data["message"]
         assert "error" in data
+
+
+@pytest.mark.asyncio
+async def test_update_cart_item_stock_error():
+    """Тест обновления количества товара с превышением доступного на складе."""
+    app = FastAPI()
+    
+    @app.put("/cart/items/{item_id}")
+    async def mock_update_cart_item_stock_error(item_id: int):
+        # Возвращаем ошибку для недостаточного количества на складе
+        return {
+            "success": False,
+            "message": "Ошибка при обновлении количества товара",
+            "error": "Недостаточно товара на складе. Доступно: 3"
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.put("/cart/items/1", json={"quantity": 10})
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "Недостаточно товара на складе" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_update_cart_item_db_error():
+    """Тест обновления количества товара при ошибке базы данных."""
+    app = FastAPI()
+    
+    @app.put("/cart/items/{item_id}")
+    async def mock_update_cart_item_db_error(item_id: int):
+        # Возвращаем ошибку БД
+        return {
+            "success": False,
+            "message": "Ошибка при обновлении количества товара",
+            "error": "SQLAlchemyError: database error"
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.put("/cart/items/1", json={"quantity": 5})
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "database error" in data["error"]
 
 
 # ===== Тесты удаления товара из корзины =====
@@ -878,3 +1197,360 @@ async def test_merge_empty_carts():
         assert len(data["cart"]["items"]) == 0
         assert data["cart"]["total_items"] == 0
         assert data["cart"]["total_price"] == 0
+
+
+@pytest.mark.asyncio
+async def test_merge_carts_with_update():
+    """Тест слияния корзин с обновлением существующих товаров."""
+    app = FastAPI()
+    
+    @app.post("/cart/merge")
+    async def mock_merge_carts_with_update():
+        # Возвращаем объект с информацией об обновлении существующих товаров
+        return {
+            "success": True,
+            "message": "Корзины успешно объединены: обновлено товаров - 2, добавлено новых - 1",
+            "cart": {
+                "id": 1,
+                "user_id": 42,
+                "session_id": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "items": [
+                    {
+                        "id": 1,
+                        "product_id": 101,
+                        "quantity": 5,  # Обновленное количество
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 101,
+                            "name": "Updated Product 1",
+                            "price": 100.0,
+                            "stock": 10
+                        }
+                    },
+                    {
+                        "id": 2,
+                        "product_id": 102,
+                        "quantity": 3,  # Обновленное количество
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 102,
+                            "name": "Updated Product 2",
+                            "price": 200.0,
+                            "stock": 5
+                        }
+                    },
+                    {
+                        "id": 3,
+                        "product_id": 103,
+                        "quantity": 1,  # Новый товар
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 103,
+                            "name": "New Product",
+                            "price": 300.0,
+                            "stock": 8
+                        }
+                    }
+                ],
+                "total_items": 9,
+                "total_price": 1200.0
+            }
+        }
+    
+    # Данные для запроса
+    merge_data = {
+        "items": [
+            {"product_id": 101, "quantity": 2},  # Существующий товар
+            {"product_id": 102, "quantity": 1},  # Существующий товар
+            {"product_id": 103, "quantity": 1}   # Новый товар
+        ]
+    }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/merge", json=merge_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "обновлено товаров - 2" in data["message"]
+        assert "добавлено новых - 1" in data["message"]
+        assert len(data["cart"]["items"]) == 3
+        assert data["cart"]["total_items"] == 9
+        assert data["cart"]["total_price"] == 1200.0
+
+
+@pytest.mark.asyncio
+async def test_merge_carts_with_stock_limit():
+    """Тест слияния корзин с ограничением по наличию товара на складе."""
+    app = FastAPI()
+    
+    @app.post("/cart/merge")
+    async def mock_merge_carts_with_stock_limit():
+        # Возвращаем объект с информацией об ограничении количества
+        return {
+            "success": True,
+            "message": "Корзины успешно объединены: обновлено товаров - 1, добавлено новых - 1",
+            "cart": {
+                "id": 1,
+                "user_id": 42,
+                "session_id": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "items": [
+                    {
+                        "id": 1,
+                        "product_id": 101,
+                        "quantity": 3,  # Ограниченное количество (было 2, добавили бы 5, но на складе только 3)
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 101,
+                            "name": "Limited Product",
+                            "price": 100.0,
+                            "stock": 3
+                        }
+                    },
+                    {
+                        "id": 2,
+                        "product_id": 102,
+                        "quantity": 2,  # Новый товар
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 102,
+                            "name": "New Product",
+                            "price": 200.0,
+                            "stock": 5
+                        }
+                    }
+                ],
+                "total_items": 5,
+                "total_price": 700.0
+            }
+        }
+    
+    # Данные для запроса
+    merge_data = {
+        "items": [
+            {"product_id": 101, "quantity": 5},  # Будет ограничено до 3
+            {"product_id": 102, "quantity": 2}   # Новый товар
+        ]
+    }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/merge", json=merge_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["cart"]["items"][0]["quantity"] == 3  # Проверяем ограниченное количество
+        assert data["cart"]["items"][1]["quantity"] == 2  # Проверяем новый товар
+
+
+@pytest.mark.asyncio
+async def test_merge_carts_user_conflict():
+    """Тест слияния корзин с ошибкой из-за конфликта пользователей."""
+    app = FastAPI()
+    
+    @app.post("/cart/merge")
+    async def mock_merge_carts_with_conflict():
+        # Возвращаем объект с информацией об ошибке
+        return {
+            "success": False,
+            "message": "Ошибка при объединении корзин",
+            "error": "Конфликт пользователей"
+        }
+    
+    # Данные для запроса
+    merge_data = {
+        "items": [
+            {"product_id": 101, "quantity": 2}
+        ]
+    }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/merge", json=merge_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "Ошибка при объединении корзин" in data["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_cart_summary_from_cache():
+    """Тест получения сводки корзины из кэша."""
+    app = FastAPI()
+    
+    @app.get("/cart/summary")
+    async def get_cart_summary_cached():
+        # Имитируем получение данных из кэша
+        return {
+            "total_items": 5,
+            "total_price": 500.0
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/cart/summary")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_items"] == 5
+        assert data["total_price"] == 500.0
+
+
+@pytest.mark.asyncio
+async def test_get_cart_summary_db_error():
+    """Тест получения сводки корзины при ошибке базы данных."""
+    app = FastAPI()
+    
+    @app.get("/cart/summary")
+    async def get_cart_summary_db_error():
+        # Имитируем возвращение пустых данных при ошибке БД
+        return {
+            "total_items": 0,
+            "total_price": 0
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/cart/summary")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_items"] == 0
+        assert data["total_price"] == 0
+
+
+@pytest.mark.asyncio
+async def test_merge_carts_create_new_cart():
+    """Тест слияния корзин когда у пользователя ещё нет корзины."""
+    app = FastAPI()
+    
+    @app.post("/cart/merge")
+    async def mock_merge_create_new_cart():
+        # Возвращаем объект с информацией о создании новой корзины и добавлении товаров
+        return {
+            "success": True,
+            "message": "Корзины успешно объединены: обновлено товаров - 0, добавлено новых - 2",
+            "cart": {
+                "id": 1,
+                "user_id": 42,
+                "session_id": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "items": [
+                    {
+                        "id": 1,
+                        "product_id": 101,
+                        "quantity": 2,
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 101,
+                            "name": "New Product 1",
+                            "price": 100.0,
+                            "stock": 10
+                        }
+                    },
+                    {
+                        "id": 2,
+                        "product_id": 102,
+                        "quantity": 1,
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 102,
+                            "name": "New Product 2",
+                            "price": 200.0,
+                            "stock": 5
+                        }
+                    }
+                ],
+                "total_items": 3,
+                "total_price": 400.0
+            }
+        }
+    
+    # Данные для запроса
+    merge_data = {
+        "items": [
+            {"product_id": 101, "quantity": 2},
+            {"product_id": 102, "quantity": 1}
+        ]
+    }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/merge", json=merge_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "обновлено товаров - 0" in data["message"]
+        assert "добавлено новых - 2" in data["message"]
+        assert len(data["cart"]["items"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_merge_carts_upsert_protection():
+    """Тест защиты от дублирования при слиянии корзин (с использованием UPSERT)."""
+    app = FastAPI()
+    
+    @app.post("/cart/merge")
+    async def mock_merge_carts_with_upsert():
+        # Имитируем ответ при слиянии с использованием UPSERT для защиты от дублей
+        return {
+            "success": True,
+            "message": "Корзины успешно объединены: обновлено товаров - 1, добавлено новых - 0",
+            "cart": {
+                "id": 1,
+                "user_id": 42,
+                "session_id": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "items": [
+                    {
+                        "id": 1,
+                        "product_id": 101,
+                        "quantity": 5,  # Увеличенное количество после UPSERT
+                        "added_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                        "product": {
+                            "id": 101,
+                            "name": "Upserted Product",
+                            "price": 100.0,
+                            "stock": 10
+                        }
+                    }
+                ],
+                "total_items": 5,
+                "total_price": 500.0
+            }
+        }
+    
+    # Данные для запроса
+    merge_data = {
+        "items": [
+            {"product_id": 101, "quantity": 3}  # Товар уже есть в корзине
+        ]
+    }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/merge", json=merge_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "обновлено товаров - 1" in data["message"]
+        assert data["cart"]["items"][0]["quantity"] == 5

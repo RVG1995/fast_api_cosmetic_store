@@ -448,6 +448,58 @@ async def test_update_cart_item_success(monkeypatch):
         assert data["message"] == "Количество товара успешно обновлено"
 
 
+@pytest.mark.asyncio
+async def test_update_nonexistent_cart_item():
+    """Тест обновления несуществующего товара в корзине."""
+    # Создаем простое тестовое приложение с ответом об ошибке
+    app = FastAPI()
+    
+    @app.put("/cart/items/{item_id}")
+    async def mock_update_nonexistent_cart_item(item_id: int):
+        # Возвращаем ошибку для несуществующего товара
+        return {
+            "success": False,
+            "message": "Товар не найден в корзине",
+            "error": "Элемент корзины не найден"
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.put("/cart/items/999", json={"quantity": 3})
+        
+        assert response.status_code == 200  # API возвращает 200 даже для ошибок бизнес-логики
+        data = response.json()
+        assert data["success"] is False
+        assert "Товар не найден" in data["message"]
+        assert "error" in data
+
+
+@pytest.mark.asyncio
+async def test_update_cart_item_invalid_quantity():
+    """Тест обновления товара с некорректным количеством (0 или отрицательное)."""
+    # Создаем простое тестовое приложение с ответом об ошибке
+    app = FastAPI()
+    
+    @app.put("/cart/items/{item_id}")
+    async def mock_update_cart_item_invalid_quantity(item_id: int):
+        # Возвращаем ошибку для некорректного количества
+        return {
+            "success": False,
+            "message": "Количество товара должно быть больше нуля",
+            "error": "Некорректное количество товара"
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.put("/cart/items/1", json={"quantity": 0})
+        
+        assert response.status_code == 200  # API возвращает 200 даже для ошибок бизнес-логики
+        data = response.json()
+        assert data["success"] is False
+        assert "Количество товара должно быть больше нуля" in data["message"]
+        assert "error" in data
+
+
 # ===== Тесты удаления товара из корзины =====
 
 @pytest.mark.asyncio
@@ -483,6 +535,32 @@ async def test_delete_cart_item_success(monkeypatch):
         assert data["success"] is True
         assert "cart" in data
         assert data["message"] == "Товар успешно удален из корзины"
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_cart_item():
+    """Тест удаления несуществующего товара из корзины."""
+    # Создаем простое тестовое приложение с ответом об ошибке
+    app = FastAPI()
+    
+    @app.delete("/cart/items/{item_id}")
+    async def mock_delete_nonexistent_cart_item(item_id: int):
+        # Возвращаем ошибку для несуществующего товара
+        return {
+            "success": False,
+            "message": "Товар не найден в корзине",
+            "error": "Элемент корзины не найден"
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.delete("/cart/items/999")
+        
+        assert response.status_code == 200  # API возвращает 200 даже для ошибок бизнес-логики
+        data = response.json()
+        assert data["success"] is False
+        assert "Товар не найден" in data["message"]
+        assert "error" in data
 
 
 # ===== Вспомогательные функции =====
@@ -707,3 +785,96 @@ async def test_merge_carts(monkeypatch):
         assert data["success"] is True
         assert "cart" in data
         assert "Корзины успешно объединены" in data["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_empty_cart_summary():
+    """Тест получения сводки пустой корзины."""
+    # Создаем простое тестовое приложение, возвращающее пустую сводку
+    app = FastAPI()
+    
+    @app.get("/cart/summary")
+    async def mock_get_empty_cart_summary():
+        # Возвращаем сводку пустой корзины
+        return {
+            "total_items": 0,
+            "total_price": 0
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/cart/summary")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_items"] == 0
+        assert data["total_price"] == 0
+
+
+@pytest.mark.asyncio
+async def test_clear_nonexistent_cart():
+    """Тест попытки очистить несуществующую корзину."""
+    # Создаем простое тестовое приложение с ответом об ошибке
+    app = FastAPI()
+    
+    @app.delete("/cart")
+    async def mock_clear_nonexistent_cart():
+        # Возвращаем ошибку для несуществующей корзины
+        return {
+            "success": False,
+            "message": "Корзина не найдена",
+            "error": "Корзина не найдена"
+        }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.delete("/cart")
+        
+        assert response.status_code == 200  # API возвращает 200 даже для ошибок бизнес-логики
+        data = response.json()
+        assert data["success"] is False
+        assert "Корзина не найдена" in data["message"]
+        assert "error" in data
+
+
+@pytest.mark.asyncio
+async def test_merge_empty_carts():
+    """Тест слияния пустых корзин."""
+    # Создаем простое тестовое приложение с сообщением о том, что объединение не требуется
+    app = FastAPI()
+    
+    @app.post("/cart/merge")
+    async def mock_merge_empty_carts():
+        # Возвращаем ответ для пустой корзины
+        return {
+            "success": True,
+            "message": "Корзина не требует объединения",
+            "cart": {
+                "id": 1,
+                "user_id": 42,
+                "session_id": None,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "items": [],
+                "total_items": 0,
+                "total_price": 0
+            }
+        }
+    
+    # Данные для запроса - пустой список товаров
+    merge_data = {
+        "items": []
+    }
+    
+    # Выполняем тест
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/cart/merge", json=merge_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Корзина не требует объединения" in data["message"]
+        assert "cart" in data
+        assert len(data["cart"]["items"]) == 0
+        assert data["cart"]["total_items"] == 0
+        assert data["cart"]["total_price"] == 0

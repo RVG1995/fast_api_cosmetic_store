@@ -119,46 +119,38 @@ async def enrich_cart_with_product_data(cart: CartModel) -> CartSchema:
         
         # Добавляем информацию о товарах, если есть элементы
         for item in items:
-            try:
-                product_info = products_info.get(item.product_id)
-                
-                item_dict = {
-                    "id": item.id,
-                    "product_id": item.product_id,
-                    "quantity": item.quantity,
-                    "added_at": item.added_at,
-                    "updated_at": item.updated_at,
-                    "product": None
-                }
-                
-                if product_info:
-                    # Добавляем информацию о продукте
+            product_info = products_info.get(item.product_id)
+            item_dict = {
+                "id": item.id,
+                "product_id": item.product_id,
+                "quantity": item.quantity,
+                "added_at": item.added_at,
+                "updated_at": item.updated_at,
+                "product": None
+            }
+            if product_info:
+                try:
+                    price = product_info["price"]
+                    stock = product_info["stock"]
                     item_dict["product"] = {
                         "id": product_info["id"],
                         "name": product_info["name"],
-                        "price": product_info["price"],
+                        "price": price,
                         "image": product_info.get("image"),
-                        "stock": product_info["stock"]
+                        "stock": stock
                     }
-                    
-                    # Обновляем общие показатели корзины
+                    cart_dict["total_price"] += price * item.quantity
                     cart_dict["total_items"] += item.quantity
-                    cart_dict["total_price"] += product_info["price"] * item.quantity
-                else:
-                    logger.warning("Не удалось получить информацию о продукте ID=%d", item.product_id)
-                
-                cart_dict["items"].append(item_dict)
-            except (KeyError, AttributeError, ValueError, TypeError) as e:
-                # Если произошла ошибка при обработке одного товара, пропускаем его
-                logger.error("Ошибка при обработке товара ID=%d: %s", item.product_id, str(e))
-                continue
-        
+                    cart_dict["items"].append(item_dict)
+                except (KeyError, AttributeError, ValueError, TypeError) as e:
+                    logger.error("Ошибка при обработке товара ID=%d: %s", item.product_id, str(e))
+                    continue
+            else:
+                logger.warning("Не удалось получить информацию о продукте ID=%d", item.product_id)
         logger.info("Корзина ID=%d успешно обогащена данными: %d товаров, всего %d шт., на сумму %d ₽", cart.id, len(cart_dict['items']), cart_dict['total_items'], cart_dict['total_price'])
-        
         return CartSchema(**cart_dict)
     except (KeyError, AttributeError, ValueError, TypeError) as e:
         logger.error("Критическая ошибка при обогащении данными корзины: %s", str(e))
-        # В случае критической ошибки возвращаем пустую корзину вместо None
         return CartSchema(
             id=cart.id if cart else 0,
             user_id=cart.user_id if cart else None,

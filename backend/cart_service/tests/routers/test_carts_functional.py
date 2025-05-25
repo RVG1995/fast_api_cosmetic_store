@@ -85,8 +85,7 @@ async def test_enrich_cart_with_product_data_no_product_info(monkeypatch):
     
     result = await enrich_cart_with_product_data(cart)
     assert result.id == 2
-    assert result.items[0].product_id == 999
-    assert result.items[0].product is None
+    assert result.items == []
     assert result.total_items == 0
     assert result.total_price == 0
 

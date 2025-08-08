@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PropTypes from 'prop-types';
 
 const StarRating = ({ initialRating = 0, onRatingChange, size = 'lg', interactive = true }) => {
   const [rating, setRating] = useState(initialRating);
@@ -47,8 +48,9 @@ const StarRating = ({ initialRating = 0, onRatingChange, size = 'lg', interactiv
         const isFilled = star <= (hoverRating || rating);
         
         return (
-          <div
+          <button
             key={star}
+            type="button"
             onClick={() => handleClick(star)}
             onMouseEnter={() => handleMouseEnter(star)}
             onMouseLeave={handleMouseLeave}
@@ -57,13 +59,12 @@ const StarRating = ({ initialRating = 0, onRatingChange, size = 'lg', interactiv
               ...getStarSize(),
               padding: '0 0.2rem'
             }}
-            role={interactive ? "button" : "presentation"}
             aria-label={interactive ? `Оценить на ${star} из 5` : `${rating} из 5 звезд`}
           >
             <i 
               className={isFilled ? 'bi bi-star-fill text-warning' : 'bi bi-star text-muted'}
             />
-          </div>
+          </button>
         );
       })}
       
@@ -75,3 +76,10 @@ const StarRating = ({ initialRating = 0, onRatingChange, size = 'lg', interactiv
 };
 
 export default StarRating; 
+
+StarRating.propTypes = {
+  initialRating: PropTypes.number,
+  onRatingChange: PropTypes.func,
+  size: PropTypes.oneOf(['sm', 'md', 'lg', 'xl']),
+  interactive: PropTypes.bool,
+};

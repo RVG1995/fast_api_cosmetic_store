@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Badge, Button } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { reviewAPI } from '../../utils/api';
-import { formatDate } from '../../utils/helpers';
+import { formatDate } from '../../utils/dateUtils';
 import AdminCommentSection from './AdminCommentSection';
 import AdminReviewActions from './AdminReviewActions';
 import { useAuth } from '../../context/AuthContext';

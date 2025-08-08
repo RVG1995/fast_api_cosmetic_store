@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Form, Button, Spinner } from 'react-bootstrap';
 import { useOrders } from '../context/OrderContext';
 
-const PromoCodeForm = ({ email, phone, cartTotal, onPromoCodeApplied }) => {
+const PromoCodeForm = ({ email, phone, onPromoCodeApplied }) => {
   const [code, setCode] = useState('');
   const { checkPromoCode, loading } = useOrders();
   

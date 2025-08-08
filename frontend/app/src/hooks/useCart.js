@@ -6,7 +6,7 @@ export const useCartOperations = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [cartSummary, setCartSummary] = useState({ total_items: 0, total_price: 0 });
-  const [lastOperation, setLastOperation] = useState(null);
+
 
   // Загрузка данных корзины
   const fetchCart = useCallback(async () => {
@@ -40,7 +40,7 @@ export const useCartOperations = () => {
     try {
       setLoading(true);
       setError(null);
-      setLastOperation({ type: 'add', productId, quantity });
+
       
       const response = await cartAPI.addToCart(productId, quantity);
       
@@ -91,7 +91,7 @@ export const useCartOperations = () => {
     try {
       setLoading(true);
       setError(null);
-      setLastOperation({ type: 'update', itemId, quantity });
+
       
       const response = await cartAPI.updateCartItem(itemId, quantity);
       
@@ -134,7 +134,7 @@ export const useCartOperations = () => {
     try {
       setLoading(true);
       setError(null);
-      setLastOperation({ type: 'remove', itemId });
+
       
       const response = await cartAPI.removeFromCart(itemId);
       
@@ -177,7 +177,7 @@ export const useCartOperations = () => {
     try {
       setLoading(true);
       setError(null);
-      setLastOperation({ type: 'clear' });
+
       
       const response = await cartAPI.clearCart();
       
@@ -218,7 +218,7 @@ export const useCartOperations = () => {
     updateCartItem,
     removeFromCart,
     clearCart,
-    lastOperation
+
   };
 };
 

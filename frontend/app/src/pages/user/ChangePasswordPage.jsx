@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import { Container, Card, Form, Button, Alert, Spinner } from 'react-bootstrap';
-import { useAuth } from '../../context/AuthContext';
 import { authAPI } from '../../utils/api';
 import { Link, useNavigate } from 'react-router-dom';
 
 const ChangePasswordPage = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [formData, setFormData] = useState({
     current_password: '',
     new_password: '',

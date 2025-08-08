@@ -1,23 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { Modal, Button, Spinner, Form, ListGroup, Alert } from 'react-bootstrap';
 import axios from 'axios';
 import { API_URLS } from '../../utils/constants';
 import './BoxberryPickupModal.css';
-
-// Функция для склонения слова "день" в зависимости от числа
-const getDeliveryPeriodText = (days) => {
-  days = parseInt(days, 10); // Преобразуем в число
-  if (isNaN(days)) return 'дней';
-  
-  const cases = [2, 0, 1, 1, 1, 2];
-  const titles = ['день', 'дня', 'дней'];
-  
-  if (days % 100 > 4 && days % 100 < 20) {
-    return titles[2];
-  } else {
-    return titles[cases[Math.min(days % 10, 5)]];
-  }
-};
 
 const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddress, ordersum, paysum, height, width, depth, weight, apiToken }) => {
   const [loading, setLoading] = useState(false);
@@ -331,16 +317,13 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
                   <div className="city-suggestions-dropdown">
                     <ListGroup className="city-suggestions-list">
                       {citySearchResults.map((city, i) => (
-                        <ListGroup.Item
-                          key={i}
-                          action
-                          onClick={() => handleCitySelect(city)}
-                          className="city-suggestion-item"
-                        >
-                          <div className="city-name">{city.Name}</div>
-                          {city.Region && (
-                            <div className="city-region">{city.Region} {city.District ? `, ${city.District}` : ''}</div>
-                          )}
+                        <ListGroup.Item key={i} className="city-suggestion-item p-0">
+                          <button type="button" className="w-100 text-start p-2 border-0 bg-white" onClick={() => handleCitySelect(city)}>
+                            <div className="city-name">{city.Name}</div>
+                            {city.Region && (
+                              <div className="city-region">{city.Region} {city.District ? `, ${city.District}` : ''}</div>
+                            )}
+                          </button>
                         </ListGroup.Item>
                       ))}
                     </ListGroup>
@@ -421,14 +404,17 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
                     key={point.Code}
                     action
                     active={selectedPoint && selectedPoint.Code === point.Code}
-                    onClick={() => handleSelectPoint(point)}
-                    className="pickup-point-item"
+                    className={`pickup-point-item p-0 ${selectedPoint && selectedPoint.Code === point.Code ? 'bg-light' : ''}`}
                   >
-                    <div className="pickup-item" onClick={() => handleSelectPoint(point)}>
-                      <h5>{point.Name}</h5>
-                      <p className="mb-1">{point.Address}</p>
+                    <button
+                      type="button"
+                      className={`w-100 text-start p-3 border-0 ${selectedPoint && selectedPoint.Code === point.Code ? 'bg-light' : 'bg-white'}`}
+                      onClick={() => handleSelectPoint(point)}
+                    >
+                      <h5 className={`${selectedPoint && selectedPoint.Code === point.Code ? 'text-dark' : ''}`}>{point.Name}</h5>
+                      <p className={`mb-1 ${selectedPoint && selectedPoint.Code === point.Code ? 'text-dark' : ''}`}>{point.Address}</p>
                       <p className="mb-0 small text-muted">Режим работы: {point.WorkShedule}</p>
-                    </div>
+                    </button>
                   </ListGroup.Item>
                 ))}
               </ListGroup>
@@ -438,7 +424,7 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
         
         {!loading && !error && pickupPoints.length === 0 && cityName && (
           <Alert variant="info">
-            Введите город и нажмите "Найти" для поиска пунктов выдачи
+            Введите город и нажмите &quot;Найти&quot; для поиска пунктов выдачи
           </Alert>
         )}
 
@@ -461,3 +447,17 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
 };
 
 export default BoxberryPickupModal; 
+
+BoxberryPickupModal.propTypes = {
+  show: PropTypes.bool.isRequired,
+  onHide: PropTypes.func.isRequired,
+  onPickupPointSelected: PropTypes.func.isRequired,
+  selectedAddress: PropTypes.string,
+  ordersum: PropTypes.number,
+  paysum: PropTypes.number,
+  height: PropTypes.number,
+  width: PropTypes.number,
+  depth: PropTypes.number,
+  weight: PropTypes.number,
+  apiToken: PropTypes.string,
+};

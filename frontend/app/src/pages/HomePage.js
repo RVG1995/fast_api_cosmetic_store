@@ -230,11 +230,6 @@ const HomePage = () => {
     }
   }, [products, fetchBatchProductRatings]);
 
-  const handleToggleFavorite = async (productId) => {
-    if (isFavorite(productId)) await removeFavorite(productId);
-    else await addFavorite(productId);
-  };
-
   if (loading) {
     return (
       <div className="container">

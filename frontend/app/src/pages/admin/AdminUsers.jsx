@@ -2,11 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { adminAPI } from '../../utils/api';
 import { useConfirm } from '../../components/common/ConfirmContext';
-import { useNavigate } from 'react-router-dom';
 import { Modal, Button, Form } from 'react-bootstrap';
 
 const AdminUsers = () => {
-  const navigate = useNavigate();
   const confirm = useConfirm();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,20 +78,6 @@ const AdminUsers = () => {
 
     fetchUsers();
   }, []);
-
-  const handleActivate = async (userId) => {
-    try {
-      await adminAPI.activateUser(userId);
-      
-      // Обновляем пользователя в списке
-      setUsers(users.map(user => 
-        user.id === userId ? { ...user, is_active: true } : user
-      ));
-    } catch (err) {
-      setError('Ошибка при активации пользователя');
-      console.error(err);
-    }
-  };
 
   const handleMakeAdmin = async (userId) => {
     try {

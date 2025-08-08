@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useOrders } from '../context/OrderContext';
@@ -69,7 +69,7 @@ const CheckoutPage = () => {
   const [selectedAddressData, setSelectedAddressData] = useState(null);
   
   // Блокировка для предотвращения параллельных запросов
-  const [isCalculating, setIsCalculating] = useState(false);
+  const isCalculatingRef = useRef(false);
   
   // Состояние для отслеживания недоступных типов доставки
   const [disabledDeliveryTypes, setDisabledDeliveryTypes] = useState([]);
@@ -98,9 +98,9 @@ const CheckoutPage = () => {
   // Функция для расчета стоимости доставки
   // Принимает параметр forcePaymentOnDelivery, который позволяет передать значение напрямую
   // вместо получения из состояния, которое может не успеть обновиться
-  const calculateDeliveryCost = async (forcePaymentOnDelivery = null) => {
-    // Проверяем, нет ли уже запущенного расчета
-    if (isCalculating) {
+  const calculateDeliveryCost = useCallback(async (forcePaymentOnDelivery = null) => {
+    // Проверяем, нет ли уже запущенного расчета (через ref, чтобы избежать stale-closure)
+    if (isCalculatingRef.current) {
       console.log('Расчет доставки уже выполняется, запрос пропущен');
       return;
     }
@@ -156,7 +156,7 @@ const CheckoutPage = () => {
     }
     
     try {
-      setIsCalculating(true);
+      isCalculatingRef.current = true;
       setCalculatingDelivery(true);
       setDeliveryError(null);
       
@@ -242,24 +242,29 @@ const CheckoutPage = () => {
       setDeliveryCost(0);
     } finally {
       setCalculatingDelivery(false);
-      setIsCalculating(false);
+      isCalculatingRef.current = false;
     }
-  };
+  }, [
+    isPaymentOnDelivery,
+    deliveryType,
+    selectedPickupPoint,
+    selectedAddressData,
+    formData.delivery_address,
+    cart
+  ]);
   
   // Функция для отложенного выполнения расчета доставки
+  const debounceTimerRef = useRef(null);
   const debouncedCalculateDelivery = useCallback(
-    (() => {
-      let timer = null;
-      return (address) => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          if (address && address.length > 5 && deliveryType === 'boxberry_courier') {
-            calculateDeliveryCost();
-          }
-        }, 1000); // Задержка в 1 секунду
-      };
-    })(),
-    [deliveryType, isPaymentOnDelivery, cart]
+    (address) => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        if (address && address.length > 5 && deliveryType === 'boxberry_courier') {
+          calculateDeliveryCost();
+        }
+      }, 1000);
+    },
+    [deliveryType, calculateDeliveryCost]
   );
   
   // Вызываем расчет стоимости доставки только при изменении типа доставки, 
@@ -287,7 +292,7 @@ const CheckoutPage = () => {
       // Используем текущее значение isPaymentOnDelivery
       calculateDeliveryCost();
     }
-  }, [deliveryType, selectedPickupPoint, selectedAddressData, cart]); // Убрали isPaymentOnDelivery из зависимостей
+  }, [deliveryType, selectedPickupPoint, selectedAddressData, cart, calculateDeliveryCost]);
   
   // Функция запроса подсказок FIO через axios с логами
   const fetchNameSuggestions = async (query) => {
@@ -500,9 +505,6 @@ const CheckoutPage = () => {
       ...prev,
       delivery_address: point.Address
     }));
-    
-    // Вызываем расчет доставки
-    calculateDeliveryCost();
   };
 
   // Обработчик открытия модального окна BoxBerry
@@ -775,16 +777,17 @@ const CheckoutPage = () => {
                   {nameSuggestions.length > 0 && (
                     <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
                       {nameSuggestions.map((s, i) => (
-                        <div
+                        <button
                           key={i}
-                          className="suggestion-item px-2 py-1 hover-bg-light"
+                          type="button"
+                          className="w-100 text-start suggestion-item px-2 py-1 hover-bg-light border-0 bg-white"
                           onClick={() => {
                             setFormData(prev => ({ ...prev, fullName: s }));
                             setNameSuggestions([]);
                           }}
                         >
                           {s}
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -833,21 +836,7 @@ const CheckoutPage = () => {
                 <div className="delivery-options-container">
                   <div className="delivery-options-title">Способ доставки<span className="text-danger">*</span></div>
                   
-                  <div className={`delivery-option ${deliveryType === 'boxberry_courier' ? 'selected' : ''}`} 
-                    onClick={() => {
-                      // Проверяем, не является ли тип доставки недоступным
-                      if (disabledDeliveryTypes.includes('boxberry_courier')) {
-                        return;
-                      }
-                      
-                      // При клике на контейнер используем handleChange с синтетическим event объектом
-                      handleChange({
-                        target: {
-                          name: 'deliveryType',
-                          value: 'boxberry_courier'
-                        }
-                      });
-                    }}>
+                  <div className={`delivery-option ${deliveryType === 'boxberry_courier' ? 'selected' : ''}`}>
                     <input
                       className="form-check-input"
                       type="radio"
@@ -867,16 +856,7 @@ const CheckoutPage = () => {
                     </label>
                   </div>
                   
-                  <div className={`delivery-option ${deliveryType === 'boxberry_pickup_point' ? 'selected' : ''}`}
-                    onClick={() => {
-                      // При клике на контейнер используем handleChange с синтетическим event объектом
-                      handleChange({
-                        target: {
-                          name: 'deliveryType',
-                          value: 'boxberry_pickup_point'
-                        }
-                      });
-                    }}>
+                  <div className={`delivery-option ${deliveryType === 'boxberry_pickup_point' ? 'selected' : ''}`}>
                     <input
                       className="form-check-input"
                       type="radio"
@@ -892,16 +872,7 @@ const CheckoutPage = () => {
                     </label>
                   </div>
                   
-                  <div className={`delivery-option ${deliveryType === 'cdek_courier' ? 'selected' : ''}`}
-                    onClick={() => {
-                      // При клике на контейнер используем handleChange с синтетическим event объектом
-                      handleChange({
-                        target: {
-                          name: 'deliveryType',
-                          value: 'cdek_courier'
-                        }
-                      });
-                    }}>
+                  <div className={`delivery-option ${deliveryType === 'cdek_courier' ? 'selected' : ''}`}>
                     <input
                       className="form-check-input"
                       type="radio"
@@ -917,16 +888,7 @@ const CheckoutPage = () => {
                     </label>
                   </div>
                   
-                  <div className={`delivery-option ${deliveryType === 'cdek_pickup_point' ? 'selected' : ''}`}
-                    onClick={() => {
-                      // При клике на контейнер используем handleChange с синтетическим event объектом
-                      handleChange({
-                        target: {
-                          name: 'deliveryType',
-                          value: 'cdek_pickup_point'
-                        }
-                      });
-                    }}>
+                  <div className={`delivery-option ${deliveryType === 'cdek_pickup_point' ? 'selected' : ''}`}>
                     <input
                       className="form-check-input"
                       type="radio"
@@ -976,25 +938,15 @@ const CheckoutPage = () => {
                 <div className="payment-options-container mb-4">
                   <div className="payment-options-title">Способ оплаты<span className="text-danger">*</span></div>
                   
-                  <div className={`payment-option ${isPaymentOnDelivery ? 'selected' : ''}`}
-                    onClick={() => {
-                      if (!isPaymentOnDelivery) {
-                        // Вызываем перерасчет доставки с точным значением только если значение меняется
-                        calculateDeliveryCost(true);
-                        // После расчета делаем setState
-                        setIsPaymentOnDelivery(true);
-                      }
-                    }}>
+                  <div className={`payment-option ${isPaymentOnDelivery ? 'selected' : ''}`}>
                     <input
                       className="form-check-input"
                       type="radio"
                       name="paymentMethod"
                       id="payment_on_delivery"
+                      value="on_delivery"
                       checked={isPaymentOnDelivery}
-                      onChange={(e) => {
-                        // onChange срабатывает только при изменении через элемент формы
-                        // избегаем вызова здесь, так как onClick на родителе уже делает необходимые действия
-                      }}
+                      onChange={handleChange}
                       required
                     />
                     <label className="form-check-label" htmlFor="payment_on_delivery">
@@ -1002,25 +954,15 @@ const CheckoutPage = () => {
                     </label>
                   </div>
                   
-                  <div className={`payment-option ${!isPaymentOnDelivery ? 'selected' : ''}`}
-                    onClick={() => {
-                      if (isPaymentOnDelivery) {
-                        // Вызываем перерасчет доставки с точным значением только если значение меняется
-                        calculateDeliveryCost(false);
-                        // После расчета делаем setState 
-                        setIsPaymentOnDelivery(false);
-                      }
-                    }}>
+                  <div className={`payment-option ${!isPaymentOnDelivery ? 'selected' : ''}`}>
                     <input
                       className="form-check-input"
                       type="radio"
                       name="paymentMethod"
                       id="payment_on_site"
+                      value="on_site"
                       checked={!isPaymentOnDelivery}
-                      onChange={(e) => {
-                        // onChange срабатывает только при изменении через элемент формы
-                        // избегаем вызова здесь, так как onClick на родителе уже делает необходимые действия
-                      }}
+                      onChange={handleChange}
                       required
                     />
                     <label className="form-check-label" htmlFor="payment_on_site">
@@ -1044,31 +986,29 @@ const CheckoutPage = () => {
                   {!isBoxberryDelivery && addressOptions.length > 0 && (
                     <div className="suggestions-list position-absolute bg-white border w-100" style={{ zIndex: 1000 }}>
                       {addressOptions.map((opt, i) => (
-                        <div
+                        <button
                           key={i}
-                          className="suggestion-item hover-bg-light"
+                          type="button"
+                          className="w-100 text-start suggestion-item hover-bg-light border-0 bg-white"
                           onClick={() => {
                             // Сохраняем полные данные о выбранном адресе для расчета доставки
                             setSelectedAddressData({
                               value: opt.value,
                               postal_code: opt.data.postal_code,
-                              city: opt.data.city || opt.data.settlement, // Используем название поселка, если город не указан
+                              city: opt.data.city || opt.data.settlement,
                               settlement: opt.data.settlement,
                               street: opt.data.street,
                               house: opt.data.house
                             });
-                            
                             setFormData(prev => ({ ...prev, delivery_address: opt.value }));
                             setAddressOptions([]);
-                            
-                            // Если это курьерская доставка Boxberry, запускаем расчет
                             if (deliveryType === 'boxberry_courier') {
                               calculateDeliveryCost();
                             }
                           }}
                         >
                           {opt.value}
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}

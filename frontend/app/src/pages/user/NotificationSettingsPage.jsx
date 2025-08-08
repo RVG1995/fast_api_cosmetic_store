@@ -42,10 +42,6 @@ const NotificationSettingsPage = () => {
     }
   };
 
-  const isEnabled = (eventType, field) => {
-    return settingsMap[eventType] ? settingsMap[eventType][field] : false;
-  };
-
   if (loading) return <div className="text-center py-5">Загрузка...</div>;
 
   return (

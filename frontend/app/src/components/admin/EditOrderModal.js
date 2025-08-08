@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Modal, Button, Form, Spinner, Alert, Row, Col, Table, Badge } from "react-bootstrap";
+import { Modal, Button, Form, Spinner, Alert, Row, Col, Table } from "react-bootstrap";
 import { deliveryAPI, adminAPI, productAPI } from "../../utils/api";
 import { formatPrice } from "../../utils/helpers";
 import BoxberryPickupModal from '../cart/BoxberryPickupModal';
@@ -235,27 +235,15 @@ const EditOrderModal = ({ order, show, onHide, onOrderUpdated, statuses }) => {
     setError(null);
     try {
       // 1. Сначала отправляем изменения товаров, если есть
-      let itemsChanged = false;
-      if (
-        editOrder.items.filter(i => !order.items.some(oi => oi.product_id === i.product_id)).length > 0 ||
-        Object.keys(
+      await adminAPI.updateOrderItems(order.id, {
+        items_to_add: editOrder.items.filter(i => !order.items.some(oi => oi.product_id === i.product_id)).map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+        items_to_update: Object.fromEntries(
           editOrder.items
             .filter(i => order.items.some(oi => oi.product_id === i.product_id && oi.quantity !== i.quantity))
             .map(i => [order.items.find(oi => oi.product_id === i.product_id).id, i.quantity])
-        ).length > 0 ||
-        order.items.filter(oi => !editOrder.items.some(i => i.product_id === oi.product_id)).length > 0
-      ) {
-        await adminAPI.updateOrderItems(order.id, {
-          items_to_add: editOrder.items.filter(i => !order.items.some(oi => oi.product_id === i.product_id)).map(i => ({ product_id: i.product_id, quantity: i.quantity })),
-          items_to_update: Object.fromEntries(
-            editOrder.items
-              .filter(i => order.items.some(oi => oi.product_id === i.product_id && oi.quantity !== i.quantity))
-              .map(i => [order.items.find(oi => oi.product_id === i.product_id).id, i.quantity])
-          ),
-          items_to_remove: order.items.filter(oi => !editOrder.items.some(i => i.product_id === oi.product_id)).map(i => i.id)
-        });
-        itemsChanged = true;
-      }
+        ),
+        items_to_remove: order.items.filter(oi => !editOrder.items.some(i => i.product_id === oi.product_id)).map(i => i.id)
+      });
       // 2. Затем отправляем основные поля заказа (без товаров)
       const updateData = {
         delivery_info: {
@@ -299,7 +287,7 @@ const EditOrderModal = ({ order, show, onHide, onOrderUpdated, statuses }) => {
       <Modal.Body>
         {isBlocked && (
           <Alert variant="warning">
-            Редактирование заказа недоступно для статуса "{order.status?.name}"
+            Редактирование заказа недоступно для статуса &quot;{order.status?.name}&quot;
           </Alert>
         )}
         {error && <Alert variant="danger">{error}</Alert>}
@@ -404,14 +392,14 @@ const EditOrderModal = ({ order, show, onHide, onOrderUpdated, statuses }) => {
                   {addressOptions.length > 0 && (
                     <div className="position-absolute w-100 border bg-white shadow-sm" style={{ zIndex: 1000, maxHeight: 300, overflowY: 'auto' }}>
                       {addressOptions.map((s, idx) => (
-                        <div
+                        <button
                           key={idx}
-                          className="p-2 border-bottom search-result-item"
-                          style={{ cursor: "pointer" }}
+                          type="button"
+                          className="w-100 text-start p-2 border-0 bg-white border-bottom search-result-item"
                           onClick={() => handleSelectAddress(s)}
                         >
                           {s.value}
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -480,14 +468,14 @@ const EditOrderModal = ({ order, show, onHide, onOrderUpdated, statuses }) => {
             {productSearchResults.length > 0 && (
               <div className="border bg-white position-absolute w-100" style={{ zIndex: 1000 }}>
                 {productSearchResults.map(p => (
-                  <div
+                  <button
                     key={p.id}
-                    className="p-2 border-bottom"
-                    style={{ cursor: "pointer" }}
+                    type="button"
+                    className="w-100 text-start p-2 border-0 bg-white border-bottom"
                     onClick={() => handleAddProduct(p)}
                   >
                     {p.name} (ID: {p.id}, {formatPrice(p.price)}, остаток: {p.stock})
-                  </div>
+                  </button>
                 ))}
               </div>
             )}

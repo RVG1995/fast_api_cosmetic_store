@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { 
   Container, Row, Col, Card, Table, Badge, Button, 
   Spinner, Alert, ListGroup, Image
 } from 'react-bootstrap';
 import axios from 'axios';
 import { formatDateTime } from '../../utils/dateUtils';
-import { API_URLS, STORAGE_KEYS } from '../../utils/constants';
+import { API_URLS } from '../../utils/constants';
 import AdminBackButton from '../../components/common/AdminBackButton';
 
 const AdminCartDetail = () => {
   const { cartId } = useParams();
-  const navigate = useNavigate();
   const [cart, setCart] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,10 +53,6 @@ const AdminCartDetail = () => {
 
     fetchCartDetails();
   }, [cartId]);
-
-  const handleBackClick = () => {
-    navigate('/admin/carts');
-  };
 
   if (loading) {
     return (

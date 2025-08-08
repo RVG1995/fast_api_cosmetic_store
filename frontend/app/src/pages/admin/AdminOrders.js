@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Badge, Card, Form, Row, Col, Pagination, Modal } from 'react-bootstrap';
+import { Table, Button, Card, Form, Row, Col, Pagination, Modal } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { useOrders } from '../../context/OrderContext';
 import { formatDateTime } from '../../utils/dateUtils';

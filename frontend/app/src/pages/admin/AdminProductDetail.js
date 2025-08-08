@@ -724,7 +724,11 @@ const AdminProductDetail = () => {
           {isModalOpen && (
             <div 
               className="modal-backdrop fade show" 
+              role="button"
+              tabIndex={0}
+              aria-label="Закрыть модальное окно"
               onClick={handleCloseModal}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCloseModal(); }}
             ></div>
           )}
         </>

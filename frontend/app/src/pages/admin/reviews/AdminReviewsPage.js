@@ -16,11 +16,6 @@ const AdminReviewsPage = () => {
     setCurrentPage(page);
   };
 
-  // Обработчик просмотра деталей отзыва
-  const handleViewReview = (reviewId) => {
-    navigate(`${ROUTES.ADMIN_REVIEWS}/${reviewId}`);
-  };
-
   // Обработчик поиска
   const handleSearch = (e) => {
     e.preventDefault();

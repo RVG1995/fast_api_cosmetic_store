@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card } from 'react-bootstrap';
-import { formatDate } from '../../utils/helpers';
+import { formatDate } from '../../utils/dateUtils';
 
 const AdminCommentSection = ({ comments }) => {
   // Если нет комментариев, ничего не отображаем

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Table, Container, Button, Form, InputGroup, Row, Col, Badge, Spinner, Alert } from 'react-bootstrap';
 import axios from 'axios';
 import { formatDateTime } from '../../utils/dateUtils';
-import { API_URLS, STORAGE_KEYS } from '../../utils/constants';
+import { API_URLS } from '../../utils/constants';
 
 const AdminCarts = () => {
   const [carts, setCarts] = useState([]);

@@ -127,11 +127,6 @@ const ProductDetailPage = () => {
     }
   }, [relatedProducts, fetchBatchProductRatings]);
 
-  const handleToggleFavorite = async () => {
-    if (isFavorite(product.id)) await removeFavorite(product.id);
-    else await addFavorite(product.id);
-  };
-
   if (loading) {
     return (
       <div className="product-detail-container loading">

@@ -1,6 +1,7 @@
 import { useFavorites } from '../../context/FavoritesContext';
 import { useAuth } from '../../context/AuthContext';
-import { useState } from 'react';
+import React from 'react';
+import PropTypes from 'prop-types';
 
 const FavoriteButton = ({ productId, disabled }) => {
   const { isFavorite, addFavorite, removeFavorite, loading } = useFavorites();
@@ -38,3 +39,8 @@ const FavoriteButton = ({ productId, disabled }) => {
 };
 
 export default FavoriteButton; 
+
+FavoriteButton.propTypes = {
+  productId: PropTypes.number.isRequired,
+  disabled: PropTypes.bool,
+};

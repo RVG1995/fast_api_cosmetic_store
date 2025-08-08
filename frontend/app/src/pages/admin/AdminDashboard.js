@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminAPI } from '../../utils/api';
-import { formatPrice, formatDate } from '../../utils/helpers';
+import { formatPrice } from '../../utils/helpers';
 import '../../styles/AdminDashboard.css';
 
 const AdminDashboard = () => {

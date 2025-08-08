@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Form, Button, Container, Row, Col, Card, Alert, Spinner } from 'react-bootstrap';
-import { adminAPI } from '../../utils/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Form, Button, Container, Row, Col, Alert, Spinner } from 'react-bootstrap';
+import { adminAPI, deliveryAPI } from '../../utils/api';
 import { useOrders } from '../../context/OrderContext';
 import { debounce } from 'lodash';
 import { formatPrice } from '../../utils/helpers';
@@ -8,7 +8,6 @@ import { API_URLS } from '../../utils/constants';
 import axios from 'axios';
 import BoxberryPickupModal from '../cart/BoxberryPickupModal';
 import './AdminOrderForm.css';
-import { deliveryAPI } from '../../utils/api';
 
 const AdminOrderForm = ({ onClose, onSuccess }) => {
   // Состояние формы
@@ -68,7 +67,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   const [selectedAddressData, setSelectedAddressData] = useState(null);
 
   // Получаем методы из контекста заказов
-  const { getOrderStatuses, createAdminOrder, checkPromoCode, calculateDiscount } = useOrders();
+  const { getOrderStatuses, createAdminOrder, checkPromoCode } = useOrders();
 
   // Загрузка статусов заказа
   useEffect(() => {
@@ -273,10 +272,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     });
   };
 
-  // Вычисляем общую сумму заказа
-  const totalPrice = useMemo(() => {
-    return formData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  }, [formData.items]);
+
 
   // Рассчитываем итоговую сумму заказа при изменении товаров
   useEffect(() => {
@@ -816,18 +812,18 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                     )}
                     {searchResults.length > 0 && !formData.user_id && (
                       <div className="position-absolute start-0 w-100 shadow bg-white rounded z-index-1000" style={{ zIndex: 1000 }}>
-                        <ul className="list-group">
+                        <div className="list-group">
                           {searchResults.map(user => (
-                            <li
+                            <button
                               key={user.id}
-                              className="list-group-item list-group-item-action"
-                              style={{ cursor: 'pointer' }}
+                              type="button"
+                              className="list-group-item list-group-item-action text-start"
                               onClick={() => handleSelectUser(user)}
                             >
                               {user.first_name} {user.last_name} ({user.email})
-                            </li>
+                            </button>
                           ))}
-                        </ul>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -971,18 +967,18 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                     />
                     {addressOptions.length > 0 && (
                       <div className="position-absolute start-0 w-100 shadow bg-white rounded z-index-1000" style={{ zIndex: 1000 }}>
-                        <ul className="list-group">
+                        <div className="list-group">
                           {addressOptions.map((address, index) => (
-                            <li
+                            <button
                               key={index}
-                              className="list-group-item list-group-item-action"
-                              style={{ cursor: 'pointer' }}
+                              type="button"
+                              className="list-group-item list-group-item-action text-start"
                               onClick={() => handleSelectAddress(address)}
                             >
                               {address.value}
-                            </li>
+                            </button>
                           ))}
-                        </ul>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1090,18 +1086,18 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                     )}
                     {products.length > 0 && (
                       <div className="position-absolute start-0 w-100 shadow bg-white rounded" style={{ zIndex: 1000 }}>
-                        <ul className="list-group">
+                        <div className="list-group">
                           {products.map(product => (
-                            <li
+                            <button
                               key={product.id}
-                              className="list-group-item list-group-item-action"
-                              style={{ cursor: 'pointer' }}
+                              type="button"
+                              className="list-group-item list-group-item-action text-start"
                               onClick={() => handleSelectProduct(product)}
                             >
                               {product.name} - {formatPrice(product.price)}
-                            </li>
+                            </button>
                           ))}
-                        </ul>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1185,14 +1181,14 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
                         {appliedPromoCode && discountAmount > 0 ? (
                           <>
                             <span style={{ textDecoration: 'line-through', color: '#999' }}>
-                              {formatPrice(totalPrice)} ₽
+                              {formatPrice(orderTotal)} ₽
                             </span>{' '}
                             <span className="text-success">
-                              {formatPrice(totalPrice - discountAmount)} ₽
+                              {formatPrice(orderTotal - discountAmount)} ₽
                             </span>
                           </>
                         ) : (
-                          formatPrice(totalPrice)
+                          formatPrice(orderTotal)
                         )}
                       </th>
                       <th></th>

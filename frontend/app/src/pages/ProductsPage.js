@@ -9,7 +9,6 @@ import FilterSidebar from '../components/filters/FilterSidebar';
 import Pagination from '../components/common/Pagination';
 import '../styles/ProductsPage.css';
 import { useReviews } from '../context/ReviewContext';
-import FavoriteButton from '../components/atoms/FavoriteButton';
 import { useFavorites } from '../context/FavoritesContext';
 
 /**
@@ -30,7 +29,7 @@ const ProductsPage = () => {
   
   const { fetchBatchProductRatings, productRatings } = useReviews();
   
-  const { isFavorite, addFavorite, removeFavorite, loading: favLoading } = useFavorites();
+  const { isFavorite, addFavorite, removeFavorite } = useFavorites();
   
   // Параметры фильтрации и сортировки
   const filters = useMemo(() => ({

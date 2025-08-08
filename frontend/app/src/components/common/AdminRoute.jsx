@@ -9,39 +9,27 @@ const AdminRoute = ({ children, requireSuperAdmin = false }) => {
   const [permissionLoading, setPermissionLoading] = useState(true);
 
   useEffect(() => {
-    console.log("AdminRoute: Проверка прав доступа...");
-    console.log("Текущий пользователь:", user);
-    console.log("Требуется super admin:", requireSuperAdmin);
-    
-    const checkAccess = async () => {
-      if (!user) {
-        console.log("AdminRoute: Пользователь не авторизован");
-        setPermissionLoading(false);
-        return;
-      }
+    if (!user || loading || !checkPermission) return;
 
+    let cancelled = false;
+    setPermissionLoading(true);
+
+    const checkAccess = async () => {
       try {
-        // Проверяем соответствующие разрешения через API
         const permission = requireSuperAdmin ? 'super_admin_access' : 'admin_access';
-        console.log(`AdminRoute: Запрашиваем разрешение ${permission}`);
-        
-        // Непосредственный вызов проверки разрешений
         const hasAccess = await checkPermission(permission);
-        console.log(`AdminRoute: Результат проверки разрешения:`, hasAccess);
-        
-        setHasPermission(hasAccess);
-      } catch (error) {
-        console.error('AdminRoute: Ошибка при проверке разрешений:', error);
-        setHasPermission(false);
+        if (!cancelled) setHasPermission(hasAccess);
+      } catch {
+        if (!cancelled) setHasPermission(false);
       } finally {
-        setPermissionLoading(false);
+        if (!cancelled) setPermissionLoading(false);
       }
     };
 
-    if (checkPermission && !loading) {
-      checkAccess();
-    }
-  }, [user, requireSuperAdmin, checkPermission, loading]);
+    checkAccess();
+
+    return () => { cancelled = true; };
+  }, [user?.id, requireSuperAdmin, checkPermission, loading]);
 
   // Добавляем дополнительное логирование
   useEffect(() => {

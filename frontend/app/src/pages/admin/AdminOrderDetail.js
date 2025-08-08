@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Card, Row, Col, Table, Badge, Button, Form, Alert, Spinner, Modal, Container } from 'react-bootstrap';
 import { useOrders } from '../../context/OrderContext';
 import { useAuth } from '../../context/AuthContext';
@@ -613,7 +613,6 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
 
 const AdminOrderDetail = () => {
   const { orderId } = useParams();
-  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const { 
     loading: contextLoading, 
@@ -636,10 +635,6 @@ const AdminOrderDetail = () => {
   const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [updateData, setUpdateData] = useState({
-    delivery_type: '',
-    boxberry_point_address: ''
-  });
   const [deliveryData, setDeliveryData] = useState({
     delivery_type: '',
     delivery_address: ''

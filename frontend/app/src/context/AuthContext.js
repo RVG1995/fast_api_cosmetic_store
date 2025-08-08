@@ -163,21 +163,9 @@ export const AuthProvider = ({ children }) => {
   const checkPermission = async (permission, resourceType, resourceId) => {
     try {
       if (!user) return false;
-      
       console.log('Вызов checkPermission с параметрами:', { permission, resourceType, resourceId });
-      
       const res = await authAPI.checkPermissions(permission, resourceType, resourceId);
       console.log('Результат проверки разрешений:', res.data);
-      
-      // Если получили информацию об админских правах - обновляем состояние пользователя
-      if (res.data?.is_admin !== undefined) {
-        setUser(prevUser => ({
-          ...prevUser,
-          is_admin: res.data.is_admin,
-          is_super_admin: res.data.is_super_admin
-        }));
-      }
-      
       return res.data?.has_permission === true;
     } catch (error) {
       console.error("Ошибка при проверке разрешений:", error);

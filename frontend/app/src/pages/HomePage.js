@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { productAPI } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import '../styles/HomePage.css';
-import { API_URLS } from '../utils/constants';
-import SimpleAddToCartButton from '../components/cart/SimpleAddToCartButton';
 import CartUpdater from '../components/cart/CartUpdater';
-import ProductRating from '../components/reviews/ProductRating';
 import { useReviews } from '../context/ReviewContext';
-import { Badge } from 'react-bootstrap';
-import FavoriteButton from '../components/atoms/FavoriteButton';
 import { useFavorites } from '../context/FavoritesContext';
+import ProductCard from '../components/product/ProductCard';
+import ListLayout from '../components/common/ListLayout';
 
 const HomePage = () => {
   const [products, setProducts] = useState([]);
@@ -30,25 +27,13 @@ const HomePage = () => {
   });
 
   const { fetchBatchProductRatings, productRatings } = useReviews();
-  const { isFavorite, addFavorite, removeFavorite, loading: favLoading } = useFavorites();
+  const { isFavorite, addFavorite, removeFavorite } = useFavorites();
 
-  // Функция для форматирования URL изображения
-  const formatImageUrl = (imageUrl) => {
-    if (!imageUrl) return null;
-    
-    // Если URL начинается с http, значит он уже полный
-    if (imageUrl.startsWith('http')) {
-      return imageUrl;
-    }
-    
-    // Если URL начинается с /, то добавляем базовый URL продуктового сервиса
-    if (imageUrl.startsWith('/')) {
-      return `${API_URLS.PRODUCT}${imageUrl}`;
-    }
-    
-    // В противном случае просто возвращаем URL как есть
-    return imageUrl;
-  };
+  // Тоггл избранного
+  const handleToggleFavorite = useCallback(async (productId) => {
+    if (isFavorite(productId)) await removeFavorite(productId);
+    else await addFavorite(productId);
+  }, [isFavorite, addFavorite, removeFavorite]);
 
   // Функция для загрузки товаров с учетом пагинации и сортировки
   const fetchProducts = async (page = 1) => {
@@ -64,7 +49,7 @@ const HomePage = () => {
         console.log('API ответ продуктов (с сортировкой по рейтингу):', response);
         
         // Обновляем товары и информацию о пагинации
-        const { items, total, limit } = response.data;
+        const { items, total } = response.data;
         setProducts(Array.isArray(items) ? items : []);
         
         // Обновляем информацию о пагинации
@@ -151,68 +136,7 @@ const HomePage = () => {
     return products;
   }, [products, sortOption, productRatings, pagination.currentPage, pagination.pageSize]);
 
-  // Компонент пагинации
-  const Pagination = () => {
-    if (pagination.totalPages <= 1) return null;
-    
-    return (
-      <nav aria-label="Пагинация товаров">
-        <ul className="pagination justify-content-center">
-          <li className={`page-item ${pagination.currentPage === 1 ? 'disabled' : ''}`}>
-            <button 
-              className="page-link" 
-              onClick={() => handlePageChange(pagination.currentPage - 1)}
-              disabled={pagination.currentPage === 1}
-            >
-              &laquo; Назад
-            </button>
-          </li>
-          
-          {/* Генерируем страницы для отображения */}
-          {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
-            .filter(page => 
-              // Показываем первую, последнюю и страницы рядом с текущей
-              page === 1 || 
-              page === pagination.totalPages || 
-              Math.abs(page - pagination.currentPage) <= 2
-            )
-            .map((page, index, array) => {
-              // Добавляем многоточие перед первой страницей, если она не 1 или 2
-              const prevPage = index > 0 ? array[index - 1] : null;
-              const showEllipsisBefore = prevPage !== null && page - prevPage > 1;
-              
-              return (
-                <React.Fragment key={page}>
-                  {showEllipsisBefore && (
-                    <li className="page-item disabled">
-                      <span className="page-link">...</span>
-                    </li>
-                  )}
-                  <li className={`page-item ${pagination.currentPage === page ? 'active' : ''}`}>
-                    <button 
-                      className="page-link" 
-                      onClick={() => handlePageChange(page)}
-                    >
-                      {page}
-                    </button>
-                  </li>
-                </React.Fragment>
-              );
-            })}
-          
-          <li className={`page-item ${pagination.currentPage === pagination.totalPages ? 'disabled' : ''}`}>
-            <button 
-              className="page-link" 
-              onClick={() => handlePageChange(pagination.currentPage + 1)}
-              disabled={pagination.currentPage === pagination.totalPages}
-            >
-              Вперед &raquo;
-            </button>
-          </li>
-        </ul>
-      </nav>
-    );
-  };
+  // Пагинация вынесена в общий компонент
 
   // Вспомогательная функция для проверки прав администратора
   const checkAdminRights = () => {
@@ -256,10 +180,16 @@ const HomePage = () => {
   return (
     <div className="home-page">
       <div className="container" style={{ maxWidth: '1200px' }}>
-        <div className="product-header">
-          <h2>Наши продукты</h2>
-          <div className="d-flex">
-            <div className="me-3">
+        <ListLayout
+          title="Наши продукты"
+          headerExtras={checkAdminRights() && (
+            <Link to="/admin/products" className="btn btn-primary">
+              <i className="bi bi-gear-fill me-1"></i>
+              Управление товарами
+            </Link>
+          )}
+          summary={(
+            <div className="d-flex align-items-center">
               <select 
                 className="form-select" 
                 value={sortOption} 
@@ -273,84 +203,39 @@ const HomePage = () => {
                 <option value="rating_desc">Рейтинг (по убыванию)</option>
               </select>
             </div>
-            {checkAdminRights() && (
-              <Link to="/admin/products" className="btn btn-primary">
-                <i className="bi bi-gear-fill me-1"></i>
-                Управление товарами
-              </Link>
-            )}
-          </div>
-        </div>
-        
-        <CartUpdater />
-        
-        {products.length === 0 ? (
-          <div className="no-products">
-            <p>Продукты не найдены</p>
-          </div>
-        ) : (
-          <>
-            <div className="product-cards row g-4">
-              {displayProducts.map(product => (
-                <div key={product.id} className="col-md-3">
-                  <div className="product-card position-relative">
-                    <div className="position-absolute top-0 end-0 p-2 z-2">
-                      <FavoriteButton
-                        productId={product.id}
-                        disabled={favLoading}
-                      />
-                    </div>
-                    <Link to={`/products/${product.id}`} className="product-image-container">
-                      {!product.image ? (
-                        <div className="no-image-placeholder">
-                          <i className="bi bi-image text-muted"></i>
-                          <span>Нет изображения</span>
-                        </div>
-                      ) : (
-                        <img 
-                          src={formatImageUrl(product.image)}
-                          alt={product.name}
-                          className="product-image"
-                        />
-                      )}
-                    </Link>
-                    <div className="product-details">
-                      <Link to={`/products/${product.id}`} className="product-title-link">
-                        <h3>{product.name}</h3>
-                      </Link>
-                      <ProductRating productId={product.id} size="sm" />
-                      <p className="price">{product.price} руб.</p>
-                      <p className="description">{product.description}</p>
-                      <div className="stock-status mb-2">
-                        {product.stock > 0 ? (
-                          <Badge bg="success" pill>В наличии ({product.stock} шт.)</Badge>
-                        ) : (
-                          <Badge bg="secondary" pill>Нет в наличии</Badge>
-                        )}
-                      </div>
-                      <SimpleAddToCartButton 
-                        productId={product.id}
-                        stock={product.stock}
-                        className="w-100"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            {/* Отображаем пагинацию */}
-            <Pagination />
-            
-            {/* Отображаем информацию о пагинации */}
+          )}
+          loading={loading}
+          error={error}
+          empty={products.length === 0}
+          emptyNode={<div className="no-products"><p>Продукты не найдены</p></div>}
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          onPageChange={handlePageChange}
+          footer={(
             <div className="pagination-info text-center mt-3">
               <p>
                 Показано {products.length} из {pagination.totalItems} товаров 
                 (Страница {pagination.currentPage} из {pagination.totalPages})
               </p>
             </div>
-          </>
-        )}
+          )}
+        >
+        
+        <CartUpdater />
+        
+            <div className="product-cards row g-4">
+              {displayProducts.map(product => (
+                <div key={product.id} className="col-md-3">
+                  <ProductCard 
+                    product={product}
+                    isFavorite={isFavorite(product.id)}
+                    onToggleFavorite={() => handleToggleFavorite(product.id)}
+                  />
+                </div>
+              ))}
+            </div>
+            
+        </ListLayout>
       </div>
     </div>
   );

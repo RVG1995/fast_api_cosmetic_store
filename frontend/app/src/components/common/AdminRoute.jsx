@@ -2,6 +2,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
 import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 
 const AdminRoute = ({ children, requireSuperAdmin = false }) => {
   const { user, loading, checkPermission } = useAuth();
@@ -29,7 +30,7 @@ const AdminRoute = ({ children, requireSuperAdmin = false }) => {
     checkAccess();
 
     return () => { cancelled = true; };
-  }, [user?.id, requireSuperAdmin, checkPermission, loading]);
+  }, [user, user?.id, requireSuperAdmin, checkPermission, loading]);
 
   // Добавляем дополнительное логирование
   useEffect(() => {
@@ -61,3 +62,8 @@ const AdminRoute = ({ children, requireSuperAdmin = false }) => {
 };
 
 export default AdminRoute;
+
+AdminRoute.propTypes = {
+  children: PropTypes.node.isRequired,
+  requireSuperAdmin: PropTypes.bool,
+};

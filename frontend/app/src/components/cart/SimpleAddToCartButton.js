@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PropTypes from 'prop-types';
 import { useCart } from '../../context/CartContext';
 import './SimpleAddToCartButton.css';
 
@@ -104,3 +105,9 @@ const SimpleAddToCartButton = ({ productId, stock, className = '' }) => {
 };
 
 export default SimpleAddToCartButton; 
+
+SimpleAddToCartButton.propTypes = {
+  productId: PropTypes.number.isRequired,
+  stock: PropTypes.number.isRequired,
+  className: PropTypes.string,
+};

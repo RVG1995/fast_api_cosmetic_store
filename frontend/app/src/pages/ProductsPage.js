@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Container, Row, Col, Card, Button, Spinner } from 'react-bootstrap';
+import { Container, Row, Col, Card, Button } from 'react-bootstrap';
 import { useSearchParams } from 'react-router-dom';
 import { productAPI } from '../utils/api';
 import { useCategories } from '../context/CategoryContext';
 import ErrorMessage from '../components/common/ErrorMessage';
 import ProductCard from '../components/product/ProductCard';
 import FilterSidebar from '../components/filters/FilterSidebar';
-import Pagination from '../components/common/Pagination';
+// Pagination используется внутри ListLayout
+import ListLayout from '../components/common/ListLayout';
 import '../styles/ProductsPage.css';
 import { useReviews } from '../context/ReviewContext';
 import { useFavorites } from '../context/FavoritesContext';
@@ -41,7 +42,7 @@ const ProductsPage = () => {
     max_price: searchParams.get('max_price') || '',
     is_available: searchParams.get('in_stock') === 'true',
     search: searchParams.get('search') || '',
-    sort: searchParams.get('sort') || 'name_asc',
+    sort: searchParams.get('sort') || 'newest',
     page: parseInt(searchParams.get('page') || '1', 10),
     limit: parseInt(searchParams.get('limit') || '12', 10)
   }), [searchParams]);
@@ -261,60 +262,59 @@ const ProductsPage = () => {
         
         {/* Список товаров */}
         <Col lg={9}>
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <div>
-              {!loading && !error && (
-                <p className="text-muted mb-0">
-                  Найдено товаров: {totalProducts}
-                </p>
-              )}
-            </div>
-          </div>
-          
-          {loading ? (
-            <div className="text-center py-5">
-              <Spinner animation="border" variant="primary" />
-              <p className="mt-2">Загрузка товаров...</p>
-            </div>
-          ) : error ? (
-            <ErrorMessage message={error} />
-          ) : products.length === 0 ? (
-            <div className="text-center py-5">
-              <i className="bi bi-search fs-1 text-muted"></i>
-              <h4 className="mt-3">Товары не найдены</h4>
-              <p className="text-muted">
-                Попробуйте изменить параметры поиска или фильтрации.
-              </p>
-              <Button variant="outline-primary" onClick={handleResetFilters}>
-                Сбросить все фильтры
-              </Button>
-            </div>
-          ) : (
-            <>
-              <Row xs={1} sm={2} md={2} lg={3} className="g-4 mb-4">
-                {displayProducts.map(product => (
-                  <Col key={product.id} md={3} className="mb-4">
-                    <ProductCard
-                      product={product}
-                      isFavorite={isFavorite(product.id)}
-                      onToggleFavorite={handleToggleFavorite}
-                    />
-                  </Col>
-                ))}
-              </Row>
-              
-              {/* Пагинация */}
-              {totalPages > 1 && (
-                <div className="d-flex justify-content-center mt-4">
-                  <Pagination
-                    currentPage={filters.page}
-                    totalPages={totalPages}
-                    onPageChange={handlePageChange}
+          <ListLayout
+            title="Каталог товаров"
+            headerExtras={(
+              <div className="d-flex align-items-center gap-2">
+                <select
+                  className="form-select"
+                  value={filters.sort}
+                  onChange={e => handleFilterChange('sort', e.target.value)}
+                  aria-label="Сортировка товаров"
+                >
+                  <option value="newest">Новые сначала</option>
+                  <option value="price_asc">Цена (по возрастанию)</option>
+                  <option value="price_desc">Цена (по убыванию)</option>
+                  <option value="rating_asc">Рейтинг (по возрастанию)</option>
+                  <option value="rating_desc">Рейтинг (по убыванию)</option>
+                </select>
+              </div>
+            )}
+            summary={!loading && !error ? (
+              <p className="text-muted mb-0">Найдено товаров: {totalProducts}</p>
+            ) : null}
+            loading={loading}
+            error={error ? <ErrorMessage message={error} /> : null}
+            empty={products.length === 0}
+            emptyNode={(
+              <div className="text-center py-5">
+                <i className="bi bi-search fs-1 text-muted"></i>
+                <h4 className="mt-3">Товары не найдены</h4>
+                <p className="text-muted">Попробуйте изменить параметры поиска или фильтрации.</p>
+                <Button variant="outline-primary" onClick={handleResetFilters}>Сбросить все фильтры</Button>
+              </div>
+            )}
+            currentPage={filters.page}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+            footer={(!loading && !error) ? (
+              <div className="text-center text-muted mt-2">
+                Страница {filters.page} из {totalPages}
+              </div>
+            ) : null}
+          >
+            <Row xs={1} sm={2} md={2} lg={3} className="g-4 mb-4">
+              {displayProducts.map(product => (
+                <Col key={product.id} md={3} className="mb-4">
+                  <ProductCard
+                    product={product}
+                    isFavorite={isFavorite(product.id)}
+                    onToggleFavorite={handleToggleFavorite}
                   />
-                </div>
-              )}
-            </>
-          )}
+                </Col>
+              ))}
+            </Row>
+          </ListLayout>
         </Col>
       </Row>
     </Container>

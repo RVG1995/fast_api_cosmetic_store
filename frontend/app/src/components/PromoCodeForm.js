@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PropTypes from 'prop-types';
 import { Form, Button, Spinner } from 'react-bootstrap';
 import { useOrders } from '../context/OrderContext';
 
@@ -57,3 +58,9 @@ const PromoCodeForm = ({ email, phone, onPromoCodeApplied }) => {
 };
 
 export default PromoCodeForm; 
+
+PromoCodeForm.propTypes = {
+  email: PropTypes.string,
+  phone: PropTypes.string,
+  onPromoCodeApplied: PropTypes.func.isRequired,
+};

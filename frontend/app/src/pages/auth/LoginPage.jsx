@@ -47,34 +47,44 @@ function LoginPage() {
       <div className="w-full max-w-md p-6 bg-white rounded shadow">
         <h2 className="text-2xl font-bold mb-6 text-center">Вход</h2>
         {/* Если есть общая ошибка */}
-        {errors.general && (
-          <p className="mb-4 text-red-500">{errors.general}</p>
-        )}
+          {errors.general && (
+            <p className="mb-4 text-red-500" role="alert">{errors.general}</p>
+          )}
         <form onSubmit={handleLogin}>
           <div className="mb-4">
-            <label className="block text-gray-700 mb-1">Электронная почта:</label>
+              <label htmlFor="login-email" className="block text-gray-700 mb-1">Электронная почта:</label>
             <input 
               type="email" 
               value={email} 
-              onChange={(e) => setEmail(e.target.value)} 
-              required 
+                onChange={(e) => setEmail(e.target.value)} 
+                required 
+                id="login-email"
+                name="email"
+                autoComplete="email"
+                aria-invalid={Boolean(errors.email)}
+                aria-describedby={errors.email ? 'login-email-error' : undefined}
               className="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:border-blue-300"
             />
             {errors.email && (
-              <p className="text-red-500 text-sm mt-1">{errors.email}</p>
+                <p id="login-email-error" className="text-red-500 text-sm mt-1" role="alert">{errors.email}</p>
             )}
           </div>
           <div className="mb-4">
-            <label className="block text-gray-700 mb-1">Пароль:</label>
+              <label htmlFor="login-password" className="block text-gray-700 mb-1">Пароль:</label>
             <input 
               type="password" 
               value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
-              required 
+                onChange={(e) => setPassword(e.target.value)} 
+                required 
+                id="login-password"
+                name="password"
+                autoComplete="current-password"
+                aria-invalid={Boolean(errors.password)}
+                aria-describedby={errors.password ? 'login-password-error' : undefined}
               className="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:border-blue-300"
             />
             {errors.password && (
-              <p className="text-red-500 text-sm mt-1">{errors.password}</p>
+                <p id="login-password-error" className="text-red-500 text-sm mt-1" role="alert">{errors.password}</p>
             )}
           </div>
           <button type="submit" className="w-full py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 transition duration-200">

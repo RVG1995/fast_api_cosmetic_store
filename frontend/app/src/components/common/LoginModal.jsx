@@ -1,6 +1,7 @@
 import Modal from 'react-bootstrap/Modal';
 import Button from 'react-bootstrap/Button';
 import React from 'react';
+import PropTypes from 'prop-types';
 
 const LoginModal = ({ onClose }) => {
   return (
@@ -20,3 +21,7 @@ const LoginModal = ({ onClose }) => {
 };
 
 export default LoginModal; 
+
+LoginModal.propTypes = {
+  onClose: PropTypes.func.isRequired,
+};

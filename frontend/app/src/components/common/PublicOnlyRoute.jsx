@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
+import PropTypes from 'prop-types';
 
 const PublicOnlyRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -17,3 +18,7 @@ const PublicOnlyRoute = ({ children }) => {
 };
 
 export default PublicOnlyRoute; 
+
+PublicOnlyRoute.propTypes = {
+  children: PropTypes.node.isRequired,
+};

@@ -92,72 +92,97 @@ function RegistrationPage() {
         <h2 className="text-2xl font-bold mb-6 text-center">Регистрация</h2>
         {/* Если есть общая ошибка */}
         {errors.general && (
-          <p className="mb-4 text-red-500">{errors.general}</p>
+          <p className="mb-4 text-red-500" role="alert">{errors.general}</p>
         )}
         <form onSubmit={handleRegistration}>
           <div className="mb-4">
-            <label className="block text-gray-700 mb-1">Имя пользователя:</label>
+            <label htmlFor="reg-first-name" className="block text-gray-700 mb-1">Имя пользователя:</label>
             <input 
               type="text" 
               value={firstName} 
               onChange={(e) => setFirstName(e.target.value)} 
               required 
+              id="reg-first-name"
+              name="first_name"
+              autoComplete="given-name"
+              aria-invalid={Boolean(errors.first_name)}
+              aria-describedby={errors.first_name ? 'reg-first-name-error' : undefined}
               className="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:border-blue-300"
             />
             {errors.first_name && (
-              <p className="text-red-500 text-sm mt-1">{errors.first_name}</p>
+              <p id="reg-first-name-error" className="text-red-500 text-sm mt-1" role="alert">{errors.first_name}</p>
             )}
           </div>
           <div className="mb-4">
-            <label className="block text-gray-700 mb-1">Фамилия пользователя:</label>
+            <label htmlFor="reg-last-name" className="block text-gray-700 mb-1">Фамилия пользователя:</label>
             <input 
               type="text" 
               value={lastName} 
               onChange={(e) => setLastName(e.target.value)} 
               required 
+              id="reg-last-name"
+              name="last_name"
+              autoComplete="family-name"
+              aria-invalid={Boolean(errors.last_name)}
+              aria-describedby={errors.last_name ? 'reg-last-name-error' : undefined}
               className="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:border-blue-300"
             />
             {errors.last_name && (
-              <p className="text-red-500 text-sm mt-1">{errors.last_name}</p>
+              <p id="reg-last-name-error" className="text-red-500 text-sm mt-1" role="alert">{errors.last_name}</p>
             )}
           </div>
           <div className="mb-4">
-            <label className="block text-gray-700 mb-1">Электронная почта:</label>
+            <label htmlFor="reg-email" className="block text-gray-700 mb-1">Электронная почта:</label>
             <input 
               type="email" 
               value={email} 
               onChange={(e) => setEmail(e.target.value)} 
               required 
+              id="reg-email"
+              name="email"
+              autoComplete="email"
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby={errors.email ? 'reg-email-error' : undefined}
               className="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:border-blue-300"
             />
             {errors.email && (
-              <p className="text-red-500 text-sm mt-1">{errors.email}</p>
+              <p id="reg-email-error" className="text-red-500 text-sm mt-1" role="alert">{errors.email}</p>
             )}
           </div>
           <div className="mb-4">
-            <label className="block text-gray-700 mb-1">Пароль:</label>
+            <label htmlFor="reg-password" className="block text-gray-700 mb-1">Пароль:</label>
             <input 
               type="password" 
               value={password} 
               onChange={(e) => setPassword(e.target.value)} 
               required 
+              id="reg-password"
+              name="password"
+              autoComplete="new-password"
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={errors.password ? 'reg-password-error' : undefined}
               className="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:border-blue-300"
             />
             {errors.password && (
-              <p className="text-red-500 text-sm mt-1">{errors.password}</p>
+              <p id="reg-password-error" className="text-red-500 text-sm mt-1" role="alert">{errors.password}</p>
             )}
           </div>
           <div className="mb-4">
-            <label className="block text-gray-700 mb-1">Подтвердите пароль:</label>
+            <label htmlFor="reg-confirm-password" className="block text-gray-700 mb-1">Подтвердите пароль:</label>
             <input 
               type="password" 
               value={confirmPassword} 
               onChange={(e) => setConfirmPassword(e.target.value)} 
               required 
+              id="reg-confirm-password"
+              name="confirm_password"
+              autoComplete="new-password"
+              aria-invalid={Boolean(errors.confirm_password)}
+              aria-describedby={errors.confirm_password ? 'reg-confirm-password-error' : undefined}
               className="w-full px-3 py-2 border rounded focus:outline-none focus:ring focus:border-blue-300"
             />
             {errors.confirm_password && (
-              <p className="text-red-500 text-sm mt-1">{errors.confirm_password}</p>
+              <p id="reg-confirm-password-error" className="text-red-500 text-sm mt-1" role="alert">{errors.confirm_password}</p>
             )}
           </div>
           
@@ -177,7 +202,7 @@ function RegistrationPage() {
               </label>
             </div>
             {errors.personalDataAgreement && (
-              <p className="text-red-500 text-sm mt-1">{errors.personalDataAgreement}</p>
+              <p className="text-red-500 text-sm mt-1" role="alert">{errors.personalDataAgreement}</p>
             )}
           </div>
           

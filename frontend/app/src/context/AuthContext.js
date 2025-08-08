@@ -183,7 +183,7 @@ export const AuthProvider = ({ children }) => {
       console.error("Ошибка при получении профиля:", error);
       return null;
     }
-  }, []);
+  }, [user]);
 
   const contextValue = {
     user, 

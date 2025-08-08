@@ -11,7 +11,6 @@ import ReviewStats from '../components/reviews/ReviewStats';
 import { useAuth } from '../context/AuthContext';
 import { useReviews } from '../context/ReviewContext';
 import FavoriteButton from '../components/atoms/FavoriteButton';
-import { useFavorites } from '../context/FavoritesContext';
 
 const ProductDetailPage = () => {
   const { productId } = useParams();
@@ -23,7 +22,7 @@ const ProductDetailPage = () => {
   const [reviewReloadKey, setReviewReloadKey] = useState(0);
   const { user } = useAuth();
   const { fetchBatchProductRatings } = useReviews();
-  const { isFavorite, addFavorite, removeFavorite, loading: favLoading } = useFavorites();
+  const { loading: favLoading } = useFavorites();
 
   // Функция для форматирования URL изображения
   const formatImageUrl = (imageUrl) => {

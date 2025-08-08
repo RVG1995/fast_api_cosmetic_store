@@ -165,9 +165,10 @@ export default function BoxberryFunnelAdminBlock() {
           <Modal.Body>
             <form onSubmit={handleSave}>
               <div className="mb-3">
-                <label className="form-label">Статус Boxberry</label>
+                <label className="form-label" htmlFor="boxberryStatusSelect">Статус Boxberry</label>
                 <div style={{overflowX: 'auto', minWidth: 0}}>
                   <select
+                    id="boxberryStatusSelect"
                     className="form-select"
                     style={{minWidth: 400, maxWidth: '100%'}}
                     value={editRule.boxberry_status_code}
@@ -186,9 +187,10 @@ export default function BoxberryFunnelAdminBlock() {
                 </div>
               </div>
               <div className="mb-3">
-                <label className="form-label">Статус заказа</label>
+                <label className="form-label" htmlFor="orderStatusSelect">Статус заказа</label>
                 <div style={{overflowX: 'auto', minWidth: 0}}>
                   <select
+                    id="orderStatusSelect"
                     className="form-select"
                     style={{minWidth: 300, maxWidth: '100%'}}
                     value={editRule.order_status_id}

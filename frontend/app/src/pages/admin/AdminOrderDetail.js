@@ -14,7 +14,9 @@ import AdminBackButton from '../../components/common/AdminBackButton';
 import { API_URLS } from '../../utils/constants';
 import EditOrderModal from '../../components/admin/EditOrderModal';
 
-// Компонент для редактирования товаров в заказе
+// Компонент для редактирования товаров в заказе (не используется на странице деталей)
+// Удалено из экспорта страницы для устранения предупреждений линтера
+/* eslint-disable no-unused-vars */
 const OrderItemsEditor = ({ order, onOrderUpdated }) => {
   const { updateOrderItems, getAdminOrderById } = useOrders();
   const [availableProducts, setAvailableProducts] = useState([]);
@@ -422,11 +424,11 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
                     {showSearchResults && searchResults.length > 0 && (
                       <div className="position-absolute w-100 mt-1 border rounded bg-white shadow-sm" style={{ zIndex: 1000, maxHeight: "300px", overflowY: "auto" }}>
                         {searchResults.map(product => (
-                          <div
+                          <button
                             key={product.id}
-                            className="p-2 border-bottom search-result-item"
+                            type="button"
+                            className="w-100 text-start p-2 border-0 bg-white border-bottom search-result-item"
                             onClick={() => handleSelectSearchResult(product)}
-                            style={{ cursor: "pointer" }}
                           >
                             <div className="d-flex align-items-center">
                               <div className="me-2" style={{ width: "40px", height: "40px" }}>
@@ -450,7 +452,7 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
                                 </div>
                               </div>
                             </div>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -613,14 +615,13 @@ const OrderItemsEditor = ({ order, onOrderUpdated }) => {
 
 const AdminOrderDetail = () => {
   const { orderId } = useParams();
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const { 
     loading: contextLoading, 
     error: contextError, 
     getAdminOrderById, 
     updateOrderStatus,
     updateOrderPaymentStatus,
-    getOrderStatuses,
     createBoxberryParcel
   } = useOrders();
   
@@ -653,38 +654,92 @@ const AdminOrderDetail = () => {
   const [showBoxberryParcelModal, setShowBoxberryParcelModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   
+  // Функция для расчета стоимости доставки при обновлении
+  // Перенесена вверх и объявлена единожды
+  // NOTE: duplicate definition existed ниже; используем только эту версию
+  const calculateDeliveryCostForUpdate = useCallback(async (forcedPaymentOnDelivery = null) => {
+    try {
+      if (!deliveryData.delivery_type || !order.items || order.items.length === 0) {
+        return null;
+      }
+      if (deliveryData.delivery_type === 'boxberry_pickup_point') {
+        if (!selectedPickupPoint) {
+          setDeliveryError('Для расчета стоимости доставки необходимо выбрать пункт выдачи');
+          return null;
+        }
+      } else if (deliveryData.delivery_type === 'boxberry_courier') {
+        if (!deliveryData.delivery_address) {
+          setDeliveryError('Для расчета стоимости доставки необходимо указать адрес');
+          return null;
+        }
+        if (!selectedAddressData || !selectedAddressData.postal_code) {
+          setDeliveryError('Для расчета стоимости курьерской доставки необходим почтовый индекс. Выберите адрес из списка подсказок.');
+          return null;
+        }
+      }
+      const items = order.items.map(item => ({
+        product_id: item.product_id,
+        weight: item.product_weight || 500,
+        width: item.product_width || 10,
+        height: item.product_height || 10,
+        depth: item.product_depth || 10,
+        price: item.product_price,
+        quantity: item.quantity
+      }));
+      let requestData = {
+        items,
+        delivery_type: deliveryData.delivery_type,
+        is_payment_on_delivery: forcedPaymentOnDelivery !== null ? forcedPaymentOnDelivery : isPaymentOnDelivery
+      };
+      if (deliveryData.delivery_type === 'boxberry_pickup_point' && selectedPickupPoint) {
+        requestData.pvz_code = selectedPickupPoint.Code;
+      }
+      if (deliveryData.delivery_type === 'boxberry_courier' && selectedAddressData) {
+        requestData.zip_code = selectedAddressData.postal_code;
+        requestData.city_name = selectedAddressData.city || '';
+      }
+      const response = await deliveryAPI.calculateDeliveryFromCart(requestData);
+      setDeliveryError(null);
+      setCalculatedDeliveryCost(response);
+      return response;
+    } catch (error) {
+      if (error.response && error.response.data) {
+        const errorDetail = error.response.data.detail;
+        if (typeof errorDetail === 'string') {
+          if (errorDetail.toLowerCase().includes('курьерская доставка') && 
+              errorDetail.toLowerCase().includes('невозможна')) {
+            setDeliveryError(`${errorDetail} Пожалуйста, выберите другой адрес или пункт выдачи.`);
+          } else {
+            setDeliveryError(`Ошибка: ${errorDetail}`);
+          }
+        } else {
+          setDeliveryError(`Ошибка при расчете стоимости доставки: ${error.response?.status || 'неизвестная ошибка'}`);
+        }
+      } else {
+        setDeliveryError(`Ошибка при расчете стоимости доставки: ${error.message || 'неизвестная ошибка'}`);
+      }
+      return null;
+    }
+  }, [deliveryData.delivery_type, deliveryData.delivery_address, order, selectedPickupPoint, selectedAddressData, isPaymentOnDelivery]);
+
   // Эффект для автоматического расчета стоимости доставки при открытии формы
   useEffect(() => {
-    // Если форма открыта и есть данные заказа
     if (showDeliveryForm && order && deliveryData.delivery_type) {
-      // Проверяем, доступны ли данные для расчета
       const canCalculate = (
         (deliveryData.delivery_type === 'boxberry_pickup_point' && selectedPickupPoint) ||
         (deliveryData.delivery_type === 'boxberry_courier' && selectedAddressData && selectedAddressData.postal_code)
       );
-      
       if (canCalculate) {
-        // Запускаем расчет стоимости доставки
         setDeliveryLoading(true);
         calculateDeliveryCostForUpdate()
-          .then(result => {
-            if (result) {
-              console.log('Автоматический расчет стоимости доставки при открытии формы:', result);
-            }
-          })
-          .catch(err => {
-            console.error('Ошибка при автоматическом расчете стоимости доставки:', err);
-          })
-          .finally(() => {
-            setDeliveryLoading(false);
-          });
+          .finally(() => setDeliveryLoading(false));
       }
     }
-  }, [showDeliveryForm]);
+  }, [showDeliveryForm, order, deliveryData.delivery_type, selectedPickupPoint, selectedAddressData, calculateDeliveryCostForUpdate]);
   const [addressOptions, setAddressOptions] = useState([]); // Добавляем состояние для подсказок адресов DaData
   
   // Добавляем функцию получения подсказок адресов DaData
-  const fetchAddressSuggestions = async (query) => {
+  const fetchAddressSuggestions = useCallback(async (query) => {
     console.log('Dadata address fetch:', query);
     if (!query) {
       setAddressOptions([]);
@@ -700,7 +755,7 @@ const AdminOrderDetail = () => {
     } catch(e) { 
       console.error('DaData address error', e); 
     }
-  };
+  }, []);
   
   // Функция для выбора адреса из выпадающего списка
   const handleSelectAddress = (suggestion) => {
@@ -935,7 +990,7 @@ const AdminOrderDetail = () => {
         });
       }
     }
-  }, [showDeliveryForm, order]);
+  }, [showDeliveryForm, order, calculateDeliveryCostForUpdate]);
   
   // Загрузка деталей заказа и статусов
   useEffect(() => {
@@ -1163,10 +1218,10 @@ const AdminOrderDetail = () => {
   };
   
   // Проверка, можно ли редактировать товары в заказе
+  // Отключено предупреждение: функция оставлена для возможного будущего использования
+  // eslint-disable-next-line no-unused-vars
   const canEditItems = () => {
     if (!order || !order.status) return false;
-    
-    // Запрещаем редактирование для определенных статусов и для оплаченных заказов
     const nonEditableStatuses = ['Оплачен', 'Отправлен', 'Доставлен', 'Отменен'];
     return !nonEditableStatuses.includes(order.status.name) && !order.is_paid;
   };
@@ -1335,110 +1390,17 @@ const AdminOrderDetail = () => {
     }
   };
   
-  // Функция для расчета стоимости доставки при обновлении
-  const calculateDeliveryCostForUpdate = async (forcedPaymentOnDelivery = null) => {
-    try {
-      // Если нет выбранного типа доставки или товаров, не выполняем расчет
-      if (!deliveryData.delivery_type || !order.items || order.items.length === 0) {
-        return null;
-      }
-      
-      // Проверяем наличие необходимых данных для расчета
-      if (deliveryData.delivery_type === 'boxberry_pickup_point') {
-        // Обязательно нужен выбранный пункт
-        if (!selectedPickupPoint) {
-          setDeliveryError('Для расчета стоимости доставки необходимо выбрать пункт выдачи');
-          return null;
-        }
-      } else if (deliveryData.delivery_type === 'boxberry_courier') {
-        // Для курьерской доставки нужен адрес и почтовый индекс
-        if (!deliveryData.delivery_address) {
-          setDeliveryError('Для расчета стоимости доставки необходимо указать адрес');
-          return null;
-        }
-        
-        if (!selectedAddressData || !selectedAddressData.postal_code) {
-          setDeliveryError('Для расчета стоимости курьерской доставки необходим почтовый индекс. Выберите адрес из списка подсказок.');
-          return null;
-        }
-      }
-      
-      // Собираем данные о товарах для расчета
-      const items = order.items.map(item => ({
-        product_id: item.product_id, // Добавляем обязательное поле product_id
-        weight: item.product_weight || 500, // вес в граммах
-        width: item.product_width || 10,    // ширина в см
-        height: item.product_height || 10,  // высота в см
-        depth: item.product_depth || 10,    // глубина в см
-        price: item.product_price,
-        quantity: item.quantity
-      }));
-      
-      // Определяем данные для запроса в зависимости от типа доставки
-      let requestData = {
-        items: items,
-        delivery_type: deliveryData.delivery_type,
-        is_payment_on_delivery: forcedPaymentOnDelivery !== null ? forcedPaymentOnDelivery : isPaymentOnDelivery
-      };
-      
-      // Если выбран пункт выдачи BoxBerry, добавляем его код
-      if (deliveryData.delivery_type === 'boxberry_pickup_point' && selectedPickupPoint) {
-        requestData.pvz_code = selectedPickupPoint.Code;
-      }
-      
-      // Для курьерской доставки добавляем почтовый индекс
-      if (deliveryData.delivery_type === 'boxberry_courier' && selectedAddressData) {
-        requestData.zip_code = selectedAddressData.postal_code;
-        requestData.city_name = selectedAddressData.city || '';
-      }
-      
-      console.log('Отправляем запрос на расчет стоимости доставки:', requestData);
-      
-      // Выполняем запрос к API для расчета стоимости доставки
-      const response = await deliveryAPI.calculateDeliveryFromCart(requestData);
-      console.log('Получен ответ по стоимости доставки:', response);
-      
-      // Очищаем ошибку доставки
-      setDeliveryError(null);
-      
-      // Сохраняем результат расчета в состояние
-      setCalculatedDeliveryCost(response);
-      
-      return response;
-    } catch (error) {
-      console.error('Ошибка при расчете стоимости доставки:', error);
-      
-      // Проверяем наличие подробной информации об ошибке
-      if (error.response && error.response.data) {
-        const errorDetail = error.response.data.detail;
-        
-        // Анализируем сообщение об ошибке
-        if (typeof errorDetail === 'string') {
-          // Если это ошибка о недоступности курьерской доставки
-          if (errorDetail.toLowerCase().includes('курьерская доставка') && 
-              errorDetail.toLowerCase().includes('невозможна')) {
-            setDeliveryError(`${errorDetail} Пожалуйста, выберите другой адрес или пункт выдачи.`);
-          } else {
-            setDeliveryError(`Ошибка: ${errorDetail}`);
-          }
-        } else {
-          setDeliveryError(`Ошибка при расчете стоимости доставки: ${error.response?.status || 'неизвестная ошибка'}`);
-        }
-      } else {
-        setDeliveryError(`Ошибка при расчете стоимости доставки: ${error.message || 'неизвестная ошибка'}`);
-      }
-      
-      return null;
-    }
-  };
+  // (удалённый остаток дубликата)
   
   // Обработчик открытия модального окна для создания посылки
+  // eslint-disable-next-line no-unused-vars
   const handleOpenBoxberryModal = () => {
     setShowBoxberryModal(true);
     setBoxberryResult(null);
   };
   
   // Обработчик закрытия модального окна для создания посылки
+  // eslint-disable-next-line no-unused-vars
   const handleCloseBoxberryModal = () => {
     setShowBoxberryModal(false);
   };
@@ -1656,16 +1618,14 @@ const handleCloseBoxberryParcelModal = () => {
                               style={{ zIndex: 1000, maxHeight: '300px', overflowY: 'auto' }}
                             >
                               {addressOptions.map((suggestion, index) => (
-                                <div 
-                                  key={index} 
-                                  className="p-2 border-bottom hover-bg-light cursor-pointer"
-                                  onClick={() => handleSelectAddress(suggestion)}
-                                  style={{ cursor: 'pointer' }}
-                                  onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
-                                  onMouseLeave={(e) => e.target.style.backgroundColor = ''}
-                                >
-                                  {suggestion.value}
-                                </div>
+                                 <button
+                                   key={index}
+                                   type="button"
+                                   className="w-100 text-start p-2 border-0 bg-white border-bottom"
+                                   onClick={() => handleSelectAddress(suggestion)}
+                                 >
+                                   {suggestion.value}
+                                 </button>
                               ))}
                             </div>
                           )}
@@ -1976,9 +1936,9 @@ const handleCloseBoxberryParcelModal = () => {
             </Card.Header>
             <Card.Body>
               <div className="status-timeline">
-                {order.status_history && order.status_history.length > 0 ? (
-                  order.status_history.map((statusChange, index) => (
-                    <div key={index} className="status-item mb-3">
+                  {order.status_history && order.status_history.length > 0 ? (
+                    order.status_history.map((statusChange) => (
+                      <div key={statusChange.id || `${statusChange.status?.id}-${statusChange.changed_at || statusChange.timestamp}`} className="status-item mb-3">
                       <div className="d-flex justify-content-between">
                         <div>
                           <OrderStatusBadge status={statusChange.status} />

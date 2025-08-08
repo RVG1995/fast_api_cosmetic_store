@@ -80,7 +80,13 @@ const ProgressiveImage = ({ src, alt, className, lowResSrc, aspectRatio = '1:1',
     <div className={`progressive-image-container ${className || ''}`} style={containerStyle}>
       {!isLoaded && <div className={`image-skeleton ${placeholderClassName || ''}`}></div>}
       {error ? (
-        <div className="image-error" onClick={handleRetry}>
+        <div
+          className="image-error"
+          role="button"
+          tabIndex={0}
+          onClick={handleRetry}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleRetry(); }}
+        >
           <span>⚠️</span>
           <p>Не удалось загрузить изображение</p>
         </div>

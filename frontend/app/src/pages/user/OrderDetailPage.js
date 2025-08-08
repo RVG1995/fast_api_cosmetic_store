@@ -593,7 +593,7 @@ const OrderDetailPage = () => {
               </Card.Header>
               <Card.Body>
                 <div className="order-status-timeline">
-                  {order.status_history.map((history, index) => (
+                  {order.status_history.map((history) => (
                     <div key={history.id} className="timeline-item">
                       <div className="timeline-badge" style={{ backgroundColor: history.status.color }}></div>
                       <div className="timeline-content">

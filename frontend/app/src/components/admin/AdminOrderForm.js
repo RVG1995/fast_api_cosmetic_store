@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Form, Button, Container, Row, Col, Alert, Spinner } from 'react-bootstrap';
 import { adminAPI, deliveryAPI } from '../../utils/api';
 import { useOrders } from '../../context/OrderContext';
@@ -115,17 +115,15 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   };
 
   // Создаем функцию поиска с debounce
-  const debouncedSearch = useCallback(
-    debounce((term) => {
-      const results = users.filter(user => {
-        const fullName = `${user.first_name} ${user.last_name}`.toLowerCase();
-        return fullName.includes(term.toLowerCase()) || 
-               user.email.toLowerCase().includes(term.toLowerCase());
-      });
-      setSearchResults(results);
-    }, 300),
-    [users]
-  );
+  const doUserSearch = useCallback((term) => {
+    const results = users.filter(user => {
+      const fullName = `${user.first_name} ${user.last_name}`.toLowerCase();
+      return fullName.includes(term.toLowerCase()) || user.email.toLowerCase().includes(term.toLowerCase());
+    });
+    setSearchResults(results);
+  }, [users]);
+  const debouncedSearch = useMemo(() => debounce(doUserSearch, 300), [doUserSearch]);
+  useEffect(() => () => debouncedSearch.cancel && debouncedSearch.cancel(), [debouncedSearch]);
 
   // Обработчик выбора пользователя
   const handleSelectUser = (user) => {
@@ -173,7 +171,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   };
 
   // Функция для поиска продуктов
-  const searchProducts = async (term) => {
+  const searchProducts = useCallback(async (term) => {
     if (!term || term.length < 2) return;
     
     try {
@@ -188,13 +186,11 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     } finally {
       setLoadingProducts(false);
     }
-  };
+  }, []);
 
   // Функция с debounce для поиска продуктов
-  const debouncedProductSearch = useCallback(
-    debounce((term) => searchProducts(term), 300),
-    []
-  );
+  const debouncedProductSearch = useMemo(() => debounce(searchProducts, 300), [searchProducts]);
+  useEffect(() => () => debouncedProductSearch.cancel && debouncedProductSearch.cancel(), [debouncedProductSearch]);
 
   // Обработчик изменения поля поиска продукта
   const handleProductSearch = (e) => {
@@ -375,7 +371,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   const finalTotal = Math.max(0, orderTotal - discountAmount);
 
   // Подсказки адресов DaData
-  const fetchAddressSuggestions = async (query) => {
+  const fetchAddressSuggestions = useCallback(async (query) => {
     if (!query || query.trim().length < 3) {
       setAddressOptions([]);
       return;
@@ -414,13 +410,11 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
       console.error('DaData address error', e); 
       setAddressOptions([]);
     }
-  };
+  }, [formData.delivery_type]);
 
   // Debounce для поиска адресов
-  const debouncedAddressSearch = useCallback(
-    debounce((query) => fetchAddressSuggestions(query), 300),
-    []
-  );
+  const debouncedAddressSearch = useMemo(() => debounce(fetchAddressSuggestions, 300), [fetchAddressSuggestions]);
+  useEffect(() => () => debouncedAddressSearch.cancel && debouncedAddressSearch.cancel(), [debouncedAddressSearch]);
 
   // Обработчик выбора адреса из подсказок
   const handleSelectAddress = (address) => {
@@ -467,24 +461,19 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
   };
   
   // Функция для отложенного выполнения расчета доставки
-  const debouncedCalculateDelivery = useCallback(
-    (() => {
-      let timer = null;
-      return (address) => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          if (address && address.length > 5 && formData.delivery_type === 'boxberry_courier') {
-            calculateDeliveryCost();
-          }
-        }, 1000); // Задержка в 1 секунду
-      };
-    })(),
-    [formData.delivery_type, formData.is_payment_on_delivery, formData.items]
-  );
+  const delayedCalcRef = useRef(null);
+  const debouncedCalculateDelivery = useCallback((address) => {
+    if (delayedCalcRef.current) clearTimeout(delayedCalcRef.current);
+    delayedCalcRef.current = setTimeout(() => {
+      if (address && address.length > 5 && formData.delivery_type === 'boxberry_courier') {
+        calculateDeliveryCost();
+      }
+    }, 1000);
+  }, [formData.delivery_type, calculateDeliveryCost]);
 
   // Функция для расчета стоимости доставки
   // Позволяет передать явное значение флага is_payment_on_delivery
-  const calculateDeliveryCost = async (forcePaymentOnDelivery = null) => {
+  const calculateDeliveryCost = useCallback(async (forcePaymentOnDelivery = null) => {
     // Определяем текущее или переданное значение флага оплаты при получении
     const isPaymentOnDelivery = forcePaymentOnDelivery !== null 
       ? forcePaymentOnDelivery 
@@ -582,7 +571,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     } finally {
       setCalculatingDelivery(false);
     }
-  };
+  }, [formData.delivery_type, formData.items, formData.is_payment_on_delivery, selectedPickupPoint, selectedAddressData]);
 
   // Функция для склонения слова "день" в зависимости от числа
   const getDeliveryPeriodText = (days) => {
@@ -606,7 +595,7 @@ const AdminOrderForm = ({ onClose, onSuccess }) => {
     });
     // Используем текущее значение способа оплаты из formData
     calculateDeliveryCost(); 
-  }, [formData.delivery_type, selectedPickupPoint, formData.items]); // Убрали formData.is_payment_on_delivery
+  }, [formData.delivery_type, selectedPickupPoint, formData.items, calculateDeliveryCost]);
 
   // Обработчик выбора пункта выдачи BoxBerry
   const handlePickupPointSelected = (point) => {

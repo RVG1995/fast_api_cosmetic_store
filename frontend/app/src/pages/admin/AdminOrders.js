@@ -124,7 +124,7 @@ const AdminOrders = () => {
     };
     
     loadOrders();
-  }, [getAllOrders, currentPage, filters]);
+  }, [getAllOrders, currentPage, filters, isEditMode]);
 
   // Обработчик изменения фильтров
   const handleFilterChange = (e) => {
@@ -259,7 +259,7 @@ const AdminOrders = () => {
   };
 
   // Обработчик успешного создания заказа
-  const handleOrderCreated = (orderData) => {
+  const handleOrderCreated = () => {
     // Обновляем список заказов
     setCurrentPage(1); // Переходим на первую страницу
     
@@ -656,7 +656,7 @@ const AdminOrders = () => {
               {/* Пагинация */}
               {totalPages > 1 && (
                 <div className="d-flex justify-content-center mt-4">
-                  <Pagination>
+                   <Pagination>
                     <Pagination.First
                       onClick={() => safeSetCurrentPage(1)}
                       disabled={currentPage === 1 || loading}

@@ -2,13 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { productAPI } from '../../utils/api';
 import ProductCard from '../../components/product/ProductCard';
 import Pagination from '../../components/common/Pagination';
-import { useAuth } from '../../context/AuthContext';
 import { useFavorites } from '../../context/FavoritesContext';
 
 const PAGE_SIZE = 12;
 
 const FavoritesPage = () => {
-  const { isAuthenticated } = useAuth();
   const { favorites, loading: favLoading, addFavorite, removeFavorite } = useFavorites();
   const [products, setProducts] = useState([]);
   const [page, setPage] = useState(1);

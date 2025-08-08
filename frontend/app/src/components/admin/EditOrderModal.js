@@ -39,17 +39,21 @@ const EditOrderModal = ({ order, show, onHide, onOrderUpdated, statuses }) => {
 
   useEffect(() => {
     if (!show) return;
+    let isActive = true;
     productAPI.getAdminProducts(1, 100)
-      .then(res => setAllProducts(res.data.items || []))
-      .catch(() => setAllProducts([]));
+      .then(res => { if (isActive) setAllProducts(res.data.items || []); })
+      .catch(() => { if (isActive) setAllProducts([]); });
+    return () => { isActive = false; };
   }, [show]);
 
   useEffect(() => {
     if (statuses && statuses.length) return;
+    let cancelled = false;
     adminAPI.getOrderById(order.id)
       .then(() => adminAPI.getOrderStatsByDate())
-      .then(res => setStatusList(res.statuses || []))
+      .then(res => { if (!cancelled) setStatusList(res.statuses || []); })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [order, statuses]);
 
   // DaData подсказки
@@ -65,7 +69,7 @@ const EditOrderModal = ({ order, show, onHide, onOrderUpdated, statuses }) => {
       .then(data => setAddressOptions(data.suggestions || []))
       .catch(() => setAddressOptions([]))
       .finally(() => setAddressLoading(false));
-  }, [addressInput, editOrder?.delivery_info?.delivery_type, show]);
+  }, [addressInput, editOrder, editOrder?.delivery_info?.delivery_type, show]);
 
   // Автоматически подставлять выбранный адрес из DaData
   const handleSelectAddress = (suggestion) => {
@@ -109,6 +113,7 @@ const EditOrderModal = ({ order, show, onHide, onOrderUpdated, statuses }) => {
       .catch(() => setDeliveryCost(0))
       .finally(() => setCalcLoading(false));
   }, [
+    editOrder,
     editOrder?.items,
     editOrder?.delivery_info?.delivery_type,
     editOrder?.delivery_info?.boxberry_point_id,

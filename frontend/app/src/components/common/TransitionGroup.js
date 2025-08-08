@@ -12,7 +12,6 @@ const TransitionGroup = ({
   className = '',
   childFactory = child => child,
   appear = false,
-  enter = true,
   exit = true,
   ...props
 }) => {
@@ -134,7 +133,6 @@ TransitionGroup.propTypes = {
   className: PropTypes.string,
   childFactory: PropTypes.func,
   appear: PropTypes.bool,
-  enter: PropTypes.bool,
   exit: PropTypes.bool,
 };
 

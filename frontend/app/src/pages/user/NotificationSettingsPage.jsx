@@ -15,7 +15,7 @@ const NotificationSettingsPage = () => {
       fetchSettings();
       setInitialized(true);
     }
-  }, [user, initialized]);
+  }, [user, initialized, fetchSettings]);
 
   useEffect(() => {
     if (settings && settings.length > 0) {

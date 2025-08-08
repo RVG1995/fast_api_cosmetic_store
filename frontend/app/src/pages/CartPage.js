@@ -314,7 +314,7 @@ const CartPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedCartItems.map((item, idx) => {
+                    {sortedCartItems.map((item) => {
                       const key = item.id !== undefined ? item.id : `anon_${item.product_id}`;
                       return (
                         <tr key={key}>

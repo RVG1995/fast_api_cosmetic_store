@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, Form, Button, Row, Col, Spinner, Alert, Table } from 'react-bootstrap';
 import { adminAPI } from '../../utils/api';
 import { formatPrice } from '../../utils/helpers';
@@ -50,7 +50,7 @@ const AdminReports = () => {
   };
   
   // Функция для установки предустановленного периода
-  const setPredefinedPeriod = (period) => {
+  const setPredefinedPeriod = useCallback((period) => {
     setSelectedPeriod(period);
     
     const today = new Date();
@@ -91,10 +91,10 @@ const AdminReports = () => {
       date_from: from.toISOString().split('T')[0],
       date_to: to.toISOString().split('T')[0]
     });
-  };
+  }, []);
   
   // Функция для генерации отчета
-  const generateReport = async () => {
+  const generateReport = useCallback(async () => {
     setLoading(true);
     setError(null);
     
@@ -107,7 +107,7 @@ const AdminReports = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dateRange.date_from, dateRange.date_to]);
   
   // Функция для скачивания отчета
   const handleGenerateReport = async (format) => {
@@ -233,10 +233,13 @@ const AdminReports = () => {
   }, [reportData]);
   
   // При первой загрузке компонента устанавливаем текущий день и загружаем данные
+  const didInitRef = useRef(false);
   useEffect(() => {
+    if (didInitRef.current) return;
+    didInitRef.current = true;
     setPredefinedPeriod('today');
     generateReport();
-  }, []);
+  }, [setPredefinedPeriod, generateReport]);
   
   return (
     <div className="admin-reports">

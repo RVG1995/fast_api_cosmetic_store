@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     JWT_ISSUER: str = "auth_service"
     JWT_AUDIENCE: str = "frontend"
     VERIFY_JWT_AUDIENCE: bool = False
+    # Device binding / single-session-per-device
+    DEVICE_ID_SALT: str = "dev_salt"
+    DEVICE_BIND_REFRESH: bool = True
+    SINGLE_SESSION_PER_DEVICE: bool = False
     
     # Настройки защиты от брутфорса
     MAX_FAILED_ATTEMPTS: int = 5

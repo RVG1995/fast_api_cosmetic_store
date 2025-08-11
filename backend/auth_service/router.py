@@ -5,6 +5,7 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Annotated, List, Dict, Any
+import hashlib
 
 # Импорты из fastapi
 from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, Request, Header, Form
@@ -81,7 +82,8 @@ async def refresh_access_token(
     response: Response,
     session: SessionDep,
     refresh_token: Optional[str] = Cookie(None, alias="refresh_token"),
-    authorization: str = Depends(oauth2_scheme)
+    authorization: str = Depends(oauth2_scheme),
+    request: Request = None
 ) -> Dict[str, str]:
     """
     Обновляет access-токен по валидному refresh-токену с ротацией jti
@@ -120,6 +122,19 @@ async def refresh_access_token(
         if not user_id:
             raise HTTPException(status_code=400, detail="Refresh token missing subject")
 
+        # Привязка к устройству: если включено, требуем совпадение device_id (из токена и текущего устройства)
+        if os.getenv("DEVICE_BIND_REFRESH", str(True)).lower() in ("1","true","yes"):
+            token_device = payload.get("device_id")
+            ua = request.headers.get("user-agent", "") if request else ""
+            ip = request.client.host if (request and hasattr(request, 'client') and request.client) else "unknown"
+            cookie_device = request.cookies.get("device_id") if request else None
+            if not cookie_device:
+                raw = f"{ua}|{ip}|{os.getenv('DEVICE_ID_SALT','dev_salt')}"
+                cookie_device = hashlib.sha256(raw.encode()).hexdigest()[:32]
+            if token_device and cookie_device and token_device != cookie_device:
+                # device mismatch → запрещаем refresh
+                raise HTTPException(status_code=401, detail="Refresh token bound to another device")
+
         # Получаем пользователя, чтобы включить актуальные роли/флаги
         user = await user_service.get_user_by_id(session, int(user_id))
         if not user:
@@ -133,9 +148,10 @@ async def refresh_access_token(
             "is_super_admin": user.is_super_admin,
             "is_active": user.is_active,
             "email": user.email,
+            "device_id": cookie_device if os.getenv("DEVICE_BIND_REFRESH", str(True)).lower() in ("1","true","yes") else None,
         }
         access_token, access_jti = await TokenService.create_access_token(data=token_data, expires_delta=access_expires)
-        new_refresh, new_refresh_jti = await TokenService.create_refresh_token(user_id=str(user_id))
+        new_refresh, new_refresh_jti = await TokenService.create_refresh_token(user_id=str(user_id), device_id=(cookie_device if os.getenv("DEVICE_BIND_REFRESH", str(True)).lower() in ("1","true","yes") else None))
 
         # Создаем новую запись о сессии (по желанию — можно связать через кэш)
         await session_service.create_session(
@@ -312,6 +328,16 @@ async def login(
     # Сбрасываем счетчик неудачных попыток
     await bruteforce_protection.reset_attempts(client_ip, form_data.username)
     
+    # Определяем device_id (из куки, либо формируем)
+    device_cookie = request.cookies.get("device_id")
+    if device_cookie:
+        device_id = device_cookie
+    else:
+        ua = request.headers.get("user-agent", "")
+        ip = request.client.host if hasattr(request, 'client') and request.client else "unknown"
+        raw = f"{ua}|{ip}|{os.getenv('DEVICE_ID_SALT','dev_salt')}"
+        device_id = hashlib.sha256(raw.encode()).hexdigest()[:32]
+
     # Создаем данные для токена
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token_data = {
@@ -319,7 +345,8 @@ async def login(
         "is_admin": user.is_admin,
         "is_super_admin": user.is_super_admin,
         "is_active": user.is_active,
-        "email": user.email  # Добавляем email для удобства
+        "email": user.email,  # Добавляем email для удобства
+        "device_id": device_id,
     }
     
     # Создаем токен с использованием сервиса
@@ -332,20 +359,29 @@ async def login(
     expires_at = datetime.now(timezone.utc) + access_token_expires
     
     # Создаем запись о сессии
+    # Single-session-per-device: при необходимости отзовём старые активные сессии на этом устройстве
+    if os.getenv("SINGLE_SESSION_PER_DEVICE", str(False)).lower() in ("1","true","yes"): 
+        # Найдём активные сессии пользователя с тем же device_id и отзовём
+        sessions = await session_service.get_user_sessions(session, user.id, active_only=True)
+        to_revoke = [s for s in sessions if getattr(s, 'device_id', None) == device_id]
+        for s in to_revoke:
+            await session_service.revoke_session(session, s.id, user_id=user.id, reason="New login on same device")
+
     await session_service.create_session(
         session=session,
         user_id=user.id,
         jti=jti,
         user_agent=user_agent,
         ip_address=client_ip,
-        expires_at=expires_at
+        expires_at=expires_at,
+        device_id=device_id
     )
     
     # Обновляем дату последнего входа
     await user_service.update_last_login(session, user.id)
     
-    # Создаем refresh-токен и сохраняем jti в кэше для связи/ротации
-    refresh_token, refresh_jti = await TokenService.create_refresh_token(user_id=str(user.id))
+    # Создаем refresh-токен, включающий device_id, и сохраняем jti в кэше для связи/ротации
+    refresh_token, refresh_jti = await TokenService.create_refresh_token(user_id=str(user.id), device_id=device_id)
     try:
         # Привязываем refresh jti к текущей сессии jti (для ротации/инвалидации)
         await cache_service.set(f"refresh:bind:{refresh_jti}", jti, ACCESS_TOKEN_EXPIRE_MINUTES * 60)
@@ -375,6 +411,18 @@ async def login(
         value=refresh_token,
         httponly=True,
         max_age=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_MINUTES", "20160")) * 60,
+        samesite=cookie_samesite,
+        secure=secure,
+        domain=cookie_domain,
+        path=cookie_path,
+    )
+
+    # Кука для device_id (HttpOnly=false, чтобы фронт мог читать при необходимости)
+    response.set_cookie(
+        key="device_id",
+        value=device_id,
+        httponly=False,
+        max_age=60*60*24*365,
         samesite=cookie_samesite,
         secure=secure,
         domain=cookie_domain,

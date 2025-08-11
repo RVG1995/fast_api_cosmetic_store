@@ -6,13 +6,10 @@ from datetime import datetime, timezone
 from typing import Dict, Tuple, Optional, Any
 
 import jwt
-
 from config import settings, get_access_token_expires_delta, get_service_token_expires_delta, get_refresh_token_expires_delta
+from .keys_service import get_private_key_pem, get_kid
 
 logger = logging.getLogger(__name__)
-
-# Загружаем настройки JWT из конфигурации
-from .keys_service import get_private_key_pem, get_kid
 
 ALGORITHM = "RS256"
 ISSUER = settings.JWT_ISSUER
@@ -143,7 +140,7 @@ class TokenService:
         return encoded_jwt 
 
     @staticmethod
-    async def create_refresh_token(user_id: str) -> Tuple[str, str]:
+    async def create_refresh_token(user_id: str, device_id: Optional[str] = None) -> Tuple[str, str]:
         """
         Создает refresh-токен с длинным сроком жизни и собственной jti
         """
@@ -160,5 +157,7 @@ class TokenService:
             "iss": ISSUER,
             "aud": AUDIENCE,
         }
+        if device_id:
+            to_encode["device_id"] = device_id
         headers = {"kid": get_kid()}
         return jwt.encode(to_encode, get_private_key_pem(), algorithm=ALGORITHM, headers=headers), jti

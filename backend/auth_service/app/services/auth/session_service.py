@@ -22,7 +22,8 @@ class SessionService:
         jti: str,
         user_agent: str = None,
         ip_address: str = None,
-        expires_at: datetime = None
+        expires_at: datetime = None,
+        device_id: str | None = None
     ) -> UserSessionModel:
         """
         Создает новую сессию пользователя
@@ -45,6 +46,7 @@ class SessionService:
                 jti=jti,
                 user_agent=user_agent,
                 ip_address=ip_address,
+                device_id=device_id,
                 is_active=True,
                 created_at=datetime.now(timezone.utc),
                 expires_at=expires_at

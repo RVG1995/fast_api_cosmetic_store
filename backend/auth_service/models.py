@@ -102,6 +102,7 @@ class UserSessionModel(Base):
     jti: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, index=True)  # Unique JWT ID
     user_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)  # Поддерживает IPv6
+    device_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

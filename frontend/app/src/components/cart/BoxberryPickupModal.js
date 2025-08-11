@@ -400,21 +400,24 @@ const BoxberryPickupModal = ({ show, onHide, onPickupPointSelected, selectedAddr
             <div className="pickup-points-container">
               <ListGroup>
                 {filteredPoints.map((point) => (
-                  <ListGroup.Item 
+                  <ListGroup.Item
                     key={point.Code}
                     action
+                    onClick={() => handleSelectPoint(point)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSelectPoint(point);
+                      }
+                    }}
                     active={selectedPoint && selectedPoint.Code === point.Code}
                     className={`pickup-point-item p-0 ${selectedPoint && selectedPoint.Code === point.Code ? 'bg-light' : ''}`}
                   >
-                    <button
-                      type="button"
-                      className={`w-100 text-start p-3 border-0 ${selectedPoint && selectedPoint.Code === point.Code ? 'bg-light' : 'bg-white'}`}
-                      onClick={() => handleSelectPoint(point)}
-                    >
+                    <div className={`w-100 text-start p-3 ${selectedPoint && selectedPoint.Code === point.Code ? 'bg-light' : 'bg-white'}`}>
                       <h5 className={`${selectedPoint && selectedPoint.Code === point.Code ? 'text-dark' : ''}`}>{point.Name}</h5>
                       <p className={`mb-1 ${selectedPoint && selectedPoint.Code === point.Code ? 'text-dark' : ''}`}>{point.Address}</p>
                       <p className="mb-0 small text-muted">Режим работы: {point.WorkShedule}</p>
-                    </button>
+                    </div>
                   </ListGroup.Item>
                 ))}
               </ListGroup>

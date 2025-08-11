@@ -254,6 +254,40 @@ class SessionService:
         except SQLAlchemyError as e:
             logger.error("Ошибка при отзыве всех сессий пользователя: %s", str(e))
             return 0
+
+    @staticmethod
+    async def revoke_user_device_sessions(session: AsyncSession, user_id: int, device_id: str, reason: str = "Device sessions revoked") -> int:
+        """
+        Отзывает все активные сессии пользователя для заданного device_id.
+        """
+        try:
+            query = select(UserSessionModel).filter(
+                UserSessionModel.user_id == user_id,
+                UserSessionModel.is_active == True,
+                UserSessionModel.device_id == device_id
+            )
+            result = await session.execute(query)
+            sessions = result.scalars().all()
+            count = 0
+            for s in sessions:
+                s.is_active = False
+                s.revoked_at = datetime.now(timezone.utc)
+                s.revoked_reason = reason
+                count += 1
+                try:
+                    if s.jti and s.expires_at:
+                        ttl_seconds = int((s.expires_at - datetime.now(timezone.utc)).total_seconds())
+                        if ttl_seconds > 0:
+                            await cache_service.set(f"revoked:jti:{s.jti}", True, ttl_seconds)
+                except Exception as e:
+                    logger.error("Ошибка записи revoked JTI в Redis: %s", str(e))
+            if count > 0:
+                await session.commit()
+                await cache_service.delete(f"get_user_sessions:{user_id}")
+            return count
+        except SQLAlchemyError as e:
+            logger.error("Ошибка при отзыве сессий устройства: %s", str(e))
+            return 0
     
     @staticmethod
     async def cleanup_expired_sessions(session: AsyncSession) -> int:

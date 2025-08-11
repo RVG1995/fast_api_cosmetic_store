@@ -46,6 +46,9 @@ class CacheService:
         """Инициализация сервиса кэширования"""
         self.enabled = CACHE_ENABLED
         self.redis = None
+        # Параметры SWR
+        self.swr_suffix_fresh = ":fresh_ttl"
+        self.swr_suffix_stale = ":stale_ttl"
             
         if not self.enabled:
             logger.info("Кэширование отключено в настройках")
@@ -59,8 +62,8 @@ class CacheService:
             return
             
         try:
-            # Используем helper-функцию для получения URL Redis
-            redis_url = get_redis_url()
+            # Используем helper-функцию для получения URL Redis (пока не используется напрямую)
+            _ = get_redis_url()
             
             # Создаем асинхронное подключение к Redis с использованием нового API
             self.redis = await redis.Redis(
@@ -250,6 +253,58 @@ class CacheService:
             return f"{prefix}:hash:{key_hash}"
             
         return key_str
+
+    async def swr_get(self, key: str) -> tuple[Optional[Any], bool]:
+        """
+        Возвращает (value, is_stale). Если ключ отсутствует — (None, False).
+        """
+        value = await self.get(key)
+        if value is None:
+            return None, False
+        # Маркер свежести хранится в отдельном ключе key + ":fresh_ttl"
+        is_stale = (await self.redis.get(key + self.swr_suffix_fresh)) is None
+        return value, is_stale
+
+    async def swr_set(self, key: str, value: Any, fresh_ttl: int, stale_ttl: int) -> bool:
+        """
+        Сохраняет значение с soft TTL: ключ живёт fresh_ttl+stale_ttl,
+        а ключ с суффиксом ":fresh_ttl" живёт fresh_ttl и служит маркером свежести.
+        """
+        ok = await self.set(key, value, fresh_ttl + stale_ttl)
+        if not ok:
+            return False
+        try:
+            await self.redis.setex(key + self.swr_suffix_fresh, fresh_ttl, "1")
+        except Exception:
+            pass
+        return True
+
+    async def add_to_set(self, set_key: str, member: str) -> None:
+        if self.enabled and self.redis:
+            try:
+                await self.redis.sadd(set_key, member)
+            except Exception:
+                pass
+
+    async def members_of_set(self, set_key: str) -> list[str]:
+        if self.enabled and self.redis:
+            try:
+                members = await self.redis.smembers(set_key)
+                return list(members) if members else []
+            except Exception:
+                return []
+        return []
+
+    async def delete_members_of_set(self, set_key: str) -> int:
+        if self.enabled and self.redis:
+            members = await self.members_of_set(set_key)
+            deleted = 0
+            for m in members:
+                if await self.delete(m):
+                    deleted += 1
+            await self.delete(set_key)
+            return deleted
+        return 0
     
     async def close(self):
         """Закрывает соединение с Redis"""
@@ -303,6 +358,13 @@ async def cache_set(key: str, data: Any, ttl: int) -> bool:
     """
     return await cache_service.set(key, data, ttl)
 
+async def cache_set_swr(key: str, data: Any, fresh_ttl: int, stale_ttl: int) -> bool:
+    return await cache_service.swr_set(key, data, fresh_ttl, stale_ttl)
+
+async def cache_get_swr(key: str) -> tuple[Optional[Any], bool]:
+    """Возвращает (value, is_stale)."""
+    return await cache_service.swr_get(key)
+
 async def cache_delete(key: str) -> bool:
     """
     Удаляет данные из кэша
@@ -342,6 +404,8 @@ async def invalidate_user_cart_cache(user_id: int) -> None:
     await cache_service.delete("%s%d" % (CACHE_KEYS['cart_user'], user_id))
     # Удаляем кэш сводки корзины
     await cache_service.delete("%s%d" % (CACHE_KEYS['cart_summary_user'], user_id))
+    # Инвалидация по дереву ключей (на будущее): корзина пользователя входит в набор cart:tree:user:{user_id}
+    await cache_service.delete_members_of_set(f"cart:tree:user:{user_id}")
     # Удаляем кэш списка корзин в админке
     await cache_service.delete_pattern("%s*" % CACHE_KEYS['admin_carts'])
 

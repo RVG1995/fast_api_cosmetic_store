@@ -6,7 +6,7 @@ from typing import Optional, Annotated
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
@@ -20,7 +20,14 @@ from schema import (
     CartResponseSchema, CartSummarySchema, CartMergeSchema
 )
 from product_api import ProductAPI
-from cache import (cache_get, cache_set,invalidate_user_cart_cache,CACHE_KEYS, CACHE_TTL)
+from cache import (
+    cache_set,
+    cache_get_swr,
+    cache_set_swr,
+    invalidate_user_cart_cache,
+    CACHE_KEYS,
+    CACHE_TTL,
+)
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -40,6 +47,21 @@ router = APIRouter(
 
 # Алиас для зависимости сессии БД
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+# ------------------ CSRF ------------------
+def _get_csrf_from_headers(request: Request) -> str | None:
+    return request.headers.get("X-CSRF-Token") or request.headers.get("x-csrf-token")
+
+def _get_csrf_from_cookies(request: Request) -> str | None:
+    return request.cookies.get("csrf_token")
+
+def _validate_csrf(request: Request) -> None:
+    # Проверяем только для небезопасных методов
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        header_token = _get_csrf_from_headers(request)
+        cookie_token = _get_csrf_from_cookies(request)
+        if not header_token or not cookie_token or header_token != cookie_token:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token invalid or missing")
 
 async def get_cart_with_items(
     session: AsyncSession,
@@ -179,9 +201,9 @@ async def get_cart(
         if user:
             # Проверяем кэш корзины
             cache_key = f"{CACHE_KEYS['cart_user']}{user.id}"
-            cached_cart = await cache_get(cache_key)
+            cached_cart, is_stale = await cache_get_swr(cache_key)
             if cached_cart:
-                logger.info("Корзина получена из кэша: %s", cache_key)
+                logger.info("Корзина получена из кэша: %s (stale=%s)", cache_key, is_stale)
                 return CartSchema(**cached_cart)
 
             # Если данных в кэше нет, пытаемся найти существующую корзину
@@ -207,9 +229,11 @@ async def get_cart(
             # Обогащаем корзину данными о продуктах
             enriched_cart = await enrich_cart_with_product_data(cart)
 
-            # Кладём в кэш
+            # Кладём в кэш (SWR: 50% свежесть, 50% staleness)
             if enriched_cart:
-                await cache_set(cache_key, enriched_cart.model_dump(), CACHE_TTL["cart"])
+                fresh = int(CACHE_TTL["cart"] * 0.5)
+                stale = max(CACHE_TTL["cart"] - fresh, 1)
+                await cache_set_swr(cache_key, enriched_cart.model_dump(), fresh, stale)
 
             logger.info("Корзина пользователя успешно получена: id=%d, items=%d", cart.id, len(cart.items) if hasattr(cart, 'items') and cart.items else 0)
             
@@ -250,14 +274,16 @@ async def get_cart(
 async def add_item_to_cart(
     item: CartItemAddSchema,
     user: Optional[User] = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    request: Request = None
 ):
     """
     Добавляет товар в корзину.
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info("Запрос добавления товара в корзину: product_id=%d, quantity=%d, user=%d", item.product_id, item.quantity, user.id if user else 'Anonymous')
+    _validate_csrf(request)
+    logger.info("Запрос добавления товара в корзину: product_id=%s, quantity=%s, user=%s", item.product_id, item.quantity, user.id if user else 'Anonymous')
     
     # Проверяем наличие товара на складе
     stock_check = await product_api.check_product_stock(item.product_id, item.quantity)
@@ -411,14 +437,16 @@ async def update_cart_item(
     item_id: int,
     item_data: CartItemUpdateSchema,
     user: Optional[User] = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    request: Request = None
 ):
     """
     Обновляет количество товара в корзине.
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info("Запрос обновления количества товара: item_id=%d, quantity=%d, user=%d", item_id, item_data.quantity, user.id if user else 'Anonymous')
+    _validate_csrf(request)
+    logger.info("Запрос обновления количества товара: item_id=%s, quantity=%s, user=%s", item_id, item_data.quantity, user.id if user else 'Anonymous')
     
     # Проверяем допустимость количества
     if item_data.quantity <= 0:
@@ -524,14 +552,16 @@ async def update_cart_item(
 async def remove_cart_item(
     item_id: int,
     user: Optional[User] = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    request: Request = None
 ):
     """
     Удаляет товар из корзины.
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info("Запрос удаления товара из корзины: item_id=%d, user=%d", item_id, user.id if user else 'Anonymous')
+    _validate_csrf(request)
+    logger.info("Запрос удаления товара из корзины: item_id=%s, user=%s", item_id, user.id if user else 'Anonymous')
     
     try:
         # Для авторизованных пользователей используем БД
@@ -626,9 +656,9 @@ async def get_cart_summary(
         if user:
             # Проверяем кэш
             cache_key = f"{CACHE_KEYS['cart_summary_user']}{user.id}"
-            cached_summary = await cache_get(cache_key)
+            cached_summary, is_stale = await cache_get_swr(cache_key)
             if cached_summary:
-                logger.info("Сводка корзины получена из кэша: %s", cache_key)
+                logger.info("Сводка корзины получена из кэша: %s (stale=%s)", cache_key, is_stale)
                 return CartSummarySchema(**cached_summary)
             
             # Если данных в кэше нет, получаем корзину из БД
@@ -641,8 +671,10 @@ async def get_cart_summary(
                     total_price=0
                 )
                 
-                # Кэшируем результат
-                await cache_set(cache_key, summary.model_dump(), CACHE_TTL["cart_summary"])
+                # Кэшируем результат c SWR
+                fresh = int(CACHE_TTL["cart_summary"] * 0.5)
+                stale = max(CACHE_TTL["cart_summary"] - fresh, 1)
+                await cache_set_swr(cache_key, summary.model_dump(), fresh, stale)
                     
                 return summary
             
@@ -702,14 +734,16 @@ async def get_cart_summary(
 @router.delete("", response_model=CartResponseSchema, tags=["Корзина"])
 async def clear_cart(
     user: Optional[User] = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    request: Request = None
 ):
     """
     Очищает корзину пользователя.
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится в куках.
     """
-    logger.info("Запрос очистки корзины: user=%d", user.id if user else 'Anonymous')
+    _validate_csrf(request)
+    logger.info("Запрос очистки корзины: user=%s", user.id if user else 'Anonymous')
     
     try:
         # Для авторизованных пользователей используем БД
@@ -791,8 +825,10 @@ async def clear_cart(
 async def merge_carts(
     merge_data: CartMergeSchema,
     user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    request: Request = None
 ):
+    _validate_csrf(request)
     logger.info("/cart/merge RAW BODY: %s", merge_data)
     # Удалена проверка дублирования merge-запросов — всегда выполняем объединение
 

@@ -15,6 +15,7 @@ from app.services import (
     bruteforce_protection
 )
 from config import settings, get_origins
+from app.services.auth.keys_service import initialize_keys
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +24,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Инициализация Redis-клиентов при старте приложения"""
+    logger.info("Инициализация RSA ключей для RS256/JWKS...")
+    initialize_keys()
     logger.info("Инициализация Redis-клиентов...")
     # Инициализируем кэш-сервис
     await cache_service.initialize() 
@@ -62,8 +65,8 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"]  # Разрешаем доступ к заголовкам ответа
+    allow_headers=["*", "X-CSRF-Token", "Authorization", "Content-Type"],
+    expose_headers=["*", "X-CSRF-Token"]  # Разрешаем доступ к заголовкам ответа
 )
 
 @app.middleware("http")

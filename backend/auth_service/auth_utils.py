@@ -12,7 +12,8 @@ from config import settings
 from app.services import (
     TokenService,
     user_service,
-    session_service
+    session_service,
+    cache_service
 )
 
 # Настройка логгера
@@ -76,6 +77,13 @@ async def get_current_user(
     try:
         # Используем сервис для декодирования токена
         payload = await TokenService.decode_token(actual_token)
+        # Проверяем отзыв токена по jti в Redis
+        jti = payload.get("jti")
+        if jti:
+            revoked = await cache_service.get(f"revoked:jti:{jti}")
+            if revoked:
+                logger.warning("Токен с jti=%s отозван", jti)
+                raise credentials_exception
         user_id = payload.get("sub")
         
         if user_id is None:

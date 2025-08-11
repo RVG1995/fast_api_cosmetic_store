@@ -11,6 +11,7 @@ import ReviewStats from '../components/reviews/ReviewStats';
 import { useAuth } from '../context/AuthContext';
 import { useReviews } from '../context/ReviewContext';
 import FavoriteButton from '../components/atoms/FavoriteButton';
+import { useFavorites } from '../context/FavoritesContext';
 
 const ProductDetailPage = () => {
   const { productId } = useParams();

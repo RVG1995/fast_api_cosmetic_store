@@ -128,6 +128,15 @@ class SessionService:
             
             await session.commit()
             
+            # Помечаем JTI как отозванный в Redis до истечения срока
+            try:
+                if user_session.jti and user_session.expires_at:
+                    ttl_seconds = int((user_session.expires_at - datetime.now(timezone.utc)).total_seconds())
+                    if ttl_seconds > 0:
+                        await cache_service.set(f"revoked:jti:{user_session.jti}", True, ttl_seconds)
+            except Exception as e:
+                logger.error("Ошибка записи revoked JTI в Redis: %s", str(e))
+            
             # Инвалидируем кэш сессий пользователя
             cache_key = f"get_user_sessions:{user_session.user_id}"
             await cache_service.delete(cache_key)
@@ -169,6 +178,15 @@ class SessionService:
             user_session.revoked_reason = reason
             
             await session.commit()
+            
+            # Помечаем JTI как отозванный в Redis до истечения срока
+            try:
+                if user_session.jti and user_session.expires_at:
+                    ttl_seconds = int((user_session.expires_at - datetime.now(timezone.utc)).total_seconds())
+                    if ttl_seconds > 0:
+                        await cache_service.set(f"revoked:jti:{user_session.jti}", True, ttl_seconds)
+            except Exception as e:
+                logger.error("Ошибка записи revoked JTI в Redis: %s", str(e))
             
             # Инвалидируем кэш сессий пользователя
             cache_key = f"get_user_sessions:{user_session.user_id}"
@@ -214,6 +232,14 @@ class SessionService:
                 user_session.revoked_at = datetime.now(timezone.utc)
                 user_session.revoked_reason = reason
                 revoke_count += 1
+                # Помечаем JTI как отозванный в Redis до истечения срока
+                try:
+                    if user_session.jti and user_session.expires_at:
+                        ttl_seconds = int((user_session.expires_at - datetime.now(timezone.utc)).total_seconds())
+                        if ttl_seconds > 0:
+                            await cache_service.set(f"revoked:jti:{user_session.jti}", True, ttl_seconds)
+                except Exception as e:
+                    logger.error("Ошибка записи revoked JTI в Redis: %s", str(e))
             
             if revoke_count > 0:
                 await session.commit()

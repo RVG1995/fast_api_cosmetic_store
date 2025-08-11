@@ -9,12 +9,13 @@ from typing import Optional, Annotated, List, Dict, Any
 # Импорты из fastapi
 from fastapi import APIRouter, Depends, Cookie, HTTPException, status, Response, Request, Header, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
+import secrets as _secrets
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_session
 from models import UserModel
 import jwt
-from schema import TokenSchema, UserCreateShema, UserReadSchema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema, UserUpdateSchema
+from schema import TokenSchema, TokenTypeOnlySchema, UserCreateShema, UserReadSchema, PasswordChangeSchema, UserSessionsResponseSchema, PasswordResetRequestSchema, PasswordResetSchema, UserUpdateSchema
 from dotenv import load_dotenv
 from utils import get_password_hash, verify_password  # Импортируем из utils
 from auth_utils import get_current_user, get_admin_user, get_super_admin_user  # Импортируем из auth_utils.py
@@ -28,6 +29,7 @@ from app.services import (
     session_service,
     cache_service,
 )
+from app.services.auth.keys_service import get_jwks, rotate_keys
 
 from aiosmtplib.errors import SMTPException
 from aio_pika.exceptions import AMQPError
@@ -54,10 +56,136 @@ router = APIRouter(prefix='/auth', tags=['Авторизация'])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
+# ------------------ CSRF ------------------
+
+def _issue_csrf_token() -> str:
+    return _secrets.token_urlsafe(32)
+
+def _get_csrf_from_headers(request: Request) -> str | None:
+    return request.headers.get("X-CSRF-Token") or request.headers.get("x-csrf-token")
+
+def _get_csrf_from_cookies(request: Request) -> str | None:
+    return request.cookies.get("csrf_token")
+
+def _validate_csrf(request: Request) -> None:
+    # Проверяем только для небезопасных методов
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        header_token = _get_csrf_from_headers(request)
+        cookie_token = _get_csrf_from_cookies(request)
+        if not header_token or not cookie_token or header_token != cookie_token:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token invalid or missing")
+
+
+@router.post("/refresh", summary="Обновление access-токена по refresh")
+async def refresh_access_token(
+    response: Response,
+    session: SessionDep,
+    refresh_token: Optional[str] = Cookie(None, alias="refresh_token"),
+    authorization: str = Depends(oauth2_scheme)
+) -> Dict[str, str]:
+    """
+    Обновляет access-токен по валидному refresh-токену с ротацией jti
+    """
+    actual_refresh = None
+    if refresh_token:
+        actual_refresh = refresh_token
+    elif authorization:
+        # допускаем Bearer refresh для внутренней отладки
+        actual_refresh = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+
+    if not actual_refresh:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
+
+    try:
+        payload = await TokenService.decode_token(actual_refresh)
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=400, detail="Invalid token type")
+
+        # Проверяем, не отозван ли refresh по jti
+        refresh_jti = payload.get("jti")
+        if not refresh_jti:
+            raise HTTPException(status_code=400, detail="Refresh token corrupted")
+
+        revoked = await cache_service.get(f"revoked:jti:{refresh_jti}")
+        if revoked:
+            raise HTTPException(status_code=401, detail="Refresh token revoked")
+
+        # Ротация: помечаем старый refresh как отозванный
+        exp_ts = payload.get("exp")
+        if exp_ts:
+            ttl = max(int(exp_ts - datetime.now(timezone.utc).timestamp()), 1)
+            await cache_service.set(f"revoked:jti:{refresh_jti}", True, ttl)
+
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="Refresh token missing subject")
+
+        # Получаем пользователя, чтобы включить актуальные роли/флаги
+        user = await user_service.get_user_by_id(session, int(user_id))
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        # Генерим новый access и refresh с полными клеймами
+        access_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        token_data = {
+            "sub": str(user.id),
+            "is_admin": user.is_admin,
+            "is_super_admin": user.is_super_admin,
+            "is_active": user.is_active,
+            "email": user.email,
+        }
+        access_token, access_jti = await TokenService.create_access_token(data=token_data, expires_delta=access_expires)
+        new_refresh, new_refresh_jti = await TokenService.create_refresh_token(user_id=str(user_id))
+
+        # Создаем новую запись о сессии (по желанию — можно связать через кэш)
+        await session_service.create_session(
+            session=session,
+            user_id=int(user_id),
+            jti=access_jti,
+            user_agent="refresh",
+            ip_address="refresh",
+            expires_at=datetime.now(timezone.utc) + access_expires
+        )
+
+        # Устанавливаем новые куки
+        secure = os.getenv("ENVIRONMENT", "development") != "development"
+        cookie_samesite = os.getenv("COOKIE_SAMESITE", "Lax")
+        cookie_domain = os.getenv("COOKIE_DOMAIN", None)
+        cookie_path = os.getenv("COOKIE_PATH", "/")
+
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            samesite=cookie_samesite,
+            secure=secure,
+            domain=cookie_domain,
+            path=cookie_path,
+        )
+
+        response.set_cookie(
+            key="refresh_token",
+            value=new_refresh,
+            httponly=True,
+            max_age=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_MINUTES", "20160")) * 60,
+            samesite=cookie_samesite,
+            secure=secure,
+            domain=cookie_domain,
+            path=cookie_path,
+        )
+
+        return {"token_type": "bearer"}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
 @router.post("/register", response_model=UserReadSchema, status_code=status.HTTP_201_CREATED, summary="Регистрация")
 async def register(
     user: UserCreateShema,
     session: SessionDep,
+    request: Request
 ) -> UserReadSchema:
     """
     Регистрация нового пользователя
@@ -121,13 +249,13 @@ async def register(
             detail="Произошла ошибка при регистрации. Пожалуйста, попробуйте позже."
         ) from e
 
-@router.post("/login", response_model=TokenSchema, summary="Вход")
+@router.post("/login", response_model=TokenTypeOnlySchema, summary="Вход")
 async def login(
     session: SessionDep,
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(), 
     response: Response = None
-) -> TokenSchema:
+) -> TokenTypeOnlySchema:
     """
     Авторизация пользователя и получение JWT токена
     
@@ -216,19 +344,58 @@ async def login(
     # Обновляем дату последнего входа
     await user_service.update_last_login(session, user.id)
     
+    # Создаем refresh-токен и сохраняем jti в кэше для связи/ротации
+    refresh_token, refresh_jti = await TokenService.create_refresh_token(user_id=str(user.id))
+    try:
+        # Привязываем refresh jti к текущей сессии jti (для ротации/инвалидации)
+        await cache_service.set(f"refresh:bind:{refresh_jti}", jti, ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+    except Exception:
+        pass
+
     # Устанавливаем cookie с улучшенными настройками безопасности
     secure = os.getenv("ENVIRONMENT", "development") != "development"  # Secure только в production
-    
+    cookie_samesite = os.getenv("COOKIE_SAMESITE", "Lax")
+    cookie_domain = os.getenv("COOKIE_DOMAIN", None)
+    cookie_path = os.getenv("COOKIE_PATH", "/")
+
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        samesite="Lax",  # Меняем на Lax для кросс-доменных запросов
+        samesite=cookie_samesite,
         secure=secure,
+        domain=cookie_domain,
+        path=cookie_path,
     )
-    
-    return {"access_token": access_token, "token_type": "bearer"}
+
+    # Кука для refresh-токена
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        max_age=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_MINUTES", "20160")) * 60,
+        samesite=cookie_samesite,
+        secure=secure,
+        domain=cookie_domain,
+        path=cookie_path,
+    )
+
+    # Выдаём/обновляем CSRF-токен (доступен JS)
+    csrf_token = _issue_csrf_token()
+    response.set_cookie(
+        key="csrf_token",
+        value=csrf_token,
+        httponly=False,
+        max_age=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_MINUTES", "20160")) * 60,
+        samesite=cookie_samesite,
+        secure=secure,
+        domain=cookie_domain,
+        path=cookie_path,
+    )
+
+    # Токен в теле ответа больше не возвращаем
+    return {"token_type": "bearer"}
 
 
 @router.post("/logout", summary="Выход из системы")
@@ -236,7 +403,8 @@ async def logout(
     response: Response,
     session: SessionDep,
     token: str = Cookie(None, alias="access_token"),
-    authorization: str = Depends(oauth2_scheme)
+    authorization: str = Depends(oauth2_scheme),
+    refresh_cookie: str = Cookie(None, alias="refresh_token")
 ) -> Dict[str, str]:
     """
     Выход из системы и отзыв текущего токена
@@ -271,8 +439,23 @@ async def logout(
         except (jwt.InvalidTokenError, jwt.ExpiredSignatureError) as e:
             logger.error("Ошибка при отзыве сессии: %s", e)
     
+    # Пытаемся отозвать refresh-токен, если он есть в куке
+    if refresh_cookie:
+        try:
+            refresh_payload = await TokenService.decode_token(refresh_cookie)
+            if refresh_payload.get("type") == "refresh":
+                refresh_jti = refresh_payload.get("jti")
+                exp_ts = refresh_payload.get("exp")
+                if refresh_jti and exp_ts:
+                    ttl = max(int(exp_ts - datetime.now(timezone.utc).timestamp()), 1)
+                    await cache_service.set(f"revoked:jti:{refresh_jti}", True, ttl)
+        except (jwt.InvalidTokenError, jwt.ExpiredSignatureError) as e:
+            logger.error("Ошибка при отзыве refresh токена: %s", e)
+
     # Удаляем куки в любом случае
     response.delete_cookie(key="access_token")
+    response.delete_cookie(key="refresh_token")
+    response.delete_cookie(key="refresh_token")
     return {"status": "success", "message": "Успешный выход из системы"}
 
 @router.get("/users/me/sessions", response_model=UserSessionsResponseSchema, summary="Получение списка активных сессий пользователя")
@@ -318,7 +501,8 @@ async def get_user_sessions(
 async def revoke_user_session(
     session_id: int,
     session: SessionDep, 
-    current_user: UserModel = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_user),
+    request: Request = None
 ) -> Dict[str, str]:
     """
     Отзывает указанную сессию пользователя.
@@ -360,7 +544,8 @@ async def revoke_all_user_sessions(
     session: SessionDep, 
     current_user: UserModel = Depends(get_current_user),
     token: str = Cookie(None, alias="access_token"),
-    authorization: str = Depends(oauth2_scheme)
+    authorization: str = Depends(oauth2_scheme),
+    request: Request = None
 ) -> Dict[str, Any]:
     """
     Отзывает все активные сессии пользователя, кроме текущей.
@@ -491,13 +676,18 @@ async def activate_user(
     
     # Устанавливаем cookie
     secure = os.getenv("ENVIRONMENT", "development") != "development"
+    cookie_samesite = os.getenv("COOKIE_SAMESITE", "Lax")
+    cookie_domain = os.getenv("COOKIE_DOMAIN", None)
+    cookie_path = os.getenv("COOKIE_PATH", "/")
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        samesite="Lax",
-        secure=secure
+        samesite=cookie_samesite,
+        secure=secure,
+        domain=cookie_domain,
+        path=cookie_path,
     )
     
     logger.info("Аккаунт активирован: %s, ID: %s", user.email, user.id)
@@ -538,7 +728,6 @@ async def activate_user(
     return {
         "status": "success",
         "message": "Аккаунт успешно активирован",
-        "access_token": access_token,
         "token_type": "bearer",
         "user": {
             "id": user.id,
@@ -552,7 +741,8 @@ async def activate_user(
 async def change_password(
     password_data: PasswordChangeSchema,
     session: SessionDep,
-    current_user: UserModel = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_user),
+    request: Request = None
 ) -> Dict[str, str]:
     """
     Смена пароля пользователя.
@@ -565,6 +755,9 @@ async def change_password(
     Returns:
         Dict[str, str]: Статус операции
     """
+    # CSRF
+    _validate_csrf(request)
+
     # Проверяем текущий пароль
     if not await verify_password(password_data.current_password, current_user.hashed_password):
         raise HTTPException(
@@ -644,7 +837,7 @@ async def check_user_permissions(
     return result
 
 @router.post("/request-password-reset")
-async def request_password_reset(data: PasswordResetRequestSchema, session: SessionDep):
+async def request_password_reset(data: PasswordResetRequestSchema, session: SessionDep, request: Request):
     """
     Запрашивает сброс пароля для пользователя по email.
     
@@ -666,7 +859,7 @@ async def request_password_reset(data: PasswordResetRequestSchema, session: Sess
     return {"status": "ok"}
 
 @router.post("/reset-password")
-async def reset_password(data: PasswordResetSchema, session: SessionDep):
+async def reset_password(data: PasswordResetSchema, session: SessionDep, request: Request):
     """
     Сбрасывает пароль пользователя по токену.
     
@@ -690,6 +883,16 @@ async def reset_password(data: PasswordResetSchema, session: SessionDep):
     user.reset_token_created_at = None
     await session.commit()
     return {"status": "success"}
+
+@router.get("/.well-known/jwks.json")
+async def jwks():
+    return get_jwks()
+
+
+@router.post("/keys/rotate", dependencies=[Depends(get_super_admin_user)], summary="Ротация RSA ключей (RS256)")
+async def rotate_rsa_keys(keep_seconds: int | None = None):
+    new_kid, kept_until = rotate_keys(keep_seconds)
+    return {"status": "ok", "new_kid": new_kid, "old_keys_kept_until": kept_until}
 
 # Добавляем функцию зависимости для проверки service_key или прав суперадмина
 async def verify_service_key_or_super_admin(
@@ -726,7 +929,9 @@ async def verify_service_jwt(
     if not cred or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
-        payload = jwt.decode(cred.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        # RS256: проверяем подпись публичным ключом
+        from app.services.auth.keys_service import get_public_key_pem
+        payload = jwt.decode(cred.credentials, get_public_key_pem(), algorithms=["RS256"])
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":

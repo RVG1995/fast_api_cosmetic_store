@@ -55,8 +55,8 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,   # Важно для работы с куками
     allow_methods=["*"],      # Разрешаем все методы 
-    allow_headers=["*"],      # Разрешаем все заголовки
-    expose_headers=["Content-Type", "Set-Cookie", "Access-Control-Allow-Credentials"],  # Явно разрешаем заголовки
+    allow_headers=["*", "X-CSRF-Token", "Authorization", "Content-Type"],      # Разрешаем все заголовки
+    expose_headers=["Content-Type", "Set-Cookie", "Access-Control-Allow-Credentials", "X-CSRF-Token"],  # Явно разрешаем заголовки
     max_age=86400,            # Кеширование CORS на 24 часа
 )
 

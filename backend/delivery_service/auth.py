@@ -7,16 +7,29 @@ from fastapi.security import OAuth2PasswordBearer
 import jwt
 
 from config import settings
+from cache import cache_service
 
+# Хелпер для проверки отзыва jti
+async def is_jti_revoked(jti: str) -> bool:
+    try:
+        revoked = await cache_service.get(f"revoked:jti:{jti}")
+        return bool(revoked)
+    except Exception:
+        return False
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("product_auth")
 
 # Константы для JWT из настроек
-SECRET_KEY = settings.JWT_SECRET_KEY
-ALGORITHM = settings.JWT_ALGORITHM
+ALGORITHM = "RS256"
+ISSUER = getattr(settings, "JWT_ISSUER", "auth_service")
+VERIFY_AUDIENCE = getattr(settings, "VERIFY_JWT_AUDIENCE", False)
+AUDIENCE = getattr(settings, "JWT_AUDIENCE", None)
+AUTH_SERVICE_URL = getattr(settings, "AUTH_SERVICE_URL", "http://localhost:8000")
+JWKS_URL = f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json"
+_jwks_client = jwt.PyJWKClient(JWKS_URL)
 
-logger.info("Загружена конфигурация JWT. SECRET_KEY: %s...", SECRET_KEY[:5])
+logger.info("Загружена конфигурация JWT для RS256/JWKS")
 
 # Схема авторизации через OAuth2
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
@@ -56,9 +69,22 @@ async def get_current_user(
         return None
     
     try:
-        logger.info("Попытка декодирования токена: %s...", access_token[:20])
-        logger.info("Используемый SECRET_KEY: %s", SECRET_KEY)
-        payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        logger.info("Попытка декодирования токена")
+        signing_key = _jwks_client.get_signing_key_from_jwt(access_token).key
+        decode_kwargs = {
+            "algorithms": [ALGORITHM],
+            "issuer": ISSUER,
+            "options": {"verify_aud": VERIFY_AUDIENCE},
+        }
+        if VERIFY_AUDIENCE and AUDIENCE:
+            decode_kwargs["audience"] = AUDIENCE
+        payload = jwt.decode(access_token, signing_key, **decode_kwargs)
+
+        # Проверка отзыва jti в Redis
+        jti = payload.get("jti")
+        if jti and await is_jti_revoked(jti):
+            logger.warning("Токен с jti=%s отозван", jti)
+            return None
         # Если это JWT сервисного доступа, возвращаем None, без попытки parsing sub в int
         if payload.get("scope") == "service":
             logger.info("get_current_user: service JWT detected, returning None for user")
@@ -83,7 +109,6 @@ async def get_current_user(
         )
     except jwt.InvalidSignatureError:
         logger.error("Ошибка декодирования JWT: Неверная подпись токена")
-        logger.error("Используемый SECRET_KEY: %s", SECRET_KEY)
         return None
     except jwt.ExpiredSignatureError:
         logger.error("Ошибка декодирования JWT: Токен просрочен")

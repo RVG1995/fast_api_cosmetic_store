@@ -38,7 +38,7 @@ app.add_middleware(
     allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-CSRF-Token", "Authorization", "Content-Type"],
 )
 app.include_router(settings_router, prefix="/notifications", tags=["notifications"])
 

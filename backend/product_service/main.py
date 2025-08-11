@@ -56,7 +56,7 @@ app.add_middleware(
     allow_origins=origins,      # Разрешенные источники
     allow_credentials=True,
     allow_methods=["*"],        # Разрешенные методы (GET, POST и т.д.)
-    allow_headers=["*"],        # Разрешенные заголовки
+    allow_headers=["*", "X-CSRF-Token", "Authorization", "Content-Type"],        # Разрешенные заголовки
 )
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]

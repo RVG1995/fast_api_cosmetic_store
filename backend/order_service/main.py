@@ -75,8 +75,8 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["Content-Type", "Set-Cookie", "Access-Control-Allow-Credentials"],
+    allow_headers=["*", "X-CSRF-Token", "Authorization", "Content-Type"],
+    expose_headers=["Content-Type", "Set-Cookie", "Access-Control-Allow-Credentials", "X-CSRF-Token"],
 )
 
 # Подключение роутеров

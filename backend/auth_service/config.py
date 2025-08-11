@@ -28,7 +28,11 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke"
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 14  # 14 дней
     SERVICE_TOKEN_EXPIRE_MINUTES: int = 15
+    JWT_ISSUER: str = "auth_service"
+    JWT_AUDIENCE: str = "frontend"
+    VERIFY_JWT_AUDIENCE: bool = False
     
     # Настройки защиты от брутфорса
     MAX_FAILED_ATTEMPTS: int = 5
@@ -86,6 +90,11 @@ def get_access_token_expires_delta() -> timedelta:
 def get_service_token_expires_delta() -> timedelta:
     """Возвращает время жизни сервисного токена."""
     return timedelta(minutes=settings.SERVICE_TOKEN_EXPIRE_MINUTES)
+
+
+def get_refresh_token_expires_delta() -> timedelta:
+    """Возвращает время жизни refresh-токена."""
+    return timedelta(minutes=settings.JWT_REFRESH_TOKEN_EXPIRE_MINUTES)
 
 
 def get_origins() -> list[str]:

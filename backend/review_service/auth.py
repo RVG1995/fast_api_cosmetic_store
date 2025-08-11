@@ -7,6 +7,10 @@ from fastapi.security import OAuth2PasswordBearer
 import json
 
 from config import settings, logger
+ALGORITHM = "RS256"
+AUTH_SERVICE_URL = getattr(settings, "AUTH_SERVICE_URL", "http://localhost:8000")
+JWKS_URL = f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json"
+_jwks_client = jwt.PyJWKClient(JWKS_URL)
 
 # URL сервиса аутентификации
 AUTH_SERVICE_URL = settings.AUTH_SERVICE_URL
@@ -71,8 +75,9 @@ async def get_current_user(
             return None
         
         try:
-            # Декодируем токен локально
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            # Декодируем токен через публичный ключ из JWKS
+            signing_key = _jwks_client.get_signing_key_from_jwt(token).key
+            payload = jwt.decode(token, signing_key, algorithms=[ALGORITHM])
             user_id = payload.get("sub")
             logger.info(f"Декодирован токен, payload: {payload}")
             if not user_id:

@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException, status, Cookie, Request, Header
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 from dependencies import _get_service_token
-from cache import cache_delete
+from cache import cache_delete, cache_get
 from sqlalchemy.exc import SQLAlchemyError
 from config import settings
 
@@ -21,12 +21,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cart_auth")
 
 # Константы для JWT из конфигурации
-SECRET_KEY = settings.JWT_SECRET_KEY
-ALGORITHM = settings.JWT_ALGORITHM
+ALGORITHM = "RS256"
+AUTH_SERVICE_URL = getattr(settings, "AUTH_SERVICE_URL", "http://localhost:8000")
+JWKS_URL = f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json"
+_jwks_client = jwt.PyJWKClient(JWKS_URL)
 
 
 
-logger.info("Загружена конфигурация JWT. SECRET_KEY: %s...", SECRET_KEY[:5])
+logger.info("Загружена конфигурация JWT")
 
 # Схема авторизации через OAuth2
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
@@ -139,9 +141,35 @@ async def get_current_user(
         return None
     
     try:
-        logger.info("Попытка декодирования токена: %s...", access_token[:20])
-        logger.info("Используемый SECRET_KEY: %s", SECRET_KEY)
-        payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        logger.info("Попытка декодирования токена")
+        ISSUER = getattr(settings, "JWT_ISSUER", "auth_service")
+        VERIFY_AUDIENCE = getattr(settings, "VERIFY_JWT_AUDIENCE", False)
+        AUDIENCE = getattr(settings, "JWT_AUDIENCE", None)
+        signing_key = _jwks_client.get_signing_key_from_jwt(access_token).key
+        decode_kwargs = {
+            "algorithms": [ALGORITHM],
+            "issuer": ISSUER,
+            "options": {"verify_aud": VERIFY_AUDIENCE},
+        }
+        if VERIFY_AUDIENCE and AUDIENCE:
+            decode_kwargs["audience"] = AUDIENCE
+        payload = jwt.decode(access_token, signing_key, **decode_kwargs)
+
+        # Проверяем отзыв jti
+        jti = payload.get("jti")
+        if jti:
+            try:
+                revoked = await cache_get(f"revoked:jti:{jti}")
+                if revoked:
+                    logger.warning("Токен с jti=%s отозван", jti)
+                    return None
+            except Exception as e:
+                logger.error("Ошибка проверки revoked JTI: %s", e)
+
+        # Сервисный токен не даёт user-контекст
+        if payload.get("scope") == "service":
+            logger.info("service JWT detected, returning None for user")
+            return None
         user_id = payload.get("sub")
         if user_id is None:
             logger.warning("В токене отсутствует sub с ID пользователя")
@@ -162,7 +190,6 @@ async def get_current_user(
         )
     except jwt.InvalidSignatureError:
         logger.error("Ошибка декодирования JWT: Неверная подпись токена")
-        logger.error("Используемый SECRET_KEY: %s", SECRET_KEY)
         return None
     except jwt.ExpiredSignatureError:
         logger.error("Ошибка декодирования JWT: Токен просрочен")

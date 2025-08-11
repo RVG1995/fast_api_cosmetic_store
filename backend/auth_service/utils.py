@@ -11,8 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Получение настроек JWT из переменных окружения
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_ALGORITHM = "RS256"
 
 # Настройка для хэширования паролей
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -34,7 +33,8 @@ async def verify_service_jwt(
     if not cred or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
-        payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        from app.services.auth.keys_service import get_public_key_pem
+        payload = jwt.decode(cred.credentials, get_public_key_pem(), algorithms=[JWT_ALGORITHM])
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":

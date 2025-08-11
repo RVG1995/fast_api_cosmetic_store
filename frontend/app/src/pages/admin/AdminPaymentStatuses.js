@@ -23,4 +23,4 @@ const AdminPaymentStatuses = () => (
   />
 );
 
-export default AdminPaymentStatuses;
+export default AdminPaymentStatuses; 

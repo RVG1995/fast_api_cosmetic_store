@@ -172,7 +172,7 @@ async def get_cart(
     Для авторизованных пользователей корзина хранится в БД.
     Для анонимных пользователей корзина хранится только в куках.
     """
-    logger.info("Запрос корзины: user=%d", user.id if user else 'Anonymous')
+    logger.info("Запрос корзины: user=%s", user.id if user else 'Anonymous')
     
     try:
         # Для авторизованных пользователей используем БД и кэш

@@ -7,13 +7,16 @@ from typing import Dict, Tuple, Optional, Any
 
 import jwt
 
-from config import settings, get_access_token_expires_delta, get_service_token_expires_delta
+from config import settings, get_access_token_expires_delta, get_service_token_expires_delta, get_refresh_token_expires_delta
 
 logger = logging.getLogger(__name__)
 
 # Загружаем настройки JWT из конфигурации
-SECRET_KEY = settings.JWT_SECRET_KEY
-ALGORITHM = settings.JWT_ALGORITHM
+from .keys_service import get_private_key_pem, get_kid
+
+ALGORITHM = "RS256"
+ISSUER = settings.JWT_ISSUER
+AUDIENCE = settings.JWT_AUDIENCE
 
 class TokenService:
     """Сервис для работы с JWT токенами"""
@@ -43,14 +46,18 @@ class TokenService:
         
         # Добавляем стандартные JWT-клеймы
         to_encode.update({
-            "exp": expire,  # Expiration time
-            "iat": datetime.now(timezone.utc),  # Issued at
-            "jti": jti,  # JWT ID
-            "nbf": datetime.now(timezone.utc)  # Not valid before
+            "exp": expire,
+            "iat": datetime.now(timezone.utc),
+            "jti": jti,
+            "nbf": datetime.now(timezone.utc),
+            "iss": ISSUER,
+            "aud": AUDIENCE,
         })
         
-        # Создаем токен
-        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        # kid в заголовок для выбора ключа
+        headers = {"kid": get_kid()}
+        # Создаем токен RS256 приватным ключом
+        encoded_jwt = jwt.encode(to_encode, get_private_key_pem(), algorithm=ALGORITHM, headers=headers)
         logger.info("Создан токен с JTI: %s, истечет: %s", jti, expire)
         
         return encoded_jwt, jti
@@ -70,7 +77,17 @@ class TokenService:
             jwt.PyJWTError: При ошибке декодирования
         """
         try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            options = {"require": ["exp", "iat", "nbf", "iss"], "verify_aud": settings.VERIFY_JWT_AUDIENCE}
+            # В самом auth_service мы знаем приватный ключ, но для decode используем публичный
+            from .keys_service import get_public_key_pem
+            payload = jwt.decode(
+                token,
+                get_public_key_pem(),
+                algorithms=[ALGORITHM],
+                audience=AUDIENCE if settings.VERIFY_JWT_AUDIENCE else None,
+                options=options,
+                issuer=ISSUER,
+            )
             return payload
         except jwt.ExpiredSignatureError:
             logger.warning("Попытка использования истекшего токена")
@@ -91,7 +108,8 @@ class TokenService:
             Optional[datetime]: Время истечения токена или None при ошибке
         """
         try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": True})
+            from .keys_service import get_public_key_pem
+            payload = jwt.decode(token, get_public_key_pem(), algorithms=[ALGORITHM], options={"verify_signature": True})
             exp = payload.get("exp")
             if exp:
                 return datetime.fromtimestamp(exp, tz=timezone.utc)
@@ -120,5 +138,27 @@ class TokenService:
             "exp": expire
         }
         
-        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        headers = {"kid": get_kid()}
+        encoded_jwt = jwt.encode(to_encode, get_private_key_pem(), algorithm=ALGORITHM, headers=headers)
         return encoded_jwt 
+
+    @staticmethod
+    async def create_refresh_token(user_id: str) -> Tuple[str, str]:
+        """
+        Создает refresh-токен с длинным сроком жизни и собственной jti
+        """
+        expires_delta = get_refresh_token_expires_delta()
+        expire = datetime.now(timezone.utc) + expires_delta
+        jti = str(uuid.uuid4())
+        to_encode = {
+            "sub": str(user_id),
+            "type": "refresh",
+            "exp": expire,
+            "iat": datetime.now(timezone.utc),
+            "nbf": datetime.now(timezone.utc),
+            "jti": jti,
+            "iss": ISSUER,
+            "aud": AUDIENCE,
+        }
+        headers = {"kid": get_kid()}
+        return jwt.encode(to_encode, get_private_key_pem(), algorithm=ALGORITHM, headers=headers), jti

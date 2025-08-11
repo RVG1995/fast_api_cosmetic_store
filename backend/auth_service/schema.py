@@ -55,6 +55,10 @@ class TokenSchema(BaseModel):
     access_token: str
     token_type: str
 
+class TokenTypeOnlySchema(BaseModel):
+    """Схема для ответов без самого access_token (куки-стратегия)."""
+    token_type: str
+
 class TokenDataShema(BaseModel):
     """Схема для данных токена."""
     email: Optional[str] = None

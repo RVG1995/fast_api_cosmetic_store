@@ -17,8 +17,7 @@ from cache import cache_get, cache_set
 logger = logging.getLogger("order_dependencies")
 
 # Получение настроек JWT из конфигурации
-JWT_SECRET_KEY = settings.JWT_SECRET_KEY
-JWT_ALGORITHM = settings.JWT_ALGORITHM
+JWT_ALGORITHM = "RS256"
 
 # URL сервисов из конфигурации
 PRODUCT_SERVICE_URL = settings.PRODUCT_SERVICE_URL
@@ -92,7 +91,10 @@ async def verify_service_jwt(
     if not cred or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
-        payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        # RS256: проверяем подпись через JWKS auth-сервиса
+        jwks_client = jwt.PyJWKClient(f"{settings.AUTH_SERVICE_URL}/auth/.well-known/jwks.json")
+        signing_key = jwks_client.get_signing_key_from_jwt(cred.credentials).key
+        payload = jwt.decode(cred.credentials, signing_key, algorithms=[ALGORITHM])
     except jwt.InvalidTokenError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":

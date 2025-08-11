@@ -40,11 +40,23 @@ const setupInterceptors = (api, serviceName) => {
         data: config.data,
         headers: config.headers,
         withCredentials: config.withCredentials,
-        cookies: document.cookie // Выводим текущие куки
+        cookies: process.env.NODE_ENV !== 'production' ? document.cookie : 'hidden'
       });
       
       // Гарантируем передачу куки для каждого запроса
       config.withCredentials = true;
+
+      // Для небезопасных методов добавляем X-CSRF-Token из куки
+      const method = (config.method || 'get').toLowerCase();
+      const needsCsrf = ['post', 'put', 'patch', 'delete'].includes(method);
+      if (needsCsrf) {
+        const csrfMatch = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
+        const csrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : null;
+        if (csrfToken) {
+          config.headers = config.headers || {};
+          config.headers['X-CSRF-Token'] = csrfToken;
+        }
+      }
       
       return config;
     },
@@ -78,12 +90,23 @@ const setupInterceptors = (api, serviceName) => {
         message: error.message
       });
       
-      // Обработка ошибок авторизации (401)
-      if (error.response && error.response.status === 401) {
-        console.log('Ошибка авторизации (401): Токен истек или недействителен');
-        // Не делаем window.location.href! Пусть обработка будет на уровне компонентов/guard'ов
-        // window.location.href = '/login?expired=true';
-        // Можно тут диспатчить глобальный алерт, если нужно
+      // Обработка ошибок авторизации (401) с автоматическим refresh и ретраем 1 раз
+      const originalRequest = error.config || {};
+      const isAuthRefresh = (originalRequest.url || '').includes('/auth/refresh');
+      const isAuthLogin = (originalRequest.url || '').includes('/auth/login');
+      if (error.response && error.response.status === 401 && !originalRequest._retry && !isAuthRefresh && !isAuthLogin) {
+        originalRequest._retry = true;
+        console.log(`[${serviceName} API] 401. Пытаемся обновить access токен через /auth/refresh и повторить запрос`);
+        return authApi.post('/auth/refresh', null, { withCredentials: true })
+          .then(() => {
+            // Повторяем исходный запрос с тем же инстансом
+            originalRequest.withCredentials = true;
+            return api.request(originalRequest);
+          })
+          .catch((refreshErr) => {
+            console.error('Не удалось обновить access токен:', refreshErr?.response?.data || refreshErr.message);
+            return Promise.reject(error);
+          });
       }
       return Promise.reject(error);
     }

@@ -9,12 +9,17 @@ from fastapi import HTTPException, Depends, status, Request
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 
 from config import settings
+from cache import cache_service
 
 # Схема OAuth2 для получения токена из заголовка Authorization
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 logger = logging.getLogger("notifications_service.auth")
 
 bearer_scheme = HTTPBearer(auto_error=False)
+ALGORITHM = "RS256"
+AUTH_SERVICE_URL = getattr(settings, "AUTH_SERVICE_URL", "http://localhost:8000")
+JWKS_URL = f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json"
+_jwks_client = jwt.PyJWKClient(JWKS_URL)
 async def verify_service_jwt(
     cred: HTTPAuthorizationCredentials = Depends(bearer_scheme)
 ) -> bool:
@@ -22,7 +27,8 @@ async def verify_service_jwt(
     if not cred or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
-        payload = jwt.decode(cred.credentials, settings.JWT_SECRET_KEY, algorithms=[settings.ALGORITHM])
+        signing_key = _jwks_client.get_signing_key_from_jwt(cred.credentials).key
+        payload = jwt.decode(cred.credentials, signing_key, algorithms=[ALGORITHM])
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":
@@ -68,8 +74,32 @@ async def get_current_user(
         return None
     
     try:
-        # Декодируем JWT
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # Декодируем JWT с issuer + опциональной audience
+        ISSUER = getattr(settings, "JWT_ISSUER", "auth_service")
+        VERIFY_AUDIENCE = getattr(settings, "VERIFY_JWT_AUDIENCE", False)
+        AUDIENCE = getattr(settings, "JWT_AUDIENCE", None)
+        signing_key = _jwks_client.get_signing_key_from_jwt(token).key
+        decode_kwargs = {
+            "algorithms": [ALGORITHM],
+            "issuer": ISSUER,
+            "options": {"verify_aud": VERIFY_AUDIENCE},
+        }
+        if VERIFY_AUDIENCE and AUDIENCE:
+            decode_kwargs["audience"] = AUDIENCE
+        payload = jwt.decode(token, signing_key, **decode_kwargs)
+
+        # Отозван ли jti
+        jti = payload.get("jti")
+        if jti:
+            revoked = await cache_service.get(f"revoked:jti:{jti}")
+            if revoked:
+                logger.warning("JWT validation failed: revoked jti %s", jti)
+                return None
+
+        # Сервисные JWT не дают user-контекст
+        if payload.get("scope") == "service":
+            return None
+
         user_id = payload.get("sub")
     except (jwt.InvalidTokenError, jwt.ExpiredSignatureError, jwt.DecodeError) as e:
         logger.warning("JWT validation failed: %s", e)

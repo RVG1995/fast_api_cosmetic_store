@@ -8,16 +8,29 @@ from fastapi.security import OAuth2PasswordBearer
 import jwt
 
 from config import settings
+from cache import cache_service
+
+async def is_jti_revoked(jti: str) -> bool:
+    try:
+        revoked = await cache_service.get(f"revoked:jti:{jti}")
+        return bool(revoked)
+    except Exception:
+        return False
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("order_auth")
 
 # Константы для JWT из настроек
-SECRET_KEY = settings.JWT_SECRET_KEY
-ALGORITHM = settings.JWT_ALGORITHM
+ALGORITHM = "RS256"
+ISSUER = getattr(settings, "JWT_ISSUER", "auth_service")
+VERIFY_AUDIENCE = getattr(settings, "VERIFY_JWT_AUDIENCE", False)
+AUDIENCE = getattr(settings, "JWT_AUDIENCE", None)
+AUTH_SERVICE_URL = getattr(settings, "AUTH_SERVICE_URL", "http://localhost:8000")
+JWKS_URL = f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json"
+_jwks_client = jwt.PyJWKClient(JWKS_URL)
 
-logger.info("Загружена конфигурация JWT. SECRET_KEY: %s...", SECRET_KEY[:5])
+logger.info("Загружена конфигурация JWT")
 
 # Схема авторизации через OAuth2
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
@@ -82,7 +95,7 @@ async def get_current_user(
     if not access_token and authorization:
         if authorization.startswith("Bearer "):
             access_token = authorization.replace("Bearer ", "")
-            logger.info("Токен получен из заголовка Authorization: %s...", access_token[:20])
+            logger.info("Токен получен из заголовка Authorization")
         else:
             logger.warning("Заголовок Authorization не содержит Bearer токен")
     
@@ -91,23 +104,35 @@ async def get_current_user(
         return None
     
     try:
-        logger.info("Попытка декодирования токена: %s...", access_token[:20])
-        logger.info("Используемый SECRET_KEY: %s", SECRET_KEY)
+        logger.info("Попытка декодирования токена")
         
-        # Игнорируем проверку срока действия токена (для отладки)
-        # ПРИМЕЧАНИЕ: В продакшене нужно убрать options и использовать стандартную проверку
-        payload = jwt.decode(
-            access_token,
-            SECRET_KEY,
-            algorithms=[ALGORITHM],
-            options={"verify_exp": False}  # Отключаем проверку срока действия
-        )
+        # Стандартная проверка подписи/срока + issuer/audience
+        signing_key = _jwks_client.get_signing_key_from_jwt(access_token).key
+        decode_kwargs = {
+            "algorithms": [ALGORITHM],
+            "issuer": ISSUER,
+            "options": {"verify_aud": VERIFY_AUDIENCE},
+        }
+        if VERIFY_AUDIENCE and AUDIENCE:
+            decode_kwargs["audience"] = AUDIENCE
+        payload = jwt.decode(access_token, signing_key, **decode_kwargs)
+
+        # Проверка отзыва jti в Redis
+        jti = payload.get("jti")
+        if jti and await is_jti_revoked(jti):
+            logger.warning("Токен с jti=%s отозван", jti)
+            return None
         
         user_id = payload.get("sub")
         if user_id is None:
             logger.warning("В токене отсутствует sub с ID пользователя")
             return None
         
+        # Если это сервисный токен — игнорируем пользователя
+        if payload.get("scope") == "service":
+            logger.info("Обнаружен сервисный JWT, пропускаем user-контекст")
+            return None
+
         # Добавляем проверку ролей из токена
         is_admin = payload.get("is_admin", False)
         is_super_admin = payload.get("is_super_admin", False)
@@ -123,37 +148,10 @@ async def get_current_user(
         )
     except jwt.InvalidSignatureError:
         logger.error("Ошибка декодирования JWT: Неверная подпись токена")
-        logger.error("Используемый SECRET_KEY: %s", SECRET_KEY)
         return None
     except jwt.ExpiredSignatureError:
-        # Для отладки попробуем декодировать токен еще раз без проверки срока действия
-        logger.warning("Токен просрочен, попытка декодирования без проверки срока действия")
-        try:
-            payload = jwt.decode(
-                access_token,
-                SECRET_KEY,
-                algorithms=[ALGORITHM],
-                options={"verify_exp": False}
-            )
-            user_id = payload.get("sub")
-            if user_id is None:
-                return None
-                
-            is_admin = payload.get("is_admin", False)
-            is_super_admin = payload.get("is_super_admin", False)
-            is_active = payload.get("is_active", True)
-            
-            logger.info("Просроченный токен успешно декодирован: user_id=%s", user_id)
-            
-            return User(
-                id=int(user_id), 
-                is_admin=is_admin, 
-                is_super_admin=is_super_admin,
-                is_active=is_active
-            )
-        except (jwt.InvalidSignatureError, jwt.DecodeError, jwt.PyJWTError) as e:
-            logger.error("Не удалось декодировать просроченный токен: %s", e)
-            return None
+        logger.error("Ошибка декодирования JWT: Токен просрочен")
+        return None
 
 def check_admin_access(user: Optional[User] = Depends(get_current_user)):
     """Проверяет, что пользователь аутентифицирован и имеет права администратора"""

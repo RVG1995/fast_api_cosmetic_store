@@ -20,8 +20,10 @@ from auth_utils import get_service_token
 logger = logging.getLogger("order_dependencies")
 
 # Получение настроек JWT из конфигурации
-JWT_SECRET_KEY = settings.JWT_SECRET_KEY
-JWT_ALGORITHM = settings.JWT_ALGORITHM
+JWT_ALGORITHM = "RS256"
+JWT_ISSUER = getattr(settings, "JWT_ISSUER", "auth_service")
+VERIFY_JWT_AUDIENCE = getattr(settings, "VERIFY_JWT_AUDIENCE", False)
+JWT_AUDIENCE = getattr(settings, "JWT_AUDIENCE", None)
 
 # URL сервисов из конфигурации
 PRODUCT_SERVICE_URL = settings.PRODUCT_SERVICE_URL
@@ -35,7 +37,7 @@ SERVICE_CLIENT_ID = settings.SERVICE_CLIENT_ID
 SERVICE_TOKEN_URL = f"{AUTH_SERVICE_URL}/auth/token"
 SERVICE_TOKEN_EXPIRE_MINUTES = settings.SERVICE_TOKEN_EXPIRE_MINUTES
 
-ALGORITHM = settings.JWT_ALGORITHM
+ALGORITHM = JWT_ALGORITHM
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -72,7 +74,10 @@ async def verify_service_jwt(
     if not cred or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
-        payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        # RS256: проверяем подпись через JWKS auth-сервиса
+        jwks_client = jwt.PyJWKClient(f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json")
+        signing_key = jwks_client.get_signing_key_from_jwt(cred.credentials).key
+        payload = jwt.decode(cred.credentials, signing_key, algorithms=[ALGORITHM])
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":
@@ -113,7 +118,16 @@ async def get_current_user(
     
     # Проверяем, это сервисный JWT с параметром scope=service
     try:
-        payload = jwt.decode(actual_token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        decode_kwargs = {
+            "algorithms": [ALGORITHM],
+            "issuer": JWT_ISSUER,
+            "options": {"verify_aud": VERIFY_JWT_AUDIENCE},
+        }
+        if VERIFY_JWT_AUDIENCE and JWT_AUDIENCE:
+            decode_kwargs["audience"] = JWT_AUDIENCE
+        jwks_client = jwt.PyJWKClient(f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json")
+        signing_key = jwks_client.get_signing_key_from_jwt(actual_token).key
+        payload = jwt.decode(actual_token, signing_key, **decode_kwargs)
         if payload.get("scope") == "service" and x_service_name:
             logger.info("Внутренний запрос от сервиса %s авторизован через JWT", x_service_name)
             # Возвращаем специальные данные для внутреннего сервиса с повышенными правами
@@ -132,7 +146,27 @@ async def get_current_user(
     try:
         # Декодируем токен пользователя
         logger.info("Попытка декодирования токена пользователя: %s...", actual_token[:20])
-        payload = jwt.decode(actual_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        decode_kwargs = {
+            "algorithms": [JWT_ALGORITHM],
+            "issuer": JWT_ISSUER,
+            "options": {"verify_aud": VERIFY_JWT_AUDIENCE},
+        }
+        if VERIFY_JWT_AUDIENCE and JWT_AUDIENCE:
+            decode_kwargs["audience"] = JWT_AUDIENCE
+        jwks_client = jwt.PyJWKClient(f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json")
+        signing_key = jwks_client.get_signing_key_from_jwt(actual_token).key
+        payload = jwt.decode(actual_token, signing_key, **decode_kwargs)
+
+        # Проверяем отзыв jti (если есть)
+        jti = payload.get("jti")
+        if jti:
+            try:
+                revoked = await get_cached_data(f"revoked:jti:{jti}")
+                if revoked:
+                    logger.error("Токен с jti=%s отозван", jti)
+                    return None
+            except Exception as e:
+                logger.error("Ошибка проверки revoked JTI: %s", e)
         
         # Используем ключ "sub" вместо "user_id" как в других сервисах
         user_id = payload.get("sub")

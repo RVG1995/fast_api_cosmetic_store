@@ -32,7 +32,7 @@ app.add_middleware(
     allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-CSRF-Token", "Authorization", "Content-Type"],
 )
 
 app.include_router(favorites_router) 

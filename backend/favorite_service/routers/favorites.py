@@ -53,12 +53,22 @@ async def remove_favorite(
 async def list_favorites(
     user_id: int = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_async_session),
+    limit: int = 50,
+    offset: int = 0,
 ):
-    cache_key = _make_cache_key("list", user_id)
+    limit = max(1, min(200, limit))
+    offset = max(0, offset)
+    cache_key = _make_cache_key("list", user_id, limit=limit, offset=offset)
     cached = await cache_service.get(cache_key)
     if cached is not None:
         return cached
-    q = await session.execute(select(Favorite).where(Favorite.user_id == user_id))
+    q = await session.execute(
+        select(Favorite)
+        .where(Favorite.user_id == user_id)
+        .order_by(Favorite.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     result = q.scalars().all()
     data = [FavoriteOut.model_validate(fav).model_dump() for fav in result]
     await cache_service.set(cache_key, data, ttl=DEFAULT_CACHE_TTL)

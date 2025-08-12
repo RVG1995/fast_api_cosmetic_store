@@ -68,6 +68,14 @@ class Settings(BaseSettings):
     BOXBERRY_MAX_SIDE_LENGTH: int = 120
     BOXBERRY_MAX_PVZ_SIDE_LENGTH: int = 185
     BOXBERRY_MAX_TOTAL_DIMENSIONS: int = 250
+    # Доп. настройки Boxberry API/калькулятора
+    BOXBERRY_SENDER_CITY_ID: str = ""  # например, Москва: "68" (если требуется для калькулятора)
+    BOXBERRY_USE_SHOP_SETTINGS: bool = True
+    BOXBERRY_API_VERSION: str = "2.0"
+    BOXBERRY_CMS_NAME: str = "FastAPI"
+    BOXBERRY_SHOP_URL: str = "http://localhost"
+    BOXBERRY_COURIER_CITIES_TTL: int = 10800  # 3 часа
+    BOXBERRY_ZIPS_TTL: int = 43200  # 12 часов
 
     BOXBERRY_STATUSES: dict = {
         1 : 'Не в акте',
@@ -101,6 +109,10 @@ class Settings(BaseSettings):
     DADATA_TOKEN: str = ""
     DADATA_API_URL: str = "https://suggestions.dadata.ru/suggestions/api/4_1/rs"
     DADATA_CACHE_TTL: int = 86400
+    # TTL для кэша результатов DeliveryCalculation (секунды)
+    BOXBERRY_CALC_TTL: int = 300  # 5 минут по умолчанию
+    # TTL для grace-кэша при 5xx/сетевых ошибках (секунды)
+    BOXBERRY_CALC_ERROR_TTL: int = 30
     
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),

@@ -5,12 +5,11 @@ import logging
 import hashlib
 # Импорты для функций выше
 import json
-from typing import List, Dict
 
 import pickle
 import redis.asyncio as redis
 
-from config import settings, get_redis_url, get_cache_ttl, get_cache_keys
+from config import settings, get_redis_url, get_cache_ttl
 
 logger = logging.getLogger("order_cache")
 
@@ -531,6 +530,22 @@ def get_boxberry_cache_key(method: str, params: Optional[Dict] = None) -> str:
     hash_key = hash_obj.hexdigest()
     
     return f"boxberry:{hash_key}"
+
+def get_stable_hash_key(prefix: str, payload: Any) -> str:
+    """Создает стабильный ключ-хеш из произвольного payload (dict/list), используя JSON с сортировкой ключей.
+
+    Args:
+        prefix: Префикс ключа (пространство имён)
+        payload: Произвольные данные (dict/list/скаляр)
+
+    Returns:
+        str: Ключ вида "{prefix}:{md5}"
+    """
+    try:
+        key_str = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except TypeError:
+        key_str = str(payload)
+    return f"{prefix}:{hashlib.md5(key_str.encode('utf-8')).hexdigest()}"
 
 
 # Функции для DaData

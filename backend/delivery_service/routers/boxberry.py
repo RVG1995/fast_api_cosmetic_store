@@ -9,7 +9,13 @@ import httpx
 
 # Импорты из локальных модулей
 from auth import require_admin
-from cache import get_cached_data, set_cached_data, get_boxberry_cache_key, calculate_dimensions
+from cache import (
+    get_cached_data,
+    set_cached_data,
+    get_boxberry_cache_key,
+    calculate_dimensions,
+    get_stable_hash_key,
+)
 from config import settings
 from schemas import (
     DeliveryCalculationResponse,
@@ -220,8 +226,8 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                     if response.status_code == 200:
                         courier_cities = response.json()
                         
-                        # Сохраняем в кэш на 3 часа (10800 секунд)
-                        await set_cached_data(courier_cities_cache_key, courier_cities, 10800)
+                        # Сохраняем в кэш согласно конфигурации
+                        await set_cached_data(courier_cities_cache_key, courier_cities, settings.BOXBERRY_COURIER_CITIES_TTL)
                         logger.info("Сохраняю данные о городах с курьерской доставкой в кэш")
                     elif response.status_code == 503:
                         logger.error("Boxberry API временно недоступен (503)")
@@ -273,8 +279,8 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                     if response.status_code == 200:
                         zip_codes_data = response.json()
                         
-                        # Сохраняем в кэш на 12 часов (43200 секунд)
-                        await set_cached_data(zips_cache_key, zip_codes_data, 43200)
+                        # Сохраняем в кэш согласно конфигурации
+                        await set_cached_data(zips_cache_key, zip_codes_data, settings.BOXBERRY_ZIPS_TTL)
                         logger.info("Сохраняю данные о почтовых индексах для курьерской доставки в кэш")
                     elif response.status_code == 503:
                         logger.error("Boxberry API временно недоступен (503)")
@@ -354,6 +360,12 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                 "Depth": dimensions['depth']
             }]
         }
+        # Дополнительные параметры калькулятора
+        if getattr(settings, "BOXBERRY_SENDER_CITY_ID", ""):
+            params["SenderCityId"] = settings.BOXBERRY_SENDER_CITY_ID
+        params["cmsName"] = getattr(settings, "BOXBERRY_CMS_NAME", "FastAPI")
+        params["version"] = getattr(settings, "BOXBERRY_API_VERSION", "2.0")
+        params["Url"] = getattr(settings, "BOXBERRY_SHOP_URL", "http://localhost")
         
         # Определяем тип доставки
         if cart_request.delivery_type == 'boxberry_pickup_point':
@@ -378,6 +390,27 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
             params["Zip"] = cart_request.zip_code
             logger.info(f"Добавлен почтовый индекс для курьерской доставки: {cart_request.zip_code}")
         
+        # Ключ кэша для DeliveryCalculation (учитывает все параметры)
+        calc_cache_key = get_stable_hash_key(
+            "boxberry:calc",
+            {
+                **params,
+                # Нормализуем BoxSizes для стабильности
+                "BoxSizes": [{
+                    "Weight": int(dimensions['weight']),
+                    "Height": int(dimensions['height']),
+                    "Width": int(dimensions['width']),
+                    "Depth": int(dimensions['depth'])
+                }],
+            },
+        )
+
+        # Попытка взять из кэша
+        cached_calc = await get_cached_data(calc_cache_key)
+        if cached_calc is not None:
+            logger.info("Возвращаю DeliveryCalculation из кэша: %s", calc_cache_key)
+            return cached_calc
+
         # Выполняем запрос к API
         async with httpx.AsyncClient(timeout=15.0) as client:            
             # Логируем запрос для отладки
@@ -419,7 +452,10 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                             
                             # Логируем результат
                             logger.info(f"Получена стоимость доставки для корзины: {result}")
-                            
+                            # Сохраняем в кэш с коротким TTL
+                            await set_cached_data(calc_cache_key, result, settings.BOXBERRY_CALC_TTL)
+                            # Сохраняем копию как stale для grace-режима (TTL = основной + error TTL)
+                            await set_cached_data(f"{calc_cache_key}:stale", result, settings.BOXBERRY_CALC_TTL + settings.BOXBERRY_CALC_ERROR_TTL)
                             return result
                         else:
                             logger.warning("Получен пустой результат расчета доставки для корзины")
@@ -433,6 +469,7 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                                 "delivery_period": 0
                             }
                             
+                            # Кэшировать нули смысла мало -> возвращаем без кэша
                             return result
                     except ValueError as e:
                         logger.error(f"Ошибка парсинга JSON ответа от Boxberry API: {e}")
@@ -440,21 +477,41 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                         raise HTTPException(status_code=500, detail=f"Ошибка обработки ответа Boxberry API: {str(e)}")
                 elif response.status_code == 503:
                     logger.error("Boxberry API временно недоступен (503)")
+                    # Grace-кэш пустого ответа на короткое время не кладем: лучше сразу ошибка
                     raise HTTPException(
                         status_code=503,
                         detail="Сервис Boxberry временно недоступен, попробуйте позже или выберите другой способ доставки"
                     )
                 else:
                     logger.error(f"Ошибка при расчете стоимости доставки: HTTP {response.status_code}, {response.text}")
+                    if 500 <= response.status_code < 600:
+                        stale_key = f"{calc_cache_key}:stale"
+                        stale_result = await get_cached_data(stale_key)
+                        if stale_result is not None:
+                            logger.warning("Boxberry 5xx, отдаю устаревший результат и кэширую на %s c", settings.BOXBERRY_CALC_ERROR_TTL)
+                            await set_cached_data(calc_cache_key, stale_result, settings.BOXBERRY_CALC_ERROR_TTL)
+                            return stale_result
                     raise HTTPException(status_code=response.status_code, 
                                       detail=f"Ошибка API Boxberry: HTTP {response.status_code}, {response.text}")
             
             except httpx.TimeoutException:
                 logger.error("Превышено время ожидания ответа от Boxberry API")
+                stale_key = f"{calc_cache_key}:stale"
+                stale_result = await get_cached_data(stale_key)
+                if stale_result is not None:
+                    logger.warning("Timeout, отдаю устаревший результат и кэширую на %s c", settings.BOXBERRY_CALC_ERROR_TTL)
+                    await set_cached_data(calc_cache_key, stale_result, settings.BOXBERRY_CALC_ERROR_TTL)
+                    return stale_result
                 raise HTTPException(status_code=504, detail="Превышено время ожидания ответа от API Boxberry")
             
             except httpx.RequestError as e:
                 logger.error(f"Ошибка сетевого соединения с Boxberry API: {str(e)}")
+                stale_key = f"{calc_cache_key}:stale"
+                stale_result = await get_cached_data(stale_key)
+                if stale_result is not None:
+                    logger.warning("Сетевой сбой, отдаю устаревший результат и кэширую на %s c", settings.BOXBERRY_CALC_ERROR_TTL)
+                    await set_cached_data(calc_cache_key, stale_result, settings.BOXBERRY_CALC_ERROR_TTL)
+                    return stale_result
                 raise HTTPException(status_code=503, detail=f"Ошибка соединения с API Boxberry: {str(e)}")
                 
     except HTTPException:
@@ -502,7 +559,8 @@ async def create_boxberry_parcel(
                 "shop": {"name": order_data.get("boxberry_point_id")},  # Код пункта поступления
                 "customer": {
                     "fio": order_data.get("full_name", ""),
-                    "phone": order_data.get("phone", "").replace("+7", "").replace("8", "", 1),
+                    # Нормализация телефона: только цифры, последние 10 символов
+                    "phone": re.sub(r"\D", "", str(order_data.get("phone", "")))[-10:],
                     "email": order_data.get("email", "")
                 },
                 "items": [],

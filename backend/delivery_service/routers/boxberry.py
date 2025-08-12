@@ -11,7 +11,14 @@ import httpx
 from auth import require_admin
 from cache import get_cached_data, set_cached_data, get_boxberry_cache_key, calculate_dimensions
 from config import settings
-from schemas import DeliveryCalculationResponse, CartDeliveryRequest
+from schemas import (
+    DeliveryCalculationResponse,
+    CartDeliveryRequest,
+    BoxberryCity,
+    FindCityCodeResponse,
+    PickupPointsResponse,
+    BoxberryStatusModel,
+)
 
 # Настройка логирования
 logger = logging.getLogger("boxberry_router")
@@ -22,7 +29,7 @@ router = APIRouter(
     responses={400: {"description": "Bad Request"}, 500: {"description": "Server Error"}}
 )
 
-@router.get("/cities")
+@router.get("/cities", response_model=List[BoxberryCity])
 async def get_cities(country_code: str = settings.BOXBERRY_COUNTRY_RUSSIA_CODE):
     """
     Получает список городов из Boxberry API и кэширует результат.
@@ -70,7 +77,7 @@ async def get_cities(country_code: str = settings.BOXBERRY_COUNTRY_RUSSIA_CODE):
         raise HTTPException(status_code=500, 
                            detail=f"Ошибка при получении списка городов: {str(e)}")
 
-@router.get("/find-city-code")
+@router.get("/find-city-code", response_model=FindCityCodeResponse)
 async def find_city_code(city_name: str, country_code: str = settings.BOXBERRY_COUNTRY_RUSSIA_CODE):
     """
     Находит код города Boxberry по его названию.
@@ -104,7 +111,7 @@ async def find_city_code(city_name: str, country_code: str = settings.BOXBERRY_C
         logger.exception("Ошибка при поиске кода города: %s", str(e))
         raise HTTPException(status_code=500, detail=f"Ошибка при поиске кода города: {str(e)}")
 
-@router.get("/pickup-points")
+@router.get("/pickup-points", response_model=PickupPointsResponse)
 async def get_pickup_points(city_code: str, country_code: str = settings.BOXBERRY_COUNTRY_RUSSIA_CODE):
     """
     Получает список пунктов выдачи заказов для указанного города.
@@ -780,7 +787,7 @@ async def create_boxberry_parcel(
             detail=f"Ошибка при {'обновлении' if 'updateByTrack' in order_data else 'создании'} посылки в BoxBerry: {str(e)}"
         )
 
-@router.get("/statuses", response_model=List[dict])
+@router.get("/statuses", response_model=List[BoxberryStatusModel])
 async def get_boxberry_statuses():
     """Получить список Boxberry статусов (код+имя) из конфига."""
     return [

@@ -1,7 +1,7 @@
-"""Роутер для интеграции с API Boxberry для получения пунктов выдачи заказов с кэшированием."""
+"""Схемы (Pydantic модели) для Delivery Service."""
 
-from typing import Dict, Optional, List
-from pydantic import BaseModel, Field
+from typing import Dict, Optional, List, Any, Union
+from pydantic import BaseModel, Field, ConfigDict
 
 
 
@@ -26,6 +26,41 @@ class DeliveryCalculationResponse(BaseModel):
     price_base: float = Field(..., description="Базовая стоимость доставки")
     price_service: float = Field(..., description="Стоимость дополнительных услуг")
     delivery_period: int = Field(..., description="Срок доставки в днях")
+
+# =====================
+# Boxberry модели
+# =====================
+
+class BoxberryCity(BaseModel):
+    """Город Boxberry (частичный набор полей)."""
+    Code: str = Field(..., description="Код города Boxberry")
+    Name: str = Field(..., description="Название города")
+    UniqName: Optional[str] = Field(None, description="Уникальное имя (если присутствует)")
+    # Разрешаем лишние поля, которые приходят из Boxberry
+    model_config = ConfigDict(extra='allow')
+
+class FindCityCodeResponse(BaseModel):
+    """Ответ поиска кода города Boxberry по названию."""
+    city_code: Optional[str] = Field(None, description="Код города Boxberry")
+    city_data: Optional[BoxberryCity] = Field(None, description="Найденные данные города")
+    error: Optional[str] = Field(None, description="Описание ошибки, если город не найден")
+
+class BoxberryPickupPoint(BaseModel):
+    """Упрощенная модель пункта выдачи Boxberry для фронта."""
+    Code: Optional[str] = Field(None, description="Код ПВЗ")
+    Name: Optional[str] = Field(None, description="Название ПВЗ")
+    Address: Optional[str] = Field(None, description="Адрес ПВЗ")
+    WorkShedule: Optional[str] = Field(None, description="График работы")
+    DeliveryPeriod: Optional[Union[int, float, str]] = Field(None, description="Срок доставки")
+
+class PickupPointsResponse(BaseModel):
+    """Ответ для списка ПВЗ: оригинальные данные + упрощенные."""
+    original_data: List[Dict[str, Any]]
+    simplified_data: List[BoxberryPickupPoint]
+
+class BoxberryStatusModel(BaseModel):
+    code: int
+    name: str
 
 # Модель товара для расчета доставки из корзины
 class CartItemModel(BaseModel):

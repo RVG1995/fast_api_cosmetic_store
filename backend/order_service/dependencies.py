@@ -77,7 +77,8 @@ async def verify_service_jwt(
         # RS256: проверяем подпись через JWKS auth-сервиса
         jwks_client = jwt.PyJWKClient(f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json")
         signing_key = jwks_client.get_signing_key_from_jwt(cred.credentials).key
-        payload = jwt.decode(cred.credentials, signing_key, algorithms=[ALGORITHM])
+        # Отключаем verify_aud для сервисных токенов
+        payload = jwt.decode(cred.credentials, signing_key, algorithms=[ALGORITHM], options={"verify_aud": False})
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":

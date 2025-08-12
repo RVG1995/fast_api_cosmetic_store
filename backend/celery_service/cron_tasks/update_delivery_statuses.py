@@ -1,5 +1,4 @@
 import logging
-import os
 import sys
 from pathlib import Path
 import httpx
@@ -49,7 +48,7 @@ async def get_orders_service_boxberry_delivery():
                     headers=headers, timeout=5.0,
                 )
                 if orders_response.status_code == 401:
-                    # token expired - clear cache and retry
+                    # token expired - retry with fresh token
                     await asyncio.sleep(delay)
                     continue
                 break
@@ -104,7 +103,14 @@ async def update_order_statuses(status_updates: list[dict]):
     status_updates: [{order_id, tracking_number, status_in_delivery_service}]
     """
     async with httpx.AsyncClient() as client:
-        resp = await client.post(f"{ORDER_SERVICE_URL}/orders/service/boxberry_delivery/update_status", json=status_updates, timeout=10)
+        token = await _get_service_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await client.post(
+            f"{ORDER_SERVICE_URL}/orders/service/boxberry_delivery/update_status",
+            json=status_updates,
+            headers=headers,
+            timeout=10,
+        )
         resp.raise_for_status()
         return resp.json()
 

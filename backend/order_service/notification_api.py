@@ -39,7 +39,7 @@ async def check_notification_settings(user_id: int, event_type: str, order_id: i
                 response = await client.post(
                     f"{NOTIFICATION_SERVICE_URL}/notifications/settings/events",
                     headers=headers, timeout=5.0,
-                    json={"event_type":event_type, "user_id":user_id, "order_id":order_id}
+                    json={"event_type": event_type, "user_id": user_id, "order_id": order_id}
                 )
                 if response.status_code == 401:
                     # token expired - clear cache and retry
@@ -50,15 +50,15 @@ async def check_notification_settings(user_id: int, event_type: str, order_id: i
         
         # now response contains result
         if response.status_code == 200:
-            logger.info("Получены настройки уведомлений для пользователя %s", user_id)
-            return {"ok": True}  # По умолчанию уведомления включены
+            logger.info("Сервис уведомлений принял событие для user_id=%s, event_type=%s", user_id, event_type)
+            return {"ok": True}
         elif response.status_code == 404:
             # Настройки не найдены, используем значения по умолчанию
-            logger.info("Настройки уведомлений для пользователя %s, тип события %s не найдены", user_id, event_type)
-            return {"404": False}
+            logger.info("Настройки уведомлений отсутствуют: user_id=%s, event_type=%s", user_id, event_type)
+            return {"ok": False}
         else:
-            logger.warning("Ошибка при получении настроек уведомлений: %s, %s", response.status_code, response.text)
-            return {"warning": False}
+            logger.warning("Сервис уведомлений вернул %s: %s", response.status_code, response.text)
+            return {"ok": False}
                 
     except (httpx.HTTPError, httpx.TimeoutException, httpx.RequestError) as e:
         logger.error("Ошибка при запросе настроек уведомлений: %s", str(e))

@@ -3,3 +3,5 @@ pydantic
 asyncpg
 sqlalchemy
 alembic 
+jwt
+redis

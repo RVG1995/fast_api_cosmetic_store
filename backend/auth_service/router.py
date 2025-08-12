@@ -979,7 +979,13 @@ async def verify_service_jwt(
     try:
         # RS256: проверяем подпись публичным ключом
         from app.services.auth.keys_service import get_public_key_pem
-        payload = jwt.decode(cred.credentials, get_public_key_pem(), algorithms=["RS256"])
+        # Для сервисных токенов отключаем проверку audience, т.к. aud может отличаться или отсутствовать
+        payload = jwt.decode(
+            cred.credentials,
+            get_public_key_pem(),
+            algorithms=["RS256"],
+            options={"verify_aud": False},
+        )
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":

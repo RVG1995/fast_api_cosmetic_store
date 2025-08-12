@@ -3,16 +3,15 @@
 """
 
 from typing import List, Annotated
-import os
 import logging
-
-from fastapi import APIRouter, Depends, HTTPException, status, Body
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
+from jwt import PyJWKClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import jwt
+from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-
+from config import settings
 from models import ProductModel
 from database import get_session
 from auth import User, get_current_user, require_admin
@@ -29,8 +28,10 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ALGORITHM = "RS256"
+AUTH_SERVICE_URL = getattr(settings, "AUTH_SERVICE_URL", "http://localhost:8000")
+JWKS_URL = f"{AUTH_SERVICE_URL}/auth/.well-known/jwks.json"
+_jwks_client = PyJWKClient(JWKS_URL)
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -41,7 +42,9 @@ async def verify_service_jwt(
     if not cred or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
-        payload = jwt.decode(cred.credentials, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        signing_key = _jwks_client.get_signing_key_from_jwt(cred.credentials).key
+        # Для сервисных токенов отключаем проверку audience
+        payload = jwt.decode(cred.credentials, signing_key, algorithms=[ALGORITHM], options={"verify_aud": False})
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":

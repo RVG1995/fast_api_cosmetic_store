@@ -28,7 +28,8 @@ async def verify_service_jwt(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
         signing_key = _jwks_client.get_signing_key_from_jwt(cred.credentials).key
-        payload = jwt.decode(cred.credentials, signing_key, algorithms=[ALGORITHM])
+        # Для сервисных токенов отключаем проверку audience
+        payload = jwt.decode(cred.credentials, signing_key, algorithms=[ALGORITHM], options={"verify_aud": False})
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":

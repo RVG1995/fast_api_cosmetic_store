@@ -25,8 +25,12 @@ class Settings(BaseSettings):
     USER_STATISTICS_CACHE_TTL: int = 300  # 5 минут для статистики пользователя
     
     # Настройки JWT
+    # Для пользовательских токенов сервис использует RS256 + JWKS из auth_service
     JWT_SECRET_KEY: str = "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke"
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_ISSUER: str = "auth_service"
+    VERIFY_JWT_AUDIENCE: bool = False
+    JWT_AUDIENCE: Optional[str] = None
     
     # Настройки API
     API_MAX_RETRIES: int = 3  # Максимальное число повторных попыток

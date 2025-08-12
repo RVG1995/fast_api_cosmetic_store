@@ -43,7 +43,7 @@ async def get_cities(country_code: str = settings.BOXBERRY_COUNTRY_RUSSIA_CODE):
             "CountryCode": country_code
         }
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(settings.BOXBERRY_API_URL, params=params)
             
             if response.status_code == 200:
@@ -131,7 +131,7 @@ async def get_pickup_points(city_code: str, country_code: str = settings.BOXBERR
             "prepaid": "1"  # Возвращать все ПВЗ
         }
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(settings.BOXBERRY_API_URL, params=params)
             
             if response.status_code == 200:
@@ -207,7 +207,7 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                     "method": "CourierListCities"
                 }
                 
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=15.0) as client:
                     response = await client.get(settings.BOXBERRY_API_URL, params=params)
                     
                     if response.status_code == 200:
@@ -260,7 +260,7 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                     "method": "ListZips"
                 }
                 
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=20.0) as client:
                     response = await client.get(settings.BOXBERRY_API_URL, params=params)
                     
                     if response.status_code == 200:
@@ -372,7 +372,7 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
             logger.info(f"Добавлен почтовый индекс для курьерской доставки: {cart_request.zip_code}")
         
         # Выполняем запрос к API
-        async with httpx.AsyncClient() as client:            
+        async with httpx.AsyncClient(timeout=15.0) as client:            
             # Логируем запрос для отладки
             logger.info(f"Запрос к Boxberry API (корзина): {params}")
             
@@ -380,7 +380,7 @@ async def calculate_delivery_from_cart(cart_request: CartDeliveryRequest):
                 response = await client.post(
                     settings.BOXBERRY_API_URL, 
                     json=params,
-                    timeout=10.0  # Устанавливаем таймаут запроса в 10 секунд
+                    timeout=15.0
                 )
                 
                 # Дополнительная информация о запросе для отладки
@@ -712,7 +712,7 @@ async def create_boxberry_parcel(
         # Выполняем запрос к API BoxBerry
         logger.info(f"Отправка запроса на создание посылки в BoxBerry: {parcel_data}")
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 settings.BOXBERRY_API_URL,
                 json=parcel_data,

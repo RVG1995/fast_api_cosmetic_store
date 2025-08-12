@@ -1,4 +1,4 @@
-"""Модуль для авторизации и проверки JWT токенов в product_service."""
+"""Модуль для авторизации и проверки JWT токенов в delivery_service."""
 import logging
 from typing import Optional, Annotated
 
@@ -18,7 +18,7 @@ async def is_jti_revoked(jti: str) -> bool:
         return False
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("product_auth")
+logger = logging.getLogger("delivery_auth")
 
 # Константы для JWT из настроек
 ALGORITHM = "RS256"
@@ -60,7 +60,7 @@ async def get_current_user(
     if not access_token and authorization:
         if authorization.startswith("Bearer "):
             access_token = authorization.replace("Bearer ", "")
-            logger.info("Токен получен из заголовка Authorization: %s...", access_token[:20])
+            logger.info("Токен получен из заголовка Authorization (обрезан)")
         else:
             logger.warning("Заголовок Authorization не содержит Bearer токен")
     

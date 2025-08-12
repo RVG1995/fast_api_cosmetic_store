@@ -55,11 +55,13 @@ class CacheService:
             redis_url = get_redis_url()
             
             # Создаем асинхронное подключение к Redis с использованием нового API
-            self.redis = await redis.Redis.from_url(
+            self.redis = redis.Redis.from_url(
                 redis_url,
                 socket_timeout=3,
                 decode_responses=False  # Не декодируем ответы для поддержки pickle
             )
+            # Healthcheck соединения
+            await self.redis.ping()
             
             logger.info("Подключение к Redis для кэширования успешно: %s:%s/%s", 
                        settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB)
@@ -473,7 +475,7 @@ async def cache_promo_code_check(email: str, phone: str, promo_code_id: int, res
         return
         
     # Создаем хеш для идентификации пользователя
-    user_hash = hashlib.md5((email or '') + (phone or '')).hexdigest()
+    user_hash = hashlib.md5(((email or '') + (phone or '')).encode('utf-8')).hexdigest()
     
     # Создаем ключ кэша
     key = f"{CacheKeys.PROMO_CODE_PREFIX}check:{promo_code_id}:{user_hash}"
@@ -499,7 +501,7 @@ async def get_cached_promo_code_check(email: str, phone: str, promo_code_id: int
         return None
         
     # Создаем хеш для идентификации пользователя
-    user_hash = hashlib.md5((email or '') + (phone or '')).hexdigest()
+    user_hash = hashlib.md5(((email or '') + (phone or '')).encode('utf-8')).hexdigest()
     
     # Создаем ключ кэша
     key = f"{CacheKeys.PROMO_CODE_PREFIX}check:{promo_code_id}:{user_hash}"
@@ -695,9 +697,14 @@ async def smart_dadata_cache_lookup(obj_type, query):
     return None
 
 # Функции для расчета габаритов заказов
-def calculate_dimensions(items: List, weight_field='weight', height_field='height', 
-                        width_field='width', depth_field='depth', 
-                        package_multiplier=1.2) -> Dict[str, int]:
+def calculate_dimensions(
+    items: List,
+    weight_field: str = 'weight',
+    height_field: str = 'height',
+    width_field: str = 'width',
+    depth_field: str = 'depth',
+    package_multiplier: float = 1.2,
+) -> Dict[str, int]:
     """
     Рассчитывает оптимальные габариты упаковки для группы товаров.
     Учитывает количество товаров и их габариты.
@@ -713,28 +720,27 @@ def calculate_dimensions(items: List, weight_field='weight', height_field='heigh
     Returns:
         Dict[str, int]: Словарь с оптимальными габаритами
     """
-    # Инициализация
-    total_weight = 0
-    total_volume = 0
-    max_side = 0
+    def _get_value(item, field: str, default):
+        if isinstance(item, dict):
+            return item.get(field, default)
+        return getattr(item, field, default)
     
     # Собираем все товары с учетом количества
-    all_items = []
+    all_items: List[Dict[str, float]] = []
     for item in items:
-        quantity = getattr(item, 'quantity', 1)
+        quantity = int(_get_value(item, 'quantity', 1) or 1)
+        weight = float(_get_value(item, weight_field, 500) or 500)
+        height = int(_get_value(item, height_field, 10) or 10)
+        width = int(_get_value(item, width_field, 10) or 10)
+        depth = int(_get_value(item, depth_field, 10) or 10)
         for _ in range(quantity):
-            all_items.append({
-                'weight': getattr(item, weight_field, 500),
-                'height': getattr(item, height_field, 10),
-                'width': getattr(item, width_field, 10),
-                'depth': getattr(item, depth_field, 10)
-            })
+            all_items.append({'weight': weight, 'height': height, 'width': width, 'depth': depth})
     
     # Сортируем товары по убыванию объема
     all_items.sort(key=lambda x: x['height'] * x['width'] * x['depth'], reverse=True)
     
     # Рассчитываем общий вес
-    total_weight = sum(item['weight'] for item in all_items)
+    total_weight = int(sum(item['weight'] for item in all_items))
     
     if not all_items:
         return {

@@ -76,7 +76,7 @@ async def suggest_address(query: dict):
         
         # Отправляем запрос (с оригинальным запросом, не с нормализованным)
         request_data = query.copy() if isinstance(query, dict) else {"query": str(query)}
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(api_url, json=request_data, headers=headers)
             logger.info("HTTP Request: %s %s \"%s\"", 
                       response.request.method, response.request.url, 
@@ -167,7 +167,7 @@ async def suggest_fio(query: Union[str, dict]):
         request_data = query if isinstance(query, dict) else {"query": query_text}
         
         # Отправляем запрос
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(api_url, json=request_data, headers=headers)
             logger.info("HTTP Request: %s %s \"%s\"", 
                       response.request.method, response.request.url, 

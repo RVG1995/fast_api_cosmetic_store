@@ -46,6 +46,17 @@ const setupInterceptors = (api, serviceName) => {
       // Гарантируем передачу куки для каждого запроса
       config.withCredentials = true;
 
+      // Если нет Authorization — попробуем достать access_token из cookies и подставить Bearer
+      // Это помогает backend-сервисам, которые проксируют заголовок дальше (межсервисные вызовы)
+      if (!config.headers || !('Authorization' in config.headers)) {
+        const match = document.cookie.match(/(?:^|; )access_token=([^;]+)/);
+        const accessFromCookie = match ? decodeURIComponent(match[1]) : null;
+        if (accessFromCookie) {
+          config.headers = config.headers || {};
+          config.headers.Authorization = `Bearer ${accessFromCookie}`;
+        }
+      }
+
       // Для небезопасных методов добавляем X-CSRF-Token из куки
       const method = (config.method || 'get').toLowerCase();
       const needsCsrf = ['post', 'put', 'patch', 'delete'].includes(method);

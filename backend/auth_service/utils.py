@@ -29,12 +29,19 @@ async def verify_password(plain_password: str, hashed_password: str) -> bool:
 async def verify_service_jwt(
     cred: HTTPAuthorizationCredentials = Depends(bearer_scheme)
 ) -> bool:
-    """Проверяет JWT токен с scope 'service'"""
+    """Проверяет JWT токен с scope 'service'.
+    Специально отключаем проверку audience для сервисных токенов, так как он может отличаться от user-facing токенов.
+    """
     if not cred or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     try:
         from app.services.auth.keys_service import get_public_key_pem
-        payload = jwt.decode(cred.credentials, get_public_key_pem(), algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(
+            cred.credentials,
+            get_public_key_pem(),
+            algorithms=[JWT_ALGORITHM],
+            options={"verify_aud": False},
+        )
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
     if payload.get("scope") != "service":

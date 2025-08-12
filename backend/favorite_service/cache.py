@@ -21,12 +21,14 @@ class CacheService:
             redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
             if REDIS_PASSWORD:
                 redis_url = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-            self.redis = await redis.Redis.from_url(
+            self.redis = redis.Redis.from_url(
                 redis_url,
                 socket_timeout=3,
                 decode_responses=False
             )
-            logger.info(f"Redis connected: {REDIS_HOST}:{REDIS_PORT}/9")
+            # Healthcheck
+            await self.redis.ping()
+            logger.info(f"Redis connected: {REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
         except (RedisConnectionError, RedisTimeoutError, RedisResponseError) as e:
             logger.error(f"Redis connection error: {e}")
             self.redis = None

@@ -10,8 +10,13 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = "postgres"
 
 
-    JWT_SECRET_KEY: str = "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke"
-    JWT_ALGORITHM: str = "HS256"
+    # Для пользователей — RS256/JWKS верификация через auth_service
+    JWT_SECRET_KEY: str = "zAP5LmC8N7e3Yq9x2Rv4TsX1Wp7Bj5Ke"  # может применяться для внутренних задач, но не для верификации RS256
+    JWT_ALGORITHM: str = "RS256"
+    JWT_ISSUER: str = "auth_service"
+    JWT_VERIFY_AUDIENCE: bool = False
+    JWT_AUDIENCE: str | None = None
+    AUTH_SERVICE_URL: str = "http://localhost:8000"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     REDIS_HOST: str = "localhost"
@@ -47,4 +52,8 @@ def get_jwt_settings() -> dict:
         "secret_key": settings.JWT_SECRET_KEY,
         "algorithm": settings.JWT_ALGORITHM,
         "access_token_expire_minutes": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+        "issuer": settings.JWT_ISSUER,
+        "verify_audience": settings.JWT_VERIFY_AUDIENCE,
+        "audience": settings.JWT_AUDIENCE,
+        "auth_service_url": settings.AUTH_SERVICE_URL,
     }

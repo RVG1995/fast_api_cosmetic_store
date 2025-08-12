@@ -5,7 +5,7 @@
 from typing import Optional
 import logging
 
-from fastapi import Depends, HTTPException, Query, APIRouter
+from fastapi import Depends, HTTPException, Query, APIRouter, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -43,7 +43,8 @@ async def get_user_carts(
     user_id: Optional[int] = Query(None, description="Фильтр по ID пользователя"),
     filter: Optional[str] = Query(None, description="Фильтр (with_items/empty)"),
     search: Optional[str] = Query(None, description="Поисковый запрос по ID корзины"),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    request: Request = None,
 ):
     """
     Получает список всех корзин пользователей (для администраторов)
@@ -88,7 +89,12 @@ async def get_user_carts(
             cart_items = []
             
             # Получаем информацию о пользователе
-            user_info = await get_user_info(cart.user_id) if cart.user_id else {}
+            admin_bearer = request.headers.get("Authorization") if request else None
+            if (not admin_bearer or not admin_bearer.startswith("Bearer ")) and request:
+                cookie_token = request.cookies.get("access_token")
+                if cookie_token:
+                    admin_bearer = f"Bearer {cookie_token}"
+            user_info = await get_user_info(cart.user_id, admin_bearer=admin_bearer) if cart.user_id else {}
             first_name = user_info.get('first_name', '')
             last_name = user_info.get('last_name', '')
             user_name = f"{first_name} {last_name}".strip() or f"Пользователь {cart.user_id}"
@@ -175,7 +181,8 @@ async def get_user_carts(
 async def get_user_cart_by_id(
     cart_id: int,
     current_user: User = Depends(get_current_admin_user),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    request: Request = None,
 ):
     """
     Получает информацию о конкретной корзине пользователя (для администратора)
@@ -201,7 +208,12 @@ async def get_user_cart_by_id(
         # Получаем дополнительную информацию о пользователе
         user_info = None
         if cart.user_id:
-            user_info = await get_user_info(cart.user_id)
+            admin_bearer = request.headers.get("Authorization") if request else None
+            if (not admin_bearer or not admin_bearer.startswith("Bearer ")) and request:
+                cookie_token = request.cookies.get("access_token")
+                if cookie_token:
+                    admin_bearer = f"Bearer {cookie_token}"
+            user_info = await get_user_info(cart.user_id, admin_bearer=admin_bearer)
         
         # Получаем информацию о товарах в корзине
         product_ids = [item.product_id for item in cart.items] if cart.items else []

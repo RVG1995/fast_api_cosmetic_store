@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Table, Container, Button, Form, InputGroup, Row, Col, Badge, Spinner, Alert } from 'react-bootstrap';
-import axios from 'axios';
+import { cartService } from '../../utils/api';
 import { formatDateTime } from '../../utils/dateUtils';
-import { API_URLS } from '../../utils/constants';
 
 const AdminCarts = () => {
   const [carts, setCarts] = useState([]);
@@ -37,16 +36,11 @@ const AdminCarts = () => {
         params.sort_order = sortOrder;
       }
       
-      console.log('Отправка запроса к API корзин с куки-авторизацией');
-      
-      const response = await axios.get(`${API_URLS.CART_SERVICE}/admin/carts`, {
-        params,
-        withCredentials: true  // Включаем передачу куки
-      });
-      
-      console.log('Получен ответ от сервера:', response.data);
-      setCarts(response.data.items || []);
-      setTotalPages(Math.ceil((response.data.total || 0) / pageSize));
+      console.log('Отправка запроса к API корзин через cartService (с интерсепторами)');
+      const responseData = await cartService.getAllCarts(params.page, params.page_size, params.filter || 'all', params.sort_by && params.sort_order ? `${params.sort_by}:${params.sort_order}` : 'updated_at:desc');
+      console.log('Получен ответ от сервера:', responseData);
+      setCarts(responseData.items || []);
+      setTotalPages(Math.ceil((responseData.total || 0) / pageSize));
       setLoading(false);
     } catch (err) {
       console.error('Error fetching carts:', err);
@@ -104,13 +98,9 @@ const AdminCarts = () => {
     setError(null);
     
     try {
-      const response = await axios.get(`${API_URLS.CART_SERVICE}/admin/carts`, {
-        params,
-        withCredentials: true
-      });
-      
-      setCarts(response.data.items || []);
-      setTotalPages(Math.ceil((response.data.total || 0) / pageSize));
+      const responseData = await cartService.getAllCarts(params.page, params.page_size, params.filter || 'all', `${params.sort_by}:${params.sort_order}`);
+      setCarts(responseData.items || []);
+      setTotalPages(Math.ceil((responseData.total || 0) / pageSize));
       setLoading(false);
     } catch (err) {
       console.error('Error fetching carts after reset:', err);

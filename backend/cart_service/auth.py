@@ -236,7 +236,7 @@ async def get_current_admin_user(
     return current_user
 
 
-async def get_user_info(user_id: int) -> Dict[str, Any]:
+async def get_user_info(user_id: int, admin_bearer: Optional[str] = None) -> Dict[str, Any]:
     """
     Получает информацию о пользователе из сервиса авторизации
     """
@@ -248,6 +248,8 @@ async def get_user_info(user_id: int) -> Dict[str, Any]:
             total = len(backoffs)
             for attempt, delay in enumerate(backoffs, start=1):
                 logger.info("get_user_info: attempt %d/%d for user %d", attempt, total, user_id)
+                # ВАЖНО: эндпойнт auth_service /admin/users/{id} защищен verify_service_jwt → нужен сервисный токен
+                # Никогда не используем пользовательский Bearer здесь
                 token = await _get_service_token()
                 headers = {"Authorization": f"Bearer {token}"}
                 try:
@@ -276,8 +278,8 @@ async def get_user_info(user_id: int) -> Dict[str, Any]:
                     logger.warning("get_user_info: 404 Not Found on attempt %d, returning empty response", attempt)
                     return {}
                 if response.status_code == 401:
-                    logger.warning("get_user_info: 401 Unauthorized on attempt %d, clearing cache and retry", attempt)
-                    await cache_delete("service_token")
+                    logger.warning("get_user_info: 401 Unauthorized on attempt %d, clearing service token cache and retry", attempt)
+                    await cache_delete("service_token_cart")
                     if attempt < total:
                         await asyncio.sleep(delay)
                         continue

@@ -4,9 +4,8 @@ import {
   Container, Row, Col, Card, Table, Badge, Button, 
   Spinner, Alert, ListGroup, Image
 } from 'react-bootstrap';
-import axios from 'axios';
+import { cartService } from '../../utils/api';
 import { formatDateTime } from '../../utils/dateUtils';
-import { API_URLS } from '../../utils/constants';
 import AdminBackButton from '../../components/common/AdminBackButton';
 
 const AdminCartDetail = () => {
@@ -23,14 +22,10 @@ const AdminCartDetail = () => {
         // Удаляем получение токена из localStorage
         // Теперь используем только куки для аутентификации
         
-        console.log(`Запрос данных корзины ID: ${cartId} с куки-авторизацией`);
-        
-        const response = await axios.get(`${API_URLS.CART_SERVICE}/admin/carts/${cartId}`, {
-          withCredentials: true  // Включаем передачу куки
-        });
-        
-        console.log('Получен ответ от сервера:', response.data);
-        setCart(response.data);
+        console.log(`Запрос данных корзины ID: ${cartId} через cartService (интерсепторы)`);
+        const data = await cartService.getCartById(cartId);
+        console.log('Получен ответ от сервера:', data);
+        setCart(data);
       } catch (err) {
         console.error('Error fetching cart details:', err);
         let errorMessage = 'Не удалось загрузить информацию о корзине. Попробуйте позже.';
